@@ -1,0 +1,32 @@
+.DS_Store
+node_modules
+/build
+/.svelte-kit
+/package
+.env
+.env.*
+!.env.example
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Tauri
+/src-tauri/target/
+/src-tauri/gen/schemas
+
+# Logs
+*.log
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+
+# Windows
+Thumbs.db
+
+# TypeScript
+.tsbuildinfo
+
+# Testing
+coverage/

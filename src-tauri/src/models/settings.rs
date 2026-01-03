@@ -1,0 +1,71 @@
+use serde::{Deserialize, Serialize};
+use crate::utils::paths;
+
+/// Application theme
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Theme {
+    #[default]
+    Dark,
+    Light,
+    System,
+}
+
+/// Global application settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSettings {
+    /// Path to instances directory
+    pub instances_path: String,
+    /// Path to Java executable (auto-detected or user-set)
+    pub java_path: Option<String>,
+    /// Minimum memory allocation (MB)
+    pub memory_min_mb: u32,
+    /// Maximum memory allocation (MB)
+    pub memory_max_mb: u32,
+    /// Number of concurrent downloads
+    pub concurrent_downloads: u32,
+    /// Close launcher when game starts
+    pub close_launcher_on_game_start: bool,
+    /// Reopen launcher when game closes
+    pub reopen_launcher_on_game_close: bool,
+    /// Show snapshot versions in version list
+    pub show_snapshots: bool,
+    /// Show old_alpha and old_beta versions
+    pub show_old_versions: bool,
+    /// UI theme
+    pub theme: Theme,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            instances_path: paths::get_instances_dir().to_string_lossy().to_string(),
+            java_path: None,
+            memory_min_mb: 512,
+            memory_max_mb: 4096,
+            concurrent_downloads: 4,
+            close_launcher_on_game_start: false,
+            reopen_launcher_on_game_close: true,
+            show_snapshots: false,
+            show_old_versions: false,
+            theme: Theme::Dark,
+        }
+    }
+}
+
+/// Request to update settings (partial update)
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSettingsRequest {
+    pub instances_path: Option<String>,
+    pub java_path: Option<String>,
+    pub memory_min_mb: Option<u32>,
+    pub memory_max_mb: Option<u32>,
+    pub concurrent_downloads: Option<u32>,
+    pub close_launcher_on_game_start: Option<bool>,
+    pub reopen_launcher_on_game_close: Option<bool>,
+    pub show_snapshots: Option<bool>,
+    pub show_old_versions: Option<bool>,
+    pub theme: Option<Theme>,
+}
