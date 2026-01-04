@@ -1,5 +1,8 @@
 /** Type of mod loader for an instance */
-export type LoaderType = "vanilla" | "forge" | "neoforge" | "fabric" | "quilt";
+export type LoaderType = "vanilla" | "forge" | "neoforge" | "fabric" | "quilt" | "liteloader";
+
+/** Platform that hosts modpacks */
+export type ModpackPlatform = "modrinth" | "curseforge" | "ftb" | "technic" | "atlauncher";
 
 /** A Minecraft instance configuration */
 export interface Instance {
@@ -35,6 +38,12 @@ export interface Instance {
   resolutionWidth?: number;
   /** Override: game window height */
   resolutionHeight?: number;
+  /** Modpack platform (if created from a modpack) */
+  modpackPlatform?: ModpackPlatform;
+  /** Modpack ID on the platform */
+  modpackId?: string;
+  /** Installed modpack version ID */
+  modpackVersionId?: string;
 }
 
 /** Request to create a new instance */
@@ -48,6 +57,8 @@ export interface CreateInstanceRequest {
 /** Request to update an existing instance */
 export interface UpdateInstanceRequest {
   name?: string;
+  loaderType?: LoaderType;
+  loaderVersion?: string;
   javaPath?: string;
   memoryMinMb?: number;
   memoryMaxMb?: number;
