@@ -50,6 +50,26 @@ pub async fn launch_instance(
     let http_client = reqwest::Client::new();
     let access_token = account_service::get_valid_access_token(&http_client, account_id).await?;
 
+    // Get paths
+    let game_dir = instance_service::get_game_directory(&state, &instance.id);
+
+    // Get version info (with loader support) - do this FIRST so we know all libraries needed
+    emit_launch_status(
+        app_handle,
+        &instance_id,
+        LaunchStatus::Preparing {
+            message: "Loading version info...".to_string(),
+        },
+    );
+
+    let version_info = download_service::get_version_info_with_loader(
+        &instance.minecraft_version,
+        &instance.loader_type,
+        instance.loader_version.as_deref(),
+        &game_dir,
+    ).await?;
+
+
     // Emit downloading status
     emit_launch_status(
         app_handle,
@@ -59,12 +79,13 @@ pub async fn launch_instance(
         },
     );
 
-    // Download game files if needed
-    download_service::download_game_files(&instance.id, &instance.minecraft_version, Some(app_handle))
-        .await?;
-
-    // Get version info
-    let version_info = download_service::get_version_info(&instance.minecraft_version).await?;
+    // Download game files using the merged version info (includes loader libraries)
+    download_service::download_game_files_with_version(
+        &instance.id,
+        &instance.minecraft_version,
+        &version_info,
+        Some(app_handle),
+    ).await?;
 
     // Emit launching status
     emit_launch_status(app_handle, &instance_id, LaunchStatus::Launching);
@@ -76,16 +97,15 @@ pub async fn launch_instance(
         .or_else(find_java)
         .ok_or(AppError::JavaNotFound)?;
 
-    // Build classpath
-    let classpath = download_service::get_classpath(&version_info, &instance.minecraft_version);
+    // Build classpath (pass game_dir for Forge libraries)
+    let classpath = download_service::get_classpath(&version_info, &instance.minecraft_version, Some(&game_dir));
     let classpath_str = classpath
         .iter()
         .map(|p| p.to_string_lossy().to_string())
         .collect::<Vec<_>>()
         .join(classpath_separator());
 
-    // Get paths
-    let game_dir = instance_service::get_game_directory(&state, &instance.id);
+    // Get more paths
     let natives_dir = get_instance_natives_dir_with_base(&state.settings.read().instances_path, &instance.id);
     let assets_dir = get_assets_dir();
 
@@ -102,9 +122,12 @@ pub async fn launch_instance(
         "assets_root".to_string(),
         assets_dir.to_string_lossy().to_string(),
     );
+    let asset_index_id = version_info.asset_index.as_ref()
+        .map(|ai| ai.id.clone())
+        .unwrap_or_else(|| instance.minecraft_version.clone());
     replacements.insert(
         "assets_index_name".to_string(),
-        version_info.asset_index.id.clone(),
+        asset_index_id,
     );
     replacements.insert("auth_uuid".to_string(), account.uuid.replace('-', ""));
     replacements.insert("auth_access_token".to_string(), access_token);
@@ -113,6 +136,12 @@ pub async fn launch_instance(
     replacements.insert(
         "natives_directory".to_string(),
         natives_dir.to_string_lossy().to_string(),
+    );
+    // NeoForge/Forge need library_directory for their mod loader
+    let library_directory = game_dir.join("libraries");
+    replacements.insert(
+        "library_directory".to_string(),
+        library_directory.to_string_lossy().to_string(),
     );
     replacements.insert("launcher_name".to_string(), "ETLauncher".to_string());
     replacements.insert("launcher_version".to_string(), "0.1.0".to_string());
@@ -153,8 +182,6 @@ pub async fn launch_instance(
     let mut all_args = jvm_args;
     all_args.extend(all_game_args);
 
-    // Log the command for debugging
-    eprintln!("Launching: {} {}", java_path, all_args.join(" "));
 
     // Spawn the process
     let mut child = Command::new(&java_path)

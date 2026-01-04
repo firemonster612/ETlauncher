@@ -1,6 +1,10 @@
 pub mod auth;
 pub mod account;
+pub mod content;
 pub mod instance;
-pub mod minecraft;
 pub mod launch;
+pub mod loader;
+pub mod minecraft;
+pub mod modpack;
 pub mod settings;
+pub mod update;

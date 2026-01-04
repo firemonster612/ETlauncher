@@ -38,9 +38,12 @@ pub struct VersionInfo {
     pub minecraft_arguments: Option<String>,
     /// Modern format (1.13+)
     pub arguments: Option<Arguments>,
+    #[serde(default)]
     pub libraries: Vec<Library>,
-    pub asset_index: AssetIndexRef,
-    pub downloads: Downloads,
+    /// Optional for loader versions that inherit from parent
+    pub asset_index: Option<AssetIndexRef>,
+    /// Optional for loader versions that inherit from parent
+    pub downloads: Option<Downloads>,
     pub java_version: Option<JavaVersionInfo>,
     #[serde(rename = "type")]
     pub version_type: Option<String>,

@@ -113,6 +113,9 @@ pub fn create_instance(state: &AppState, request: CreateInstanceRequest) -> Resu
         game_args: None,
         resolution_width: None,
         resolution_height: None,
+        modpack_platform: None,
+        modpack_id: None,
+        modpack_version_id: None,
     };
 
     save_instance(state, &instance)?;
@@ -135,6 +138,12 @@ pub fn update_instance(state: &AppState, instance_id: &str, updates: UpdateInsta
     // Apply updates
     if let Some(name) = updates.name {
         instance.name = name;
+    }
+    if updates.loader_type.is_some() {
+        instance.loader_type = updates.loader_type.unwrap();
+    }
+    if updates.loader_version.is_some() {
+        instance.loader_version = updates.loader_version;
     }
     if updates.java_path.is_some() {
         instance.java_path = updates.java_path;
@@ -211,6 +220,9 @@ pub fn duplicate_instance(state: &AppState, instance_id: &str, new_name: String)
         game_args: source.game_args,
         resolution_width: source.resolution_width,
         resolution_height: source.resolution_height,
+        modpack_platform: source.modpack_platform,
+        modpack_id: source.modpack_id,
+        modpack_version_id: source.modpack_version_id,
     };
 
     save_instance(state, &new_instance)?;

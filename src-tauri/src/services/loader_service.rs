@@ -1,0 +1,772 @@
+use crate::error::AppError;
+use crate::models::instance::LoaderType;
+use crate::models::loader::{
+    FabricInstallerMeta, FabricLoaderForVersion, ForgePromotions, LiteLoaderVersionsResponse,
+    LoaderVersion, NeoForgeMavenResponse,
+};
+use std::path::Path;
+use tokio::process::Command;
+
+/// Fabric meta API base URL
+const FABRIC_META_URL: &str = "https://meta.fabricmc.net/v2";
+
+/// Quilt meta API base URL
+const QUILT_META_URL: &str = "https://meta.quiltmc.org/v3";
+
+/// Forge Maven base URL
+const FORGE_MAVEN_URL: &str = "https://maven.minecraftforge.net/net/minecraftforge/forge";
+
+/// Forge promotions API URL
+const FORGE_PROMOTIONS_URL: &str = "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json";
+
+/// NeoForge Maven base URL
+const NEOFORGE_MAVEN_URL: &str = "https://maven.neoforged.net/net/neoforged/neoforge";
+
+/// NeoForge Maven API URL
+const NEOFORGE_API_URL: &str = "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge";
+
+/// LiteLoader versions API URL
+const LITELOADER_VERSIONS_URL: &str = "http://dl.liteloader.com/versions/versions.json";
+
+/// Fabric Maven base URL
+const FABRIC_MAVEN_URL: &str = "https://maven.fabricmc.net/net/fabricmc";
+
+/// Quilt Maven base URL
+const QUILT_MAVEN_URL: &str = "https://maven.quiltmc.org/repository/release";
+
+/// Fetch available Fabric loader versions for a specific Minecraft version
+pub async fn get_fabric_versions(mc_version: &str) -> Result<Vec<LoaderVersion>, AppError> {
+    let url = format!("{}/versions/loader/{}", FABRIC_META_URL, mc_version);
+
+    let response = reqwest::get(&url)
+        .await
+        .map_err(|e| AppError::HttpError(e))?;
+
+    response.error_for_status_ref()?;
+
+    let meta_versions: Vec<FabricLoaderForVersion> = response
+        .json()
+        .await
+        .map_err(|e| AppError::HttpError(e))?;
+
+    let versions: Vec<LoaderVersion> = meta_versions
+        .into_iter()
+        .map(|v| LoaderVersion {
+            version: v.loader.version.clone(),
+            maven: v.loader.maven,
+            stable: v.loader.stable.unwrap_or_else(|| !v.loader.version.contains("beta") && !v.loader.version.contains("alpha")),
+            build: v.loader.build,
+            separator: v.loader.separator,
+        })
+        .collect();
+
+    Ok(versions)
+}
+
+/// Fetch available Quilt loader versions for a specific Minecraft version
+pub async fn get_quilt_versions(mc_version: &str) -> Result<Vec<LoaderVersion>, AppError> {
+    let url = format!("{}/versions/loader/{}", QUILT_META_URL, mc_version);
+
+    let response = reqwest::get(&url)
+        .await
+        .map_err(|e| AppError::HttpError(e))?;
+
+    response.error_for_status_ref()?;
+
+    let meta_versions: Vec<FabricLoaderForVersion> = response
+        .json()
+        .await
+        .map_err(|e| AppError::HttpError(e))?;
+
+    let versions: Vec<LoaderVersion> = meta_versions
+        .into_iter()
+        .map(|v| LoaderVersion {
+            version: v.loader.version.clone(),
+            maven: v.loader.maven,
+            stable: v.loader.stable.unwrap_or_else(|| !v.loader.version.contains("beta") && !v.loader.version.contains("alpha")),
+            build: v.loader.build,
+            separator: v.loader.separator,
+        })
+        .collect();
+
+    Ok(versions)
+}
+
+/// Fetch available Forge versions for a specific Minecraft version
+pub async fn get_forge_versions(mc_version: &str) -> Result<Vec<LoaderVersion>, AppError> {
+    // Fetch promotions to identify recommended/latest versions
+    let promos_response = reqwest::get(FORGE_PROMOTIONS_URL)
+        .await
+        .map_err(|e| AppError::HttpError(e))?;
+
+    promos_response.error_for_status_ref()?;
+
+    let promotions: ForgePromotions = promos_response
+        .json()
+        .await
+        .map_err(|e| AppError::HttpError(e))?;
+
+    // Collect versions for this MC version from promos
+    let mut versions: Vec<LoaderVersion> = Vec::new();
+    let mut seen_versions = std::collections::HashSet::new();
+
+    // Check for recommended version (stable)
+    let recommended_key = format!("{}-recommended", mc_version);
+    if let Some(forge_ver) = promotions.promos.get(&recommended_key) {
+        if seen_versions.insert(forge_ver.clone()) {
+            versions.push(LoaderVersion {
+                version: forge_ver.clone(),
+                maven: format!("net.minecraftforge:forge:{}-{}", mc_version, forge_ver),
+                stable: true,
+                build: 0,
+                separator: "-".to_string(),
+            });
+        }
+    }
+
+    // Check for latest version
+    let latest_key = format!("{}-latest", mc_version);
+    if let Some(forge_ver) = promotions.promos.get(&latest_key) {
+        if seen_versions.insert(forge_ver.clone()) {
+            versions.push(LoaderVersion {
+                version: forge_ver.clone(),
+                maven: format!("net.minecraftforge:forge:{}-{}", mc_version, forge_ver),
+                stable: false,
+                build: 0,
+                separator: "-".to_string(),
+            });
+        }
+    }
+
+    // Also fetch from Maven metadata for more versions
+    let maven_metadata_url = format!("{}/maven-metadata.xml", FORGE_MAVEN_URL);
+    if let Ok(response) = reqwest::get(&maven_metadata_url).await {
+        if let Ok(text) = response.text().await {
+            // Parse XML to extract versions for this MC version
+            // Format is: <version>mcversion-forgeversion</version>
+            let prefix = format!("{}-", mc_version);
+            for line in text.lines() {
+                if let Some(start) = line.find("<version>") {
+                    if let Some(end) = line.find("</version>") {
+                        let version_str = &line[start + 9..end];
+                        if version_str.starts_with(&prefix) {
+                            let forge_ver = version_str.strip_prefix(&prefix).unwrap_or(version_str);
+                            if seen_versions.insert(forge_ver.to_string()) {
+                                let is_stable = promotions.promos.get(&recommended_key)
+                                    .map(|v| v == forge_ver)
+                                    .unwrap_or(false);
+                                versions.push(LoaderVersion {
+                                    version: forge_ver.to_string(),
+                                    maven: format!("net.minecraftforge:forge:{}", version_str),
+                                    stable: is_stable,
+                                    build: 0,
+                                    separator: "-".to_string(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Sort versions (newer first) - simple string sort works for semver-like versions
+    versions.sort_by(|a, b| b.version.cmp(&a.version));
+
+    Ok(versions)
+}
+
+/// Fetch available NeoForge versions for a specific Minecraft version
+pub async fn get_neoforge_versions(mc_version: &str) -> Result<Vec<LoaderVersion>, AppError> {
+    let response = reqwest::get(NEOFORGE_API_URL)
+        .await
+        .map_err(|e| AppError::HttpError(e))?;
+
+    response.error_for_status_ref()?;
+
+    let maven_response: NeoForgeMavenResponse = response
+        .json()
+        .await
+        .map_err(|e| AppError::HttpError(e))?;
+
+    // NeoForge versions are formatted as: mcversion.forgeversion (e.g., "21.4.50-beta" for MC 1.21.4)
+    // For MC 1.20.x, versions look like "20.4.xxx"
+    // For MC 1.21.x, versions look like "21.x.xxx"
+    // We need to filter by MC version
+
+    // Extract major.minor from MC version (e.g., "1.21.4" -> "21.4")
+    let mc_parts: Vec<&str> = mc_version.split('.').collect();
+    let neoforge_prefix = if mc_parts.len() >= 2 {
+        // Remove the leading "1." and use major.minor
+        if mc_parts[0] == "1" && mc_parts.len() >= 3 {
+            format!("{}.{}", mc_parts[1], mc_parts[2])
+        } else if mc_parts[0] == "1" && mc_parts.len() == 2 {
+            format!("{}.", mc_parts[1])
+        } else {
+            mc_version.to_string()
+        }
+    } else {
+        mc_version.to_string()
+    };
+
+    let versions: Vec<LoaderVersion> = maven_response
+        .versions
+        .into_iter()
+        .filter(|v| v.starts_with(&neoforge_prefix))
+        .map(|v| {
+            let is_stable = !v.contains("beta") && !v.contains("alpha");
+            LoaderVersion {
+                version: v.clone(),
+                maven: format!("net.neoforged:neoforge:{}", v),
+                stable: is_stable,
+                build: 0,
+                separator: "-".to_string(),
+            }
+        })
+        .collect();
+
+    // Sort versions (newer first)
+    let mut sorted_versions = versions;
+    sorted_versions.sort_by(|a, b| {
+        // Parse version numbers for proper sorting
+        let a_nums: Vec<u32> = a.version.split(|c| c == '.' || c == '-')
+            .filter_map(|s| s.parse().ok())
+            .collect();
+        let b_nums: Vec<u32> = b.version.split(|c| c == '.' || c == '-')
+            .filter_map(|s| s.parse().ok())
+            .collect();
+        b_nums.cmp(&a_nums)
+    });
+
+    Ok(sorted_versions)
+}
+
+/// Fetch available LiteLoader versions (legacy loader)
+pub async fn get_liteloader_versions(mc_version: &str) -> Result<Vec<LoaderVersion>, AppError> {
+    let response = reqwest::get(LITELOADER_VERSIONS_URL)
+        .await
+        .map_err(|e| AppError::HttpError(e))?;
+
+    response.error_for_status_ref()?;
+
+    let versions_response: LiteLoaderVersionsResponse = response
+        .json()
+        .await
+        .map_err(|e| AppError::HttpError(e))?;
+
+    // Get the versions for the specified MC version
+    let mut versions: Vec<LoaderVersion> = Vec::new();
+
+    if let Some(mc_versions) = versions_response.versions.get(mc_version) {
+        if let Some(artefacts) = &mc_versions.artefacts {
+            if let Some(liteloader_versions) = &artefacts.liteloader {
+                for (key, artefact) in liteloader_versions {
+                    if let Some(version) = &artefact.version {
+                        // Determine stability - "RELEASE" streams are stable
+                        let is_stable = key.to_uppercase().contains("RELEASE");
+
+                        versions.push(LoaderVersion {
+                            version: version.clone(),
+                            maven: format!("com.mumfrey:liteloader:{}", version),
+                            stable: is_stable,
+                            build: 0,
+                            separator: "-".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Sort versions (newer first based on version string)
+    versions.sort_by(|a, b| b.version.cmp(&a.version));
+
+    Ok(versions)
+}
+
+/// Get loader versions for a specific loader type
+pub async fn get_loader_versions(
+    loader_type: LoaderType,
+    mc_version: &str,
+) -> Result<Vec<LoaderVersion>, AppError> {
+    match loader_type {
+        LoaderType::Fabric => get_fabric_versions(mc_version).await,
+        LoaderType::Quilt => get_quilt_versions(mc_version).await,
+        LoaderType::Forge => get_forge_versions(mc_version).await,
+        LoaderType::NeoForge => get_neoforge_versions(mc_version).await,
+        LoaderType::LiteLoader => get_liteloader_versions(mc_version).await,
+        LoaderType::Vanilla => Ok(vec![]),
+    }
+}
+
+/// Download a file from URL to destination with progress callback
+async fn download_file_with_progress(
+    url: &str,
+    destination: &Path,
+    progress: impl Fn(u32),
+) -> Result<(), AppError> {
+    let response = reqwest::get(url)
+        .await
+        .map_err(|e| AppError::HttpError(e))?;
+
+    let total_bytes = response
+        .content_length()
+        .ok_or_else(|| AppError::DownloadError("Missing content length".to_string()))?;
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| AppError::HttpError(e))?;
+
+    let downloaded_bytes = bytes.len();
+    let percent = ((downloaded_bytes as f64 / total_bytes as f64) * 100.0) as u32;
+    progress(percent);
+
+    tokio::fs::write(destination, bytes)
+        .await
+        .map_err(|e| AppError::IoError(e))?;
+
+    Ok(())
+}
+
+/// Create a minimal launcher_profiles.json for mod loader installers
+async fn ensure_launcher_profiles(game_dir: &Path) -> Result<(), AppError> {
+    let profiles_path = game_dir.join("launcher_profiles.json");
+
+    if !profiles_path.exists() {
+        // Create minimal launcher_profiles.json that Fabric/Quilt/Forge installers expect
+        let minimal_profile = serde_json::json!({
+            "profiles": {},
+            "selectedProfile": null,
+            "clientToken": "",
+            "authenticationDatabase": {},
+            "launcherVersion": {
+                "name": "ETLauncher",
+                "format": 21
+            }
+        });
+
+        let content = serde_json::to_string_pretty(&minimal_profile)
+            .map_err(|e| AppError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+
+        tokio::fs::write(&profiles_path, content)
+            .await
+            .map_err(|e| AppError::IoError(e))?;
+    }
+
+    Ok(())
+}
+
+/// Install Fabric loader to a game directory
+pub async fn install_fabric(
+    game_dir: &Path,
+    mc_version: &str,
+    loader_version: &str,
+    progress: impl Fn(String, u32),
+) -> Result<(), AppError> {
+    progress("Preparing installation...".to_string(), 0);
+
+    // Ensure game directory exists
+    tokio::fs::create_dir_all(game_dir)
+        .await
+        .map_err(|e| AppError::IoError(e))?;
+
+    // Create launcher_profiles.json if it doesn't exist (required by Fabric installer)
+    ensure_launcher_profiles(game_dir).await?;
+
+    progress("Downloading Fabric installer...".to_string(), 5);
+
+    // Get latest stable installer version
+    let installer_meta_url = format!("{}/versions/installer", FABRIC_META_URL);
+    let response = reqwest::get(&installer_meta_url)
+        .await
+        .map_err(|e| AppError::HttpError(e))?;
+
+    let installers: Vec<FabricInstallerMeta> = response
+        .json()
+        .await
+        .map_err(|e| AppError::HttpError(e))?;
+
+    let installer_version = installers
+        .first()
+        .ok_or_else(|| AppError::DownloadError("No Fabric installer available".to_string()))?
+        .version
+        .clone();
+
+    let installer_url = format!(
+        "{}/fabric-installer/{}/fabric-installer-{}.jar",
+        FABRIC_MAVEN_URL, installer_version, installer_version
+    );
+
+    let installer_path = std::env::temp_dir().join(format!("fabric-installer-{}.jar", installer_version));
+
+    download_file_with_progress(&installer_url, &installer_path, |p| {
+        progress("Downloading Fabric installer...".to_string(), 5 + (p / 3));
+    })
+    .await?;
+
+    progress("Running Fabric installer...".to_string(), 40);
+
+    let output = Command::new("java")
+        .arg("-jar")
+        .arg(&installer_path)
+        .arg("client")
+        .arg("-dir")
+        .arg(game_dir)
+        .arg("-mcversion")
+        .arg(mc_version)
+        .arg("-loader")
+        .arg(loader_version)
+        .arg("-noprofile") // Don't modify launcher profiles
+        .output()
+        .await
+        .map_err(|e| AppError::ProcessError(format!("Failed to run Fabric installer: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Err(AppError::ProcessError(format!(
+            "Fabric installer failed: {} {}",
+            stderr, stdout
+        )));
+    }
+
+    // Cleanup
+    let _ = tokio::fs::remove_file(&installer_path).await;
+
+    progress("Verifying installation...".to_string(), 90);
+
+    // Verify installation by checking for the version JSON
+    let version_id = format!("fabric-loader-{}-{}", loader_version, mc_version);
+    let version_json = game_dir
+        .join("versions")
+        .join(&version_id)
+        .join(format!("{}.json", version_id));
+
+    if !version_json.exists() {
+        return Err(AppError::InstallationError(
+            format!("Fabric installation verification failed - version JSON not found at {:?}", version_json),
+        ));
+    }
+
+    progress("Installation complete".to_string(), 100);
+
+    Ok(())
+}
+
+/// Install Quilt loader to a game directory
+pub async fn install_quilt(
+    game_dir: &Path,
+    mc_version: &str,
+    loader_version: &str,
+    progress: impl Fn(String, u32),
+) -> Result<(), AppError> {
+    progress("Preparing installation...".to_string(), 0);
+
+    // Ensure game directory exists
+    tokio::fs::create_dir_all(game_dir)
+        .await
+        .map_err(|e| AppError::IoError(e))?;
+
+    // Create launcher_profiles.json if it doesn't exist (required by Quilt installer)
+    ensure_launcher_profiles(game_dir).await?;
+
+    progress("Downloading Quilt installer...".to_string(), 5);
+
+    // Quilt uses the same installer format as Fabric
+    let installer_url = format!(
+        "{}/quilt-installer/1.1.1/quilt-installer-1.1.1.jar",
+        QUILT_MAVEN_URL
+    );
+
+    let installer_path = std::env::temp_dir().join("quilt-installer.jar");
+
+    download_file_with_progress(&installer_url, &installer_path, |p| {
+        progress("Downloading Quilt installer...".to_string(), 5 + (p / 3));
+    })
+    .await?;
+
+    progress("Running Quilt installer...".to_string(), 40);
+
+    let output = Command::new("java")
+        .arg("-jar")
+        .arg(&installer_path)
+        .arg("install")
+        .arg("client")
+        .arg(mc_version)
+        .arg(loader_version)
+        .arg("--install-dir")
+        .arg(game_dir)
+        .arg("--no-profile")
+        .output()
+        .await
+        .map_err(|e| AppError::ProcessError(format!("Failed to run Quilt installer: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Err(AppError::ProcessError(format!(
+            "Quilt installer failed: {} {}",
+            stderr, stdout
+        )));
+    }
+
+    // Cleanup
+    let _ = tokio::fs::remove_file(&installer_path).await;
+
+    progress("Verifying installation...".to_string(), 90);
+
+    // Verify installation by checking for the version JSON
+    let version_id = format!("quilt-loader-{}-{}", loader_version, mc_version);
+    let version_json = game_dir
+        .join("versions")
+        .join(&version_id)
+        .join(format!("{}.json", version_id));
+
+    if !version_json.exists() {
+        return Err(AppError::InstallationError(
+            format!("Quilt installation verification failed - version JSON not found at {:?}", version_json),
+        ));
+    }
+
+    progress("Installation complete".to_string(), 100);
+
+    Ok(())
+}
+
+/// Install Forge loader to a game directory
+pub async fn install_forge(
+    game_dir: &Path,
+    mc_version: &str,
+    loader_version: &str,
+    progress: impl Fn(String, u32),
+) -> Result<(), AppError> {
+    progress("Preparing installation...".to_string(), 0);
+
+    // Ensure game directory exists
+    tokio::fs::create_dir_all(game_dir)
+        .await
+        .map_err(|e| AppError::IoError(e))?;
+
+    // Create launcher_profiles.json if it doesn't exist (required by Forge installer)
+    ensure_launcher_profiles(game_dir).await?;
+
+    progress("Downloading Forge installer...".to_string(), 5);
+
+    let installer_url = format!(
+        "{}/{}-{}/forge-{}-{}-installer.jar",
+        FORGE_MAVEN_URL, mc_version, loader_version, mc_version, loader_version
+    );
+
+    let installer_path = std::env::temp_dir().join(format!(
+        "forge-installer-{}-{}.jar",
+        mc_version, loader_version
+    ));
+
+    download_file_with_progress(&installer_url, &installer_path, |p| {
+        progress("Downloading Forge installer...".to_string(), 5 + (p / 3));
+    })
+    .await?;
+
+    progress("Running Forge installer...".to_string(), 40);
+
+    let output = Command::new("java")
+        .arg("-jar")
+        .arg(&installer_path)
+        .arg("--installClient")
+        .arg(game_dir)
+        .output()
+        .await
+        .map_err(|e| AppError::ProcessError(format!("Failed to run Forge installer: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Err(AppError::ProcessError(format!(
+            "Forge installer failed: {} {}",
+            stderr, stdout
+        )));
+    }
+
+    // Cleanup
+    let _ = tokio::fs::remove_file(&installer_path).await;
+
+    progress("Verifying installation...".to_string(), 90);
+
+    // Verify installation by checking for Forge version JSON
+    let version_id = format!("{}-forge-{}", mc_version, loader_version);
+    let version_json = game_dir
+        .join("versions")
+        .join(&version_id)
+        .join(format!("{}.json", version_id));
+
+    if !version_json.exists() {
+        return Err(AppError::InstallationError(
+            format!("Forge installation verification failed - version JSON not found at {:?}", version_json),
+        ));
+    }
+
+    progress("Installation complete".to_string(), 100);
+
+    Ok(())
+}
+
+/// Install NeoForge loader to a game directory
+pub async fn install_neoforge(
+    game_dir: &Path,
+    _mc_version: &str, // NeoForge versions are standalone, don't need MC version
+    loader_version: &str,
+    progress: impl Fn(String, u32),
+) -> Result<(), AppError> {
+    progress("Preparing installation...".to_string(), 0);
+
+    // Ensure game directory exists
+    tokio::fs::create_dir_all(game_dir)
+        .await
+        .map_err(|e| AppError::IoError(e))?;
+
+    // Create launcher_profiles.json if it doesn't exist (required by NeoForge installer)
+    ensure_launcher_profiles(game_dir).await?;
+
+    progress("Downloading NeoForge installer...".to_string(), 5);
+
+    // NeoForge installer URL format: neoforge-{version}-installer.jar
+    let installer_url = format!(
+        "{}/{}/neoforge-{}-installer.jar",
+        NEOFORGE_MAVEN_URL, loader_version, loader_version
+    );
+
+    let installer_path = std::env::temp_dir().join(format!(
+        "neoforge-installer-{}.jar",
+        loader_version
+    ));
+
+    download_file_with_progress(&installer_url, &installer_path, |p| {
+        progress("Downloading NeoForge installer...".to_string(), 5 + (p / 3));
+    })
+    .await?;
+
+    progress("Running NeoForge installer...".to_string(), 40);
+
+    let output = Command::new("java")
+        .arg("-jar")
+        .arg(&installer_path)
+        .arg("--installClient")
+        .arg(game_dir)
+        .output()
+        .await
+        .map_err(|e| AppError::ProcessError(format!("Failed to run NeoForge installer: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Err(AppError::ProcessError(format!(
+            "NeoForge installer failed: {} {}",
+            stderr, stdout
+        )));
+    }
+
+    // Cleanup
+    let _ = tokio::fs::remove_file(&installer_path).await;
+
+    progress("Verifying installation...".to_string(), 90);
+
+    // Verify installation - NeoForge version format: neoforge-{version}
+    let version_id = format!("neoforge-{}", loader_version);
+    let version_json = game_dir
+        .join("versions")
+        .join(&version_id)
+        .join(format!("{}.json", version_id));
+
+    if !version_json.exists() {
+        return Err(AppError::InstallationError(
+            format!("NeoForge installation verification failed - version JSON not found at {:?}", version_json),
+        ));
+    }
+
+    progress("Installation complete".to_string(), 100);
+
+    Ok(())
+}
+
+/// Install LiteLoader (legacy loader)
+pub async fn install_liteloader(
+    game_dir: &Path,
+    mc_version: &str,
+    loader_version: &str,
+    progress: impl Fn(String, u32),
+) -> Result<(), AppError> {
+    progress("Downloading LiteLoader...".to_string(), 0);
+
+    // LiteLoader is a simple JAR that goes into mods/ directory
+    let liteloader_url = format!(
+        "http://dl.liteloader.com/versions/{}-{}.jar",
+        mc_version, loader_version
+    );
+
+    let mods_dir = game_dir.join("mods");
+    let liteloader_path = mods_dir.join(format!("liteloader-{}.jar", loader_version));
+
+    download_file_with_progress(&liteloader_url, &liteloader_path, |p| {
+        progress("Downloading LiteLoader...".to_string(), p);
+    })
+    .await?;
+
+    progress("Installation complete".to_string(), 100);
+
+    Ok(())
+}
+
+/// Install a mod loader to a game directory
+pub async fn install_loader(
+    game_dir: &Path,
+    loader_type: LoaderType,
+    mc_version: &str,
+    loader_version: &str,
+    progress: impl Fn(String, u32),
+) -> Result<(), AppError> {
+    match loader_type {
+        LoaderType::Fabric => install_fabric(game_dir, mc_version, loader_version, progress).await,
+        LoaderType::Quilt => install_quilt(game_dir, mc_version, loader_version, progress).await,
+        LoaderType::Forge => install_forge(game_dir, mc_version, loader_version, progress).await,
+        LoaderType::NeoForge => install_neoforge(game_dir, mc_version, loader_version, progress).await,
+        LoaderType::LiteLoader => install_liteloader(game_dir, mc_version, loader_version, progress).await,
+        LoaderType::Vanilla => Err(AppError::InvalidInput(
+            "Cannot install Vanilla loader (it's the default)".to_string(),
+        )),
+    }
+}
+
+/// Check if a loader is installed for a game directory
+pub fn check_loader_installed(
+    game_dir: &Path,
+    loader_type: LoaderType,
+    mc_version: &str,
+    loader_version: &str,
+) -> Result<bool, AppError> {
+    match loader_type {
+        LoaderType::Fabric => Ok(game_dir.join(".fabric").exists()),
+        LoaderType::Quilt => Ok(game_dir.join(".quilt").exists()),
+        LoaderType::Forge => {
+            let version_dir = format!("{}-{}", mc_version, loader_version);
+            let version_json = game_dir
+                .join("versions")
+                .join(&version_dir)
+                .join(format!("{}.json", mc_version));
+            Ok(version_json.exists())
+        }
+        LoaderType::NeoForge => {
+            let version_dir = format!("{}-{}", mc_version, loader_version);
+            let version_json = game_dir
+                .join("versions")
+                .join(&version_dir)
+                .join(format!("{}.json", mc_version));
+            Ok(version_json.exists())
+        }
+        LoaderType::LiteLoader => {
+            let liteloader_jar = game_dir.join("mods").join(format!("liteloader-{}.jar", loader_version));
+            Ok(liteloader_jar.exists())
+        }
+        LoaderType::Vanilla => Ok(true),
+    }
+}

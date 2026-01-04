@@ -24,6 +24,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             // Settings commands
@@ -53,6 +54,8 @@ pub fn run() {
             commands::instance::update_instance,
             commands::instance::delete_instance,
             commands::instance::duplicate_instance,
+            commands::instance::open_instance_folder,
+            commands::instance::export_instance,
             // Minecraft commands
             commands::minecraft::fetch_version_manifest,
             commands::minecraft::get_versions,
@@ -62,6 +65,40 @@ pub fn run() {
             commands::launch::launch_instance,
             commands::launch::is_instance_running,
             commands::launch::get_running_instances,
+            // Loader commands
+            commands::loader::get_loader_versions,
+            commands::loader::install_loader,
+            commands::loader::check_loader_installed,
+            // Modpack commands
+            commands::modpack::search_modpacks,
+            commands::modpack::get_modpack,
+            commands::modpack::get_modpack_versions,
+            commands::modpack::install_modpack,
+            commands::modpack::import_modpack_file,
+            // Content commands
+            commands::content::search_content,
+            commands::content::get_content,
+            commands::content::get_content_versions,
+            commands::content::get_content_version,
+            commands::content::install_content,
+            commands::content::resolve_content_dependencies,
+            commands::content::install_content_with_dependencies,
+            commands::content::scan_installed_content,
+            commands::content::uninstall_content_by_filename,
+            commands::content::disable_content,
+            commands::content::enable_content,
+            // Update commands
+            commands::update::check_modpack_update,
+            commands::update::check_content_updates,
+            commands::update::preview_version_migration,
+            commands::update::update_instance_content,
+            commands::update::migrate_instance_version,
+            commands::update::get_content_manifest,
+            // New update system commands
+            commands::update::check_modpack_instance_updates,
+            commands::update::execute_modpack_update,
+            commands::update::check_instance_updates,
+            commands::update::execute_instance_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
