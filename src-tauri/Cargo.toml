@@ -20,11 +20,12 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # HTTP client
-reqwest = { version = "0.12", features = ["json", "rustls-tls", "multipart"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "multipart", "stream"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -41,8 +42,9 @@ chrono = { version = "0.4", features = ["serde"] }
 # Error handling
 thiserror = "2"
 
-# SHA1 hashing for file verification
+# Hashing for file verification
 sha1 = "0.10"
+sha2 = "0.10"
 
 # Async utilities
 futures = "0.3"
@@ -55,4 +57,13 @@ dirs = "5"
 
 # Thread-safe state
 parking_lot = "0.12"
+
+# URL encoding
+urlencoding = "2"
+
+# Parallel processing
+rayon = "1.10"
+
+# Murmur2 hashing for CurseForge fingerprinting
+murmur2 = "0.1"
 

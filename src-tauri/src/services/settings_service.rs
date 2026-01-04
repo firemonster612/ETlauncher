@@ -108,6 +108,10 @@ fn migrate_old_settings(old: &serde_json::Value) -> AppSettings {
                 _ => None,
             })
             .unwrap_or_default(),
+        curseforge_api_key: old.get("curseforge_api_key")
+            .or_else(|| old.get("curseforgeApiKey"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
     }
 }
 
@@ -142,6 +146,7 @@ pub fn update_settings(
         show_snapshots: updates.show_snapshots.unwrap_or(current.show_snapshots),
         show_old_versions: updates.show_old_versions.unwrap_or(current.show_old_versions),
         theme: updates.theme.unwrap_or_else(|| current.theme.clone()),
+        curseforge_api_key: updates.curseforge_api_key.or_else(|| current.curseforge_api_key.clone()),
     }
 }
 

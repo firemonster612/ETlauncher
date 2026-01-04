@@ -47,6 +47,41 @@ pub enum AppError {
     #[error("Game crashed: {0}")]
     GameCrashed(String),
 
+    // Loader errors
+    #[error("Installation error: {0}")]
+    InstallationError(String),
+
+    #[error("Loader not installed: {0}")]
+    LoaderNotInstalled(String),
+
+    #[error("Process error: {0}")]
+    ProcessError(String),
+
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
+    #[error("Not implemented: {0}")]
+    NotImplemented(String),
+
+    // Modpack/Content errors
+    #[error("API error: {0}")]
+    ApiError(String),
+
+    #[error("Modpack not found: {0}")]
+    ModpackNotFound(String),
+
+    #[error("Content not found: {0}")]
+    ContentNotFound(String),
+
+    #[error("Version not compatible: {0}")]
+    VersionNotCompatible(String),
+
+    #[error("Dependency resolution failed: {0}")]
+    DependencyError(String),
+
+    #[error("API key required: {0}")]
+    ApiKeyRequired(String),
+
     // Settings errors
     #[error("Settings error: {0}")]
     SettingsError(String),
@@ -101,6 +136,17 @@ impl From<AppError> for CommandError {
             AppError::ZipError(_) => "ZIP_ERROR",
             AppError::KeyringError(_) => "KEYRING_ERROR",
             AppError::Internal(_) => "INTERNAL_ERROR",
+            AppError::InstallationError(_) => "INSTALLATION_ERROR",
+            AppError::LoaderNotInstalled(_) => "LOADER_NOT_INSTALLED",
+            AppError::ProcessError(_) => "PROCESS_ERROR",
+            AppError::InvalidInput(_) => "INVALID_INPUT",
+            AppError::NotImplemented(_) => "NOT_IMPLEMENTED",
+            AppError::ApiError(_) => "API_ERROR",
+            AppError::ModpackNotFound(_) => "MODPACK_NOT_FOUND",
+            AppError::ContentNotFound(_) => "CONTENT_NOT_FOUND",
+            AppError::VersionNotCompatible(_) => "VERSION_NOT_COMPATIBLE",
+            AppError::DependencyError(_) => "DEPENDENCY_ERROR",
+            AppError::ApiKeyRequired(_) => "API_KEY_REQUIRED",
         };
 
         CommandError {

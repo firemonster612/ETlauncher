@@ -35,6 +35,9 @@ pub struct AppSettings {
     pub show_old_versions: bool,
     /// UI theme
     pub theme: Theme,
+    /// CurseForge API key for accessing CurseForge content
+    #[serde(default)]
+    pub curseforge_api_key: Option<String>,
 }
 
 impl Default for AppSettings {
@@ -50,6 +53,7 @@ impl Default for AppSettings {
             show_snapshots: false,
             show_old_versions: false,
             theme: Theme::Dark,
+            curseforge_api_key: None,
         }
     }
 }
@@ -68,4 +72,5 @@ pub struct UpdateSettingsRequest {
     pub show_snapshots: Option<bool>,
     pub show_old_versions: Option<bool>,
     pub theme: Option<Theme>,
+    pub curseforge_api_key: Option<String>,
 }

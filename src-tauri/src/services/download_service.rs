@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use crate::models::instance::DownloadProgress;
+use crate::models::instance::{DownloadProgress, LoaderType};
 use crate::models::minecraft::{
     ArgumentValue, AssetIndex, Library, Rule, StringOrArray, VersionEntry, VersionInfo,
     VersionManifest,
@@ -85,6 +85,114 @@ pub async fn get_version_info(version_id: &str) -> Result<VersionInfo, AppError>
     Ok(info)
 }
 
+/// Get the loader version ID string for a given loader type
+pub fn get_loader_version_id(
+    loader_type: &LoaderType,
+    loader_version: &str,
+    mc_version: &str,
+) -> Option<String> {
+    match loader_type {
+        LoaderType::Vanilla => None,
+        LoaderType::Fabric => Some(format!("fabric-loader-{}-{}", loader_version, mc_version)),
+        LoaderType::Quilt => Some(format!("quilt-loader-{}-{}", loader_version, mc_version)),
+        LoaderType::Forge => Some(format!("{}-forge-{}", mc_version, loader_version)),
+        LoaderType::NeoForge => Some(format!("neoforge-{}", loader_version)),
+        LoaderType::LiteLoader => Some(format!("liteloader-{}", loader_version)),
+    }
+}
+
+/// Load a loader's version JSON from the game directory
+pub fn load_loader_version_info(
+    game_dir: &std::path::Path,
+    loader_version_id: &str,
+) -> Result<VersionInfo, AppError> {
+    let version_json_path = game_dir
+        .join("versions")
+        .join(loader_version_id)
+        .join(format!("{}.json", loader_version_id));
+
+    if !version_json_path.exists() {
+        return Err(AppError::LoaderNotInstalled(format!(
+            "Loader version JSON not found: {:?}",
+            version_json_path
+        )));
+    }
+
+    let content = fs::read_to_string(&version_json_path)?;
+    let info: VersionInfo = serde_json::from_str(&content)?;
+    Ok(info)
+}
+
+/// Merge a loader version with its parent (vanilla) version
+/// The loader version overrides main_class and adds its libraries
+pub fn merge_version_info(loader_info: VersionInfo, parent_info: VersionInfo) -> VersionInfo {
+    VersionInfo {
+        // Use loader's ID
+        id: loader_info.id,
+        // Use loader's main class (this is the key part!)
+        main_class: loader_info.main_class,
+        // Merge arguments - loader args come first, then parent
+        minecraft_arguments: loader_info.minecraft_arguments.or(parent_info.minecraft_arguments),
+        arguments: merge_arguments(loader_info.arguments, parent_info.arguments),
+        // Loader libraries come first (they take precedence), then parent libraries
+        libraries: [loader_info.libraries, parent_info.libraries].concat(),
+        // Use parent's asset info (loader versions don't have these)
+        asset_index: loader_info.asset_index.or(parent_info.asset_index),
+        downloads: loader_info.downloads.or(parent_info.downloads),
+        java_version: loader_info.java_version.or(parent_info.java_version),
+        version_type: loader_info.version_type.or(parent_info.version_type),
+        assets: loader_info.assets.or(parent_info.assets),
+        inherits_from: None, // Merged version doesn't inherit from anything
+    }
+}
+
+/// Merge arguments from loader and parent versions
+fn merge_arguments(
+    loader_args: Option<crate::models::minecraft::Arguments>,
+    parent_args: Option<crate::models::minecraft::Arguments>,
+) -> Option<crate::models::minecraft::Arguments> {
+    match (loader_args, parent_args) {
+        (Some(loader), Some(parent)) => Some(crate::models::minecraft::Arguments {
+            game: [loader.game, parent.game].concat(),
+            jvm: [loader.jvm, parent.jvm].concat(),
+        }),
+        (Some(loader), None) => Some(loader),
+        (None, Some(parent)) => Some(parent),
+        (None, None) => None,
+    }
+}
+
+/// Get version info with loader support - merges loader version if applicable
+pub async fn get_version_info_with_loader(
+    mc_version: &str,
+    loader_type: &LoaderType,
+    loader_version: Option<&str>,
+    game_dir: &std::path::Path,
+) -> Result<VersionInfo, AppError> {
+    // Always start with vanilla version
+    let vanilla_info = get_version_info(mc_version).await?;
+
+    // If no loader or vanilla, return vanilla version
+    if *loader_type == LoaderType::Vanilla {
+        return Ok(vanilla_info);
+    }
+
+    // Get loader version string
+    let loader_ver = loader_version.ok_or_else(|| {
+        AppError::LoaderNotInstalled("Loader version not specified".to_string())
+    })?;
+
+    // Get the loader version ID
+    let loader_version_id = get_loader_version_id(loader_type, loader_ver, mc_version)
+        .ok_or_else(|| AppError::LoaderNotInstalled("Unknown loader type".to_string()))?;
+
+    // Try to load the loader version JSON
+    let loader_info = load_loader_version_info(game_dir, &loader_version_id)?;
+
+    // Merge loader with vanilla
+    Ok(merge_version_info(loader_info, vanilla_info))
+}
+
 /// Download all game files for an instance
 pub async fn download_game_files(
     instance_id: &str,
@@ -92,7 +200,17 @@ pub async fn download_game_files(
     app_handle: Option<&AppHandle>,
 ) -> Result<(), AppError> {
     let version_info = get_version_info(version_id).await?;
+    download_game_files_with_version(instance_id, version_id, &version_info, app_handle).await
+}
 
+/// Download all game files for an instance using a pre-built VersionInfo
+/// This is used when we have a merged version (vanilla + loader)
+pub async fn download_game_files_with_version(
+    instance_id: &str,
+    version_id: &str,
+    version_info: &VersionInfo,
+    app_handle: Option<&AppHandle>,
+) -> Result<(), AppError> {
     // Get instances base directory from settings
     let instances_base_dir = app_handle
         .and_then(|handle| {
@@ -101,7 +219,9 @@ pub async fn download_game_files(
         })
         .unwrap_or_else(|| crate::utils::paths::get_instances_dir().to_string_lossy().to_string());
 
-    let _instance_dir = get_instance_dir_with_base(&instances_base_dir, instance_id);
+    let instance_dir = get_instance_dir_with_base(&instances_base_dir, instance_id);
+    let game_dir = instance_dir.join(".minecraft");
+    let game_libraries_dir = game_dir.join("libraries");
     let natives_dir = get_instance_natives_dir_with_base(&instances_base_dir, instance_id);
 
     // Collect all downloads needed
@@ -111,14 +231,16 @@ pub async fn download_game_files(
     let client_jar_path = get_versions_cache_dir()
         .join(version_id)
         .join(format!("{}.jar", version_id));
-    if !file_valid(&client_jar_path, &version_info.downloads.client.sha1) {
-        downloads.push(DownloadTask {
-            url: version_info.downloads.client.url.clone(),
-            path: client_jar_path,
-            sha1: version_info.downloads.client.sha1.clone(),
-            size: version_info.downloads.client.size,
-            is_native: false,
-        });
+    if let Some(ref dl) = version_info.downloads {
+        if !file_valid(&client_jar_path, &dl.client.sha1) {
+            downloads.push(DownloadTask {
+                url: dl.client.url.clone(),
+                path: client_jar_path,
+                sha1: dl.client.sha1.clone(),
+                size: dl.client.size,
+                is_native: false,
+            });
+        }
     }
 
     // 2. Libraries
@@ -127,18 +249,38 @@ pub async fn download_game_files(
             continue;
         }
 
-        // Regular library artifact
+        // Regular library artifact (Mojang-style)
         if let Some(ref lib_downloads) = library.downloads {
             if let Some(ref artifact) = lib_downloads.artifact {
-                let lib_path = get_libraries_dir().join(&artifact.path);
-                if !file_valid(&lib_path, &artifact.sha1) {
+                let cache_lib_path = get_libraries_dir().join(&artifact.path);
+                let game_lib_path = game_libraries_dir.join(&artifact.path);
+
+                // Skip if library exists in either cache or game directory (Forge installs to game dir)
+                if file_valid(&cache_lib_path, &artifact.sha1) || game_lib_path.exists() {
+                    continue;
+                }
+
+                // If artifact URL is empty, try to construct from Maven repos
+                let url = if artifact.url.is_empty() {
+                    // Try NeoForge Maven, Forge Maven, then Maven Central
+                    maven_name_to_url(&library.name, "https://maven.neoforged.net/releases/")
+                        .or_else(|| maven_name_to_url(&library.name, "https://maven.minecraftforge.net/"))
+                        .or_else(|| maven_name_to_url(&library.name, "https://repo1.maven.org/maven2"))
+                        .unwrap_or_default()
+                } else {
+                    artifact.url.clone()
+                };
+
+                if !url.is_empty() {
                     downloads.push(DownloadTask {
-                        url: artifact.url.clone(),
-                        path: lib_path,
+                        url,
+                        path: cache_lib_path,
                         sha1: artifact.sha1.clone(),
                         size: artifact.size,
                         is_native: false,
                     });
+                } else {
+                    eprintln!("WARN: No URL for library {}", library.name);
                 }
             }
 
@@ -160,11 +302,43 @@ pub async fn download_game_files(
                     }
                 }
             }
+        } else if let Some(ref base_url) = library.url {
+            // Maven-style library (used by Fabric, Quilt, Forge, etc.)
+            if let Some(path) = maven_name_to_path(&library.name) {
+                let lib_path = get_libraries_dir().join(&path);
+                if !lib_path.exists() {
+                    if let Some(url) = maven_name_to_url(&library.name, base_url) {
+                        downloads.push(DownloadTask {
+                            url,
+                            path: lib_path,
+                            sha1: String::new(), // Maven libs often don't have SHA1 in version JSON
+                            size: 0,
+                            is_native: false,
+                        });
+                    }
+                }
+            }
+        } else {
+            // Library with just a name (no downloads, no url) - try Maven Central
+            if let Some(path) = maven_name_to_path(&library.name) {
+                let lib_path = get_libraries_dir().join(&path);
+                if !lib_path.exists() {
+                    if let Some(url) = maven_name_to_url(&library.name, "https://repo1.maven.org/maven2") {
+                        downloads.push(DownloadTask {
+                            url,
+                            path: lib_path,
+                            sha1: String::new(),
+                            size: 0,
+                            is_native: false,
+                        });
+                    }
+                }
+            }
         }
     }
 
     // 3. Assets
-    let asset_index = fetch_asset_index(&version_info).await?;
+    let asset_index = fetch_asset_index(version_info).await?;
     for (_name, asset) in &asset_index.objects {
         let hash_prefix = &asset.hash[..2];
         let asset_path = get_assets_dir()
@@ -260,7 +434,7 @@ pub async fn download_game_files(
     Ok(())
 }
 
-/// Download a single file with SHA1 verification
+/// Download a single file with optional SHA1 verification
 async fn download_file(
     client: &reqwest::Client,
     url: &str,
@@ -273,7 +447,9 @@ async fn download_file(
     }
 
     // Download
-    let response = client.get(url).send().await?;
+    let response = client.get(url).send().await.map_err(|e| {
+        AppError::DownloadError(format!("Failed to fetch {}: {}", url, e))
+    })?;
     if !response.status().is_success() {
         return Err(AppError::DownloadError(format!(
             "HTTP {} for {}",
@@ -284,13 +460,15 @@ async fn download_file(
 
     let bytes = response.bytes().await?;
 
-    // Verify SHA1
-    let mut hasher = Sha1::new();
-    hasher.update(&bytes);
-    let hash = format!("{:x}", hasher.finalize());
+    // Verify SHA1 (skip if empty - used for Maven libraries)
+    if !expected_sha1.is_empty() {
+        let mut hasher = Sha1::new();
+        hasher.update(&bytes);
+        let hash = format!("{:x}", hasher.finalize());
 
-    if hash != expected_sha1 {
-        return Err(AppError::HashMismatch(path.display().to_string()));
+        if hash != expected_sha1 {
+            return Err(AppError::HashMismatch(path.display().to_string()));
+        }
     }
 
     // Write to file
@@ -311,12 +489,16 @@ fn file_valid(path: &PathBuf, expected_sha1: &str) -> bool {
 
 /// Fetch and cache the asset index
 async fn fetch_asset_index(version_info: &VersionInfo) -> Result<AssetIndex, AppError> {
+    let asset_index = version_info.asset_index.as_ref().ok_or_else(|| {
+        AppError::AssetNotFound("Version has no asset index".to_string())
+    })?;
+
     let index_path = get_assets_dir()
         .join("indexes")
-        .join(format!("{}.json", version_info.asset_index.id));
+        .join(format!("{}.json", asset_index.id));
 
     // Use cached version if valid
-    if file_valid(&index_path, &version_info.asset_index.sha1) {
+    if file_valid(&index_path, &asset_index.sha1) {
         let content = fs::read_to_string(&index_path)?;
         let index: AssetIndex = serde_json::from_str(&content)?;
         return Ok(index);
@@ -324,7 +506,7 @@ async fn fetch_asset_index(version_info: &VersionInfo) -> Result<AssetIndex, App
 
     // Fetch from URL
     let client = reqwest::Client::new();
-    let response = client.get(&version_info.asset_index.url).send().await?;
+    let response = client.get(&asset_index.url).send().await?;
     let content = response.text().await?;
 
     // Parse and cache
@@ -432,8 +614,10 @@ fn extract_natives(jar_path: &PathBuf, natives_dir: &PathBuf) -> Result<(), AppE
 }
 
 /// Get the classpath for launching
-pub fn get_classpath(version_info: &VersionInfo, version_id: &str) -> Vec<PathBuf> {
+/// game_dir is the instance's .minecraft directory (for Forge-installed libraries)
+pub fn get_classpath(version_info: &VersionInfo, version_id: &str, game_dir: Option<&std::path::Path>) -> Vec<PathBuf> {
     let mut classpath = Vec::new();
+    let game_libraries_dir = game_dir.map(|d| d.join("libraries"));
 
     // Add libraries
     for library in &version_info.libraries {
@@ -441,10 +625,40 @@ pub fn get_classpath(version_info: &VersionInfo, version_id: &str) -> Vec<PathBu
             continue;
         }
 
+        // Try standard downloads.artifact first
         if let Some(ref downloads) = library.downloads {
             if let Some(ref artifact) = downloads.artifact {
-                classpath.push(get_libraries_dir().join(&artifact.path));
+                let cache_path = get_libraries_dir().join(&artifact.path);
+
+                // Check game directory first (Forge installs here), then cache
+                if let Some(ref game_libs) = game_libraries_dir {
+                    let game_path = game_libs.join(&artifact.path);
+                    if game_path.exists() {
+                        classpath.push(game_path);
+                        continue;
+                    }
+                }
+
+                classpath.push(cache_path);
+                continue;
             }
+        }
+
+        // Fall back to Maven-style library (used by Fabric, Quilt, etc.)
+        // Convert Maven coordinates (group:artifact:version) to path
+        if let Some(path) = maven_name_to_path(&library.name) {
+            let cache_path = get_libraries_dir().join(&path);
+
+            // Check game directory first (for loader-installed libs), then cache
+            if let Some(ref game_libs) = game_libraries_dir {
+                let game_path = game_libs.join(&path);
+                if game_path.exists() {
+                    classpath.push(game_path);
+                    continue;
+                }
+            }
+
+            classpath.push(cache_path);
         }
     }
 
@@ -456,6 +670,49 @@ pub fn get_classpath(version_info: &VersionInfo, version_id: &str) -> Vec<PathBu
     );
 
     classpath
+}
+
+/// Convert Maven coordinates (group:artifact:version) to file path
+/// e.g., "net.fabricmc:fabric-loader:0.15.0" -> "net/fabricmc/fabric-loader/0.15.0/fabric-loader-0.15.0.jar"
+fn maven_name_to_path(name: &str) -> Option<String> {
+    let parts: Vec<&str> = name.split(':').collect();
+    if parts.len() < 3 {
+        return None;
+    }
+
+    let group = parts[0].replace('.', "/");
+    let artifact = parts[1];
+    let version = parts[2];
+
+    // Handle classifier if present (e.g., "group:artifact:version:classifier")
+    let classifier = if parts.len() > 3 { Some(parts[3]) } else { None };
+
+    let filename = if let Some(c) = classifier {
+        format!("{}-{}-{}.jar", artifact, version, c)
+    } else {
+        format!("{}-{}.jar", artifact, version)
+    };
+
+    Some(format!("{}/{}/{}/{}", group, artifact, version, filename))
+}
+
+/// Convert Maven coordinates to download URL
+fn maven_name_to_url(name: &str, base_url: &str) -> Option<String> {
+    maven_name_to_path(name).map(|path| {
+        let base = base_url.trim_end_matches('/');
+        // URL-encode special characters in path components (like + in versions)
+        let encoded_path = path
+            .split('/')
+            .map(|segment| {
+                segment
+                    .replace('%', "%25")
+                    .replace('+', "%2B")
+                    .replace(' ', "%20")
+            })
+            .collect::<Vec<_>>()
+            .join("/");
+        format!("{}/{}", base, encoded_path)
+    })
 }
 
 /// Get version entries filtered by type
