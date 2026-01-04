@@ -15,12 +15,21 @@ const FTB_API_BASE: &str = "https://api.modpacks.ch/public";
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct FtbPackSearchResponse {
+    #[serde(default)]
     pub packs: Vec<u64>,
     #[serde(default)]
     pub curseforge: Vec<u64>,
+    #[serde(default)]
     pub total: u64,
+    #[serde(default)]
     pub limit: u32,
+    #[serde(default)]
     pub refreshed: u64,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(rename = "type")]
+    #[serde(default)]
+    pub response_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -171,28 +180,34 @@ pub async fn search_modpacks(
     let page = params.page.unwrap_or(0);
     let page_size = params.page_size.unwrap_or(20).min(50);
 
-    // FTB search endpoint
+    // FTB search endpoint - use limit of 100 to get more packs
+    // Note: FTB API requires at least 3 characters for search, otherwise returns empty
     let url = if let Some(ref query) = params.query {
-        if !query.is_empty() {
-            format!("{}/modpack/search/8?term={}", FTB_API_BASE, urlencoding::encode(query))
+        if query.len() >= 3 {
+            format!("{}/modpack/search/100?term={}", FTB_API_BASE, urlencoding::encode(query))
         } else {
-            format!("{}/modpack/popular/installs/8", FTB_API_BASE)
+            format!("{}/modpack/popular/installs/100", FTB_API_BASE)
         }
     } else {
-        format!("{}/modpack/popular/installs/8", FTB_API_BASE)
+        format!("{}/modpack/popular/installs/100", FTB_API_BASE)
     };
 
-    let search_response: FtbPackSearchResponse = client
-        .get(&url)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
+    eprintln!("[ftb] Search URL: {}", url);
+    let search_response: FtbPackSearchResponse = match tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        client.get(&url).send()
+    ).await {
+        Ok(Ok(response)) => {
+            let resp: FtbPackSearchResponse = response.error_for_status()?.json().await?;
+            eprintln!("[ftb] Search response: {} packs, {} curseforge, total={}", resp.packs.len(), resp.curseforge.len(), resp.total);
+            resp
+        },
+        Ok(Err(e)) => return Err(AppError::ApiError(format!("FTB search request failed: {}", e))),
+        Err(_) => return Err(AppError::ApiError("FTB search request timed out".to_string())),
+    };
 
-    // Fetch individual pack details for the visible page
+    // Fetch individual pack details for the visible page in parallel
     let start = (page * page_size) as usize;
-    let end = ((page + 1) * page_size) as usize;
     let pack_ids: Vec<_> = search_response
         .packs
         .into_iter()
@@ -200,22 +215,34 @@ pub async fn search_modpacks(
         .take(page_size as usize)
         .collect();
 
-    let mut modpacks = Vec::new();
-    for pack_id in pack_ids {
-        if let Ok(pack) = get_pack_details(client, pack_id).await {
-            // Apply filters
-            if let Some(ref mc_version) = params.mc_version {
-                // Check if any version matches the MC version
-                // We'd need to fetch version details, but for now just include all
+    // Fetch all pack details in parallel with timeout
+    eprintln!("[ftb] Fetching {} pack details in parallel", pack_ids.len());
+    let futures: Vec<_> = pack_ids
+        .into_iter()
+        .map(|pack_id| {
+            let client = client.clone();
+            async move {
+                match tokio::time::timeout(
+                    std::time::Duration::from_secs(10),
+                    get_pack_details(&client, pack_id)
+                ).await {
+                    Ok(Ok(pack)) => Some(pack),
+                    Ok(Err(e)) => {
+                        eprintln!("[ftb] Failed to fetch pack {}: {}", pack_id, e);
+                        None
+                    }
+                    Err(_) => {
+                        eprintln!("[ftb] Timeout fetching pack {}", pack_id);
+                        None
+                    }
+                }
             }
+        })
+        .collect();
 
-            if let Some(ref loader) = params.loader {
-                // Similar - we'd need version details to filter by loader
-            }
-
-            modpacks.push(pack);
-        }
-    }
+    let results = futures::future::join_all(futures).await;
+    let modpacks: Vec<Modpack> = results.into_iter().flatten().collect();
+    eprintln!("[ftb] Got {} modpacks", modpacks.len());
 
     Ok(ModpackSearchResult {
         modpacks,
@@ -278,29 +305,67 @@ pub async fn get_modpack_versions(
 ) -> Result<Vec<ModpackVersion>, AppError> {
     let id: u64 = pack_id.parse().map_err(|_| AppError::ModpackNotFound(pack_id.to_string()))?;
 
-    // First get pack info to get version IDs
+    // First get pack info to get version IDs with timeout
     let url = format!("{}/modpack/{}", FTB_API_BASE, id);
-    let pack: FtbPack = client
-        .get(&url)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
+    let pack: FtbPack = match tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        client.get(&url).send()
+    ).await {
+        Ok(Ok(response)) => response.error_for_status()?.json().await?,
+        Ok(Err(e)) => return Err(AppError::ApiError(format!("FTB API request failed: {}", e))),
+        Err(_) => return Err(AppError::ApiError("FTB API request timed out".to_string())),
+    };
 
-    // Fetch details for each version
-    let mut versions = Vec::new();
-    for version_info in pack.versions.iter().take(20) {
-        if let Ok(version) = get_version_details(client, id, version_info.id).await {
-            versions.push(version);
-        }
-    }
+    // Fetch version details in parallel with timeout
+    // Reverse to get newest versions first (API returns oldest first)
+    let versions_to_fetch: Vec<_> = pack.versions.iter().rev().take(10).collect();
+
+    let futures: Vec<_> = versions_to_fetch
+        .iter()
+        .map(|version_info| {
+            let client = client.clone();
+            let pack_id = id;
+            let version_id = version_info.id;
+            let version_name = version_info.name.clone();
+
+            async move {
+                match tokio::time::timeout(
+                    std::time::Duration::from_secs(10),
+                    get_version_details(&client, pack_id, version_id)
+                ).await {
+                    Ok(Ok(version)) => Some(version),
+                    _ => {
+                        // Return a minimal version entry on failure
+                        Some(ModpackVersion {
+                            id: version_id.to_string(),
+                            name: version_name,
+                            mc_version: String::new(),
+                            loader_type: LoaderType::Vanilla,
+                            loader_version: None,
+                            changelog: None,
+                            released_at: None,
+                            downloads: None,
+                            files: vec![],
+                        })
+                    }
+                }
+            }
+        })
+        .collect();
+
+    let results = futures::future::join_all(futures).await;
+    let mut versions: Vec<ModpackVersion> = results.into_iter().flatten().collect();
+
+    // Sort newest first by released_at timestamp
+    versions.sort_by(|a, b| {
+        b.released_at.unwrap_or(0).cmp(&a.released_at.unwrap_or(0))
+    });
 
     Ok(versions)
 }
 
 /// Get version details
-async fn get_version_details(
+pub async fn get_version_details(
     client: &Client,
     pack_id: u64,
     version_id: u64,

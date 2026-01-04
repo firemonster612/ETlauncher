@@ -53,6 +53,56 @@ pub struct TechnicModpack {
     pub likes: Option<u64>,
     #[serde(default)]
     pub solder: Option<String>,
+    // For non-solder packs, this is the direct download URL
+    #[serde(rename = "platformUrl")]
+    pub platform_url: Option<String>,
+}
+
+/// Get the full modpack info including download URL
+pub async fn get_modpack_full(client: &Client, slug: &str) -> Result<TechnicModpack, AppError> {
+    let url = format!("{}/modpack/{}?build=multimc", TECHNIC_API_BASE, slug);
+
+    let pack: TechnicModpack = client
+        .get(&url)
+        .send()
+        .await?
+        .error_for_status()
+        .map_err(|e| {
+            if e.status() == Some(reqwest::StatusCode::NOT_FOUND) {
+                AppError::ModpackNotFound(slug.to_string())
+            } else {
+                AppError::ApiError(e.to_string())
+            }
+        })?
+        .json()
+        .await?;
+
+    Ok(pack)
+}
+
+/// Get Solder build info for a specific version
+pub async fn get_solder_build(
+    client: &Client,
+    solder_url: &str,
+    slug: &str,
+    build: &str,
+) -> Result<TechnicSolderBuild, AppError> {
+    let url = format!(
+        "{}/modpack/{}/{}",
+        solder_url.trim_end_matches('/'),
+        slug,
+        build
+    );
+
+    let build_info: TechnicSolderBuild = client
+        .get(&url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+
+    Ok(build_info)
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -122,15 +172,15 @@ pub async fn search_modpacks(
     let url = if let Some(ref query) = params.query {
         if !query.is_empty() {
             format!(
-                "{}/search?build=modpacks&q={}",
+                "{}/search?build=multimc&q={}",
                 TECHNIC_API_BASE,
                 urlencoding::encode(query)
             )
         } else {
-            format!("{}/trending?build=modpacks", TECHNIC_API_BASE)
+            format!("{}/trending?build=multimc", TECHNIC_API_BASE)
         }
     } else {
-        format!("{}/trending?build=modpacks", TECHNIC_API_BASE)
+        format!("{}/trending?build=multimc", TECHNIC_API_BASE)
     };
 
     let response: TechnicSearchResponse = client
@@ -142,6 +192,8 @@ pub async fn search_modpacks(
         .await?;
 
     // Apply pagination manually since Technic returns all results
+    // Note: Technic API returns null for total, so use array length
+    let total_count = response.modpacks.len() as u64;
     let start = (page * page_size) as usize;
     let modpacks: Vec<Modpack> = response
         .modpacks
@@ -171,7 +223,7 @@ pub async fn search_modpacks(
 
     Ok(ModpackSearchResult {
         modpacks,
-        total_count: response.total,
+        total_count,
         page,
         page_size,
     })
@@ -179,7 +231,7 @@ pub async fn search_modpacks(
 
 /// Get a modpack by slug
 pub async fn get_modpack(client: &Client, slug: &str) -> Result<Modpack, AppError> {
-    let url = format!("{}/modpack/{}", TECHNIC_API_BASE, slug);
+    let url = format!("{}/modpack/{}?build=multimc", TECHNIC_API_BASE, slug);
 
     let pack: TechnicModpack = client
         .get(&url)
@@ -227,12 +279,13 @@ pub async fn get_modpack(client: &Client, slug: &str) -> Result<Modpack, AppErro
 
 /// Get versions for a modpack
 /// Note: Technic packs without Solder only have one version (the current one)
+/// If Solder API fails, falls back to a single "Latest" version
 pub async fn get_modpack_versions(
     client: &Client,
     slug: &str,
 ) -> Result<Vec<ModpackVersion>, AppError> {
-    // First check if pack uses Solder API
-    let pack_url = format!("{}/modpack/{}", TECHNIC_API_BASE, slug);
+    // First get pack info
+    let pack_url = format!("{}/modpack/{}?build=multimc", TECHNIC_API_BASE, slug);
     let pack: TechnicModpack = client
         .get(&pack_url)
         .send()
@@ -241,29 +294,37 @@ pub async fn get_modpack_versions(
         .json()
         .await?;
 
-    if let Some(solder_url) = pack.solder {
-        // Solder API provides multiple versions
-        get_solder_versions(client, &solder_url, slug).await
-    } else {
-        // Non-Solder packs only have the current version
-        let loader_type = if pack.forge.is_some() {
-            LoaderType::Forge
-        } else {
-            LoaderType::Vanilla
-        };
-
-        Ok(vec![ModpackVersion {
-            id: "latest".to_string(),
-            name: "Latest".to_string(),
-            mc_version: pack.minecraft.unwrap_or_default(),
-            loader_type,
-            loader_version: pack.forge,
-            changelog: None,
-            released_at: None,
-            downloads: pack.runs,
-            files: vec![], // Files come from the pack itself when installing
-        }])
+    // Try Solder if available, but fall back to "Latest" on failure
+    if let Some(ref solder_url) = pack.solder {
+        match get_solder_versions(client, solder_url, slug).await {
+            Ok(versions) if !versions.is_empty() => return Ok(versions),
+            Ok(_) => {
+                eprintln!("[technic] Solder returned empty for {}, using Latest fallback", slug);
+            }
+            Err(e) => {
+                eprintln!("[technic] Solder failed for {}: {}, using Latest fallback", slug, e);
+            }
+        }
     }
+
+    // Non-Solder fallback: single "Latest" version
+    let loader_type = if pack.forge.is_some() {
+        LoaderType::Forge
+    } else {
+        LoaderType::Vanilla
+    };
+
+    Ok(vec![ModpackVersion {
+        id: "latest".to_string(),
+        name: "Latest".to_string(),
+        mc_version: pack.minecraft.unwrap_or_default(),
+        loader_type,
+        loader_version: pack.forge.clone(),
+        changelog: None,
+        released_at: None,
+        downloads: pack.runs,
+        files: vec![], // Files come from the pack itself when installing
+    }])
 }
 
 /// Get versions from Solder API
@@ -274,79 +335,99 @@ async fn get_solder_versions(
 ) -> Result<Vec<ModpackVersion>, AppError> {
     let url = format!("{}/modpack/{}", solder_url.trim_end_matches('/'), slug);
 
-    let solder_pack: TechnicSolderModpack = match client
-        .get(&url)
-        .send()
-        .await?
-        .error_for_status()
-    {
-        Ok(response) => response.json().await?,
-        Err(_) => return Ok(vec![]), // Solder API might not be accessible
+    // Use a short timeout for the Solder API
+    let solder_pack: TechnicSolderModpack = match tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        client.get(&url).send()
+    ).await {
+        Ok(Ok(response)) => match response.error_for_status() {
+            Ok(r) => match r.json().await {
+                Ok(pack) => pack,
+                Err(_) => return Ok(vec![]),
+            },
+            Err(_) => return Ok(vec![]),
+        },
+        Ok(Err(_)) | Err(_) => return Ok(vec![]), // Timeout or error - return empty
     };
 
-    // Fetch build details for recent versions
-    let mut versions = Vec::new();
-    for build in solder_pack.builds.iter().take(20) {
-        let build_url = format!(
-            "{}/modpack/{}/{}",
-            solder_url.trim_end_matches('/'),
-            slug,
-            build
-        );
+    // Fetch build details in parallel with timeout
+    // Reverse to get newest versions first
+    let builds_to_fetch: Vec<_> = solder_pack.builds.iter().rev().take(10).collect();
 
-        if let Ok(response) = client.get(&build_url).send().await {
-            if let Ok(build_info) = response.json::<TechnicSolderBuild>().await {
-                let loader_type = if build_info.forge.is_some() {
-                    LoaderType::Forge
-                } else {
-                    LoaderType::Vanilla
-                };
+    let futures: Vec<_> = builds_to_fetch
+        .iter()
+        .map(|build| {
+            let build_url = format!(
+                "{}/modpack/{}/{}",
+                solder_url.trim_end_matches('/'),
+                slug,
+                build
+            );
+            let client = client.clone();
+            let build_name = (*build).clone();
 
-                let files: Vec<ModpackFile> = build_info
-                    .mods
-                    .into_iter()
-                    .map(|m| ModpackFile {
-                        url: m.url,
-                        hash: Some(m.md5),
-                        hash_algorithm: Some("md5".to_string()),
-                        size: m.filesize.unwrap_or(0),
-                        path: format!("mods/{}-{}.zip", m.name, m.version),
-                        required: true,
-                    })
-                    .collect();
+            async move {
+                let result = tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    client.get(&build_url).send()
+                ).await;
 
-                versions.push(ModpackVersion {
-                    id: build.clone(),
-                    name: build.clone(),
-                    mc_version: build_info.minecraft,
-                    loader_type,
-                    loader_version: build_info.forge,
+                match result {
+                    Ok(Ok(response)) => {
+                        if let Ok(build_info) = response.json::<TechnicSolderBuild>().await {
+                            let loader_type = if build_info.forge.is_some() {
+                                LoaderType::Forge
+                            } else {
+                                LoaderType::Vanilla
+                            };
+
+                            let files: Vec<ModpackFile> = build_info
+                                .mods
+                                .into_iter()
+                                .map(|m| ModpackFile {
+                                    url: m.url,
+                                    hash: Some(m.md5),
+                                    hash_algorithm: Some("md5".to_string()),
+                                    size: m.filesize.unwrap_or(0),
+                                    path: format!("mods/{}-{}.zip", m.name, m.version),
+                                    required: true,
+                                })
+                                .collect();
+
+                            return Some(ModpackVersion {
+                                id: build_name.clone(),
+                                name: build_name,
+                                mc_version: build_info.minecraft,
+                                loader_type,
+                                loader_version: build_info.forge,
+                                changelog: None,
+                                released_at: None,
+                                downloads: None,
+                                files,
+                            });
+                        }
+                    }
+                    _ => {}
+                }
+
+                // Return a minimal version entry on failure
+                Some(ModpackVersion {
+                    id: build_name.clone(),
+                    name: build_name,
+                    mc_version: String::new(),
+                    loader_type: LoaderType::Vanilla,
+                    loader_version: None,
                     changelog: None,
                     released_at: None,
                     downloads: None,
-                    files,
-                });
+                    files: vec![],
+                })
             }
-        }
-    }
+        })
+        .collect();
 
-    // Mark recommended/latest versions
-    if versions.is_empty() && !solder_pack.builds.is_empty() {
-        // Fallback: create version entries without details
-        for build in solder_pack.builds.iter().take(10) {
-            versions.push(ModpackVersion {
-                id: build.clone(),
-                name: build.clone(),
-                mc_version: String::new(),
-                loader_type: LoaderType::Vanilla,
-                loader_version: None,
-                changelog: None,
-                released_at: None,
-                downloads: None,
-                files: vec![],
-            });
-        }
-    }
+    let results = futures::future::join_all(futures).await;
+    let versions: Vec<ModpackVersion> = results.into_iter().flatten().collect();
 
     Ok(versions)
 }

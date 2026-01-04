@@ -45,6 +45,7 @@ thiserror = "2"
 # Hashing for file verification
 sha1 = "0.10"
 sha2 = "0.10"
+md5 = "0.7"
 
 # Async utilities
 futures = "0.3"

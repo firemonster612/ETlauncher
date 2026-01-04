@@ -10,6 +10,7 @@
     Filter,
     X,
     ChevronDown,
+    Check,
   } from "@lucide/svelte";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { Button } from "$lib/ui/button";
@@ -19,15 +20,58 @@
   import DownloadProgress from "$lib/components/DownloadProgress.svelte";
   import type { Modpack, ModpackPlatform, ModpackSortBy, LoaderType, ModpackInstallProgress } from "$lib/types";
 
+  // Category options per platform
+  const modrinthCategories = [
+    "adventure", "challenging", "combat", "kitchen-sink", "lightweight",
+    "magic", "multiplayer", "optimization", "quests", "technology"
+  ];
+
+  const curseforgeCategories = [
+    "Adventure and RPG", "Combat / PvP", "Expert", "Exploration", "Extra Large",
+    "FTB Official Pack", "Hardcore", "Horror", "Magic", "Map Based", "Mini Game",
+    "Multiplayer", "Quests", "Sci-Fi", "Skyblock", "Small / Light", "Tech", "Vanilla+"
+  ];
+
   let searchInput = $state("");
   let showFilters = $state(false);
   let selectedModpackDetail = $state<Modpack | null>(null);
   let installProgress = $state<ModpackInstallProgress | null>(null);
+  let loadMoreSentinel: HTMLDivElement | undefined = $state();
+  let selectedCategories = $state<string[]>([]);
+  let categoriesOpen = $state(false);
+
+  // Get available categories based on platform
+  let availableCategories = $derived(
+    modpacksStore.platform === "modrinth" ? modrinthCategories :
+    modpacksStore.platform === "curseforge" ? curseforgeCategories :
+    []
+  );
+
+  // Platforms that support category filtering
+  const platformsWithCategoryFilter = ["modrinth", "curseforge"];
+  let showCategoryFilter = $derived(modpacksStore.platform && platformsWithCategoryFilter.includes(modpacksStore.platform));
 
   onMount(() => {
     versionsStore.load();
     // Initial search
     modpacksStore.search();
+  });
+
+  // Set up infinite scroll observer when sentinel is available
+  $effect(() => {
+    if (!loadMoreSentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && modpacksStore.hasMore && !modpacksStore.isSearching) {
+          modpacksStore.loadMore();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(loadMoreSentinel);
+    return () => observer.disconnect();
   });
 
   // Debounced search on query change
@@ -41,8 +85,53 @@
     }, 300);
   }
 
+  // Platforms that support version filtering
+  const platformsWithVersionFilter = ["modrinth", "curseforge", "atlauncher"];
+  // Platforms that support loader filtering
+  const platformsWithLoaderFilter = ["modrinth", "curseforge"];
+
+  // Computed filter visibility - requires a specific platform to be selected
+  let showVersionFilter = $derived(modpacksStore.platform && platformsWithVersionFilter.includes(modpacksStore.platform));
+  let showLoaderFilter = $derived(modpacksStore.platform && platformsWithLoaderFilter.includes(modpacksStore.platform));
+
+  // Show filter button only for platforms that have at least one filter type
+  let hasAnyFilters = $derived(showVersionFilter || showLoaderFilter || (showCategoryFilter && availableCategories.length > 0));
+
   function handlePlatformChange(platform: ModpackPlatform | "all") {
     modpacksStore.setPlatform(platform === "all" ? null : platform);
+    // Clear filters that don't work on the selected platform
+    if (platform !== "all") {
+      if (!platformsWithVersionFilter.includes(platform)) {
+        modpacksStore.setMcVersion(null);
+      }
+      if (!platformsWithLoaderFilter.includes(platform)) {
+        modpacksStore.setLoader(null);
+      }
+      if (!platformsWithCategoryFilter.includes(platform)) {
+        selectedCategories = [];
+        modpacksStore.setCategory(null);
+      }
+    }
+    // Clear categories when switching platforms since they're different
+    selectedCategories = [];
+    modpacksStore.setCategory(null);
+    modpacksStore.search();
+  }
+
+  function toggleCategory(category: string) {
+    if (selectedCategories.includes(category)) {
+      selectedCategories = selectedCategories.filter(c => c !== category);
+    } else {
+      selectedCategories = [...selectedCategories, category];
+    }
+    // Send first category to backend (backend currently only supports one)
+    modpacksStore.setCategory(selectedCategories.length > 0 ? selectedCategories[0] : null);
+    modpacksStore.search();
+  }
+
+  function clearCategories() {
+    selectedCategories = [];
+    modpacksStore.setCategory(null);
     modpacksStore.search();
   }
 
@@ -64,6 +153,7 @@
   function clearFilters() {
     modpacksStore.clearFilters();
     searchInput = "";
+    selectedCategories = [];
     modpacksStore.search();
   }
 
@@ -181,21 +271,23 @@
   <!-- Header -->
   <div class="flex items-center justify-between gap-4">
     <h1 class="text-2xl">Modpacks</h1>
-    <div class="flex items-center gap-2">
-      <Button
-        variant="outline"
-        size="sm"
-        onclick={() => (showFilters = !showFilters)}
-      >
-        <Filter class="h-4 w-4 mr-2" />
-        Filters
-        {#if modpacksStore.mcVersion || modpacksStore.loader || modpacksStore.category}
-          <span class="ml-1 bg-primary text-primary-foreground text-xs px-1.5 rounded-full">
-            !
-          </span>
-        {/if}
-      </Button>
-    </div>
+    {#if hasAnyFilters}
+      <div class="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onclick={() => (showFilters = !showFilters)}
+        >
+          <Filter class="h-4 w-4 mr-2" />
+          Filters
+          {#if modpacksStore.mcVersion || modpacksStore.loader || modpacksStore.category}
+            <span class="ml-1 bg-primary text-primary-foreground text-xs px-1.5 rounded-full">
+              !
+            </span>
+          {/if}
+        </Button>
+      </div>
+    {/if}
   </div>
 
   <!-- Platform Tabs -->
@@ -241,7 +333,7 @@
   </div>
 
   <!-- Filters Panel -->
-  {#if showFilters}
+  {#if showFilters && hasAnyFilters}
     <div class="bg-card border-2 border-border p-4 space-y-4">
       <div class="flex items-center justify-between">
         <h3 class="font-semibold">Filters</h3>
@@ -251,44 +343,99 @@
         </Button>
       </div>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <label class="text-sm text-muted-foreground block mb-1">Minecraft Version</label>
-          <Select.Root
-            type="single"
-            value={modpacksStore.mcVersion || ""}
-            onValueChange={handleVersionChange}
-          >
-            <Select.Trigger class="w-full border-2 border-border bg-background">
-              {modpacksStore.mcVersion || "Any version"}
-            </Select.Trigger>
-            <Select.Content class="border-2 border-border bg-card max-h-[300px]">
-              <Select.Item value="" label="Any version">Any version</Select.Item>
-              {#each versionsStore.versions.filter((v) => v.type === "release") as version}
-                <Select.Item value={version.id} label={version.id}>{version.id}</Select.Item>
-              {/each}
-            </Select.Content>
-          </Select.Root>
+          {#if showVersionFilter}
+            <div>
+              <label class="text-sm text-muted-foreground block mb-1">Minecraft Version</label>
+              <Select.Root
+                type="single"
+                value={modpacksStore.mcVersion || ""}
+                onValueChange={handleVersionChange}
+              >
+                <Select.Trigger class="w-full border-2 border-border bg-background">
+                  {modpacksStore.mcVersion || "Any version"}
+                </Select.Trigger>
+                <Select.Content class="border-2 border-border bg-card max-h-[300px]">
+                  <Select.Item value="" label="Any version">Any version</Select.Item>
+                  {#each versionsStore.versions.filter((v) => v.type === "release") as version}
+                    <Select.Item value={version.id} label={version.id}>{version.id}</Select.Item>
+                  {/each}
+                </Select.Content>
+              </Select.Root>
+            </div>
+          {/if}
+          {#if showLoaderFilter}
+            <div>
+              <label class="text-sm text-muted-foreground block mb-1">Mod Loader</label>
+              <Select.Root
+                type="single"
+                value={modpacksStore.loader || "any"}
+                onValueChange={handleLoaderChange}
+              >
+                <Select.Trigger class="w-full border-2 border-border bg-background">
+                  {modpacksStore.loader ? modpacksStore.loader.charAt(0).toUpperCase() + modpacksStore.loader.slice(1) : "Any loader"}
+                </Select.Trigger>
+                <Select.Content class="border-2 border-border bg-card">
+                  <Select.Item value="any" label="Any loader">Any loader</Select.Item>
+                  <Select.Item value="fabric" label="Fabric">Fabric</Select.Item>
+                  <Select.Item value="forge" label="Forge">Forge</Select.Item>
+                  <Select.Item value="neoforge" label="NeoForge">NeoForge</Select.Item>
+                  <Select.Item value="quilt" label="Quilt">Quilt</Select.Item>
+                </Select.Content>
+              </Select.Root>
+            </div>
+          {/if}
+          {#if showCategoryFilter && availableCategories.length > 0}
+            <div class="relative">
+              <label class="text-sm text-muted-foreground block mb-1">Categories</label>
+              <button
+                type="button"
+                class="w-full h-9 px-3 border-2 border-border bg-background text-sm text-left flex items-center justify-between"
+                onclick={() => categoriesOpen = !categoriesOpen}
+              >
+                {#if selectedCategories.length === 0}
+                  <span class="text-muted-foreground">Any category</span>
+                {:else if selectedCategories.length === 1}
+                  <span class="capitalize">{selectedCategories[0].replace(/-/g, " ")}</span>
+                {:else}
+                  <span>{selectedCategories.length} selected</span>
+                {/if}
+                <ChevronDown class="h-4 w-4 text-muted-foreground {categoriesOpen ? 'rotate-180' : ''} transition-transform" />
+              </button>
+              {#if categoriesOpen}
+                <div class="absolute z-50 top-full left-0 right-0 mt-1 border-2 border-border bg-card max-h-[250px] overflow-y-auto shadow-lg">
+                  <div class="p-2 border-b border-border flex items-center justify-between sticky top-0 bg-card">
+                    <span class="text-sm font-medium">Categories</span>
+                    {#if selectedCategories.length > 0}
+                      <button
+                        type="button"
+                        class="text-xs text-muted-foreground hover:text-foreground"
+                        onclick={clearCategories}
+                      >
+                        Clear all
+                      </button>
+                    {/if}
+                  </div>
+                  <div class="p-2 space-y-1">
+                    {#each availableCategories as category}
+                      <button
+                        type="button"
+                        class="w-full flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-muted/50 rounded text-left"
+                        onclick={() => toggleCategory(category)}
+                      >
+                        <div class="w-4 h-4 border border-border rounded flex items-center justify-center shrink-0 {selectedCategories.includes(category) ? 'bg-primary border-primary' : ''}">
+                          {#if selectedCategories.includes(category)}
+                            <Check class="h-3 w-3 text-primary-foreground" />
+                          {/if}
+                        </div>
+                        <span class="capitalize">{category.replace(/-/g, " ")}</span>
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+            </div>
+          {/if}
         </div>
-        <div>
-          <label class="text-sm text-muted-foreground block mb-1">Mod Loader</label>
-          <Select.Root
-            type="single"
-            value={modpacksStore.loader || "any"}
-            onValueChange={handleLoaderChange}
-          >
-            <Select.Trigger class="w-full border-2 border-border bg-background">
-              {modpacksStore.loader ? modpacksStore.loader.charAt(0).toUpperCase() + modpacksStore.loader.slice(1) : "Any loader"}
-            </Select.Trigger>
-            <Select.Content class="border-2 border-border bg-card">
-              <Select.Item value="any" label="Any loader">Any loader</Select.Item>
-              <Select.Item value="fabric" label="Fabric">Fabric</Select.Item>
-              <Select.Item value="forge" label="Forge">Forge</Select.Item>
-              <Select.Item value="neoforge" label="NeoForge">NeoForge</Select.Item>
-              <Select.Item value="quilt" label="Quilt">Quilt</Select.Item>
-            </Select.Content>
-          </Select.Root>
-        </div>
-      </div>
     </div>
   {/if}
 
@@ -322,7 +469,7 @@
 
     <!-- Modpack Grid -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {#each modpacksStore.modpacks as modpack (modpack.id)}
+      {#each modpacksStore.modpacks as modpack (`${modpack.platform}-${modpack.id}`)}
         <button
           class="border-2 border-border bg-card p-4 hover:border-primary/50 transition-colors text-left cursor-pointer"
           onclick={() => handleModpackClick(modpack)}
@@ -372,23 +519,14 @@
       {/each}
     </div>
 
-    <!-- Load More -->
-    {#if modpacksStore.hasMore}
-      <div class="flex justify-center">
-        <Button
-          variant="outline"
-          onclick={() => modpacksStore.loadMore()}
-          disabled={modpacksStore.isSearching}
-        >
-          {#if modpacksStore.isSearching}
-            <Loader2 class="h-4 w-4 animate-spin mr-2" />
-          {:else}
-            <ChevronDown class="h-4 w-4 mr-2" />
-          {/if}
-          Load More
-        </Button>
-      </div>
-    {/if}
+    <!-- Infinite scroll sentinel -->
+    <div bind:this={loadMoreSentinel} class="h-4">
+      {#if modpacksStore.isSearching && modpacksStore.modpacks.length > 0}
+        <div class="flex justify-center py-4">
+          <Loader2 class="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      {/if}
+    </div>
   {/if}
 </div>
 
