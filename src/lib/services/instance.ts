@@ -33,3 +33,13 @@ export async function deleteInstance(instanceId: string, deleteFiles: boolean): 
 export async function duplicateInstance(instanceId: string, newName: string): Promise<Instance> {
   return invoke<Instance>("duplicate_instance", { instanceId, newName });
 }
+
+/** Open the game folder for an instance in the file explorer */
+export async function openInstanceFolder(instanceId: string): Promise<void> {
+  return invoke("open_instance_folder", { instanceId });
+}
+
+/** Export an instance to Modrinth .mrpack format */
+export async function exportInstance(instanceId: string, outputPath: string): Promise<string> {
+  return invoke<string>("export_instance", { instanceId, outputPath });
+}
