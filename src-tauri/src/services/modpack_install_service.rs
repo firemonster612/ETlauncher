@@ -4,7 +4,8 @@ use crate::models::{
     Instance, LoaderType, ModpackPlatform, MANIFEST_VERSION,
 };
 use crate::services::{
-    curseforge_service, instance_service, loader_service, manifest_service, modrinth_service,
+    atlauncher_service, curseforge_service, ftb_service, instance_service, loader_service,
+    manifest_service, modrinth_service, technic_service,
 };
 use crate::state::AppState;
 use crate::utils::hash::{murmur2_bytes, sha512_file};
@@ -632,16 +633,36 @@ async fn download_file_with_hash(
     path: &PathBuf,
     expected_hash: Option<&str>,
 ) -> Result<(), AppError> {
+    download_file_with_hash_algo(client, url, path, expected_hash, "sha1").await
+}
+
+async fn download_file_with_hash_algo(
+    client: &Client,
+    url: &str,
+    path: &PathBuf,
+    expected_hash: Option<&str>,
+    hash_algo: &str,
+) -> Result<(), AppError> {
     let bytes = download_bytes(client, url).await?;
 
     // Verify hash if provided
     if let Some(expected) = expected_hash {
         if !expected.is_empty() {
-            let mut hasher = Sha1::new();
-            hasher.update(&bytes);
-            let hash = format!("{:x}", hasher.finalize());
+            let hash = match hash_algo {
+                "md5" => {
+                    let digest = md5::compute(&bytes);
+                    format!("{:x}", digest)
+                }
+                _ => {
+                    // Default to SHA1
+                    let mut hasher = Sha1::new();
+                    hasher.update(&bytes);
+                    format!("{:x}", hasher.finalize())
+                }
+            };
 
             if hash != expected {
+                eprintln!("[download] Hash mismatch for {}: expected={}, got={}", path.display(), expected, hash);
                 return Err(AppError::HashMismatch(path.display().to_string()));
             }
         }
@@ -1309,8 +1330,6 @@ pub async fn install_atlauncher_modpack_version<F>(
 where
     F: Fn(&str, u32),
 {
-    use crate::services::atlauncher_service;
-
     progress_callback("Fetching version info", 0);
 
     // Get versions and find the specific one
@@ -1353,4 +1372,692 @@ where
 
     progress_callback("Complete", 100);
     Ok(())
+}
+
+// =============================================================================
+// FULL INSTALLATION FUNCTIONS (for creating new instances)
+// =============================================================================
+
+/// Install an FTB modpack and create a new instance
+pub async fn install_ftb_modpack(
+    state: &AppState,
+    modpack_id: &str,
+    version_id: &str,
+    instance_name: Option<String>,
+    app_handle: Option<&AppHandle>,
+) -> Result<Instance, AppError> {
+    println!(
+        "[modpack_install] install_ftb_modpack: modpack_id={}, version_id={}",
+        modpack_id, version_id
+    );
+
+    emit_progress(app_handle, "Fetching modpack info", 0, None, 0, 0);
+
+    // Get modpack info
+    let modpack = ftb_service::get_modpack(&state.http_client, modpack_id).await?;
+    println!("[modpack_install] Got FTB modpack: {}", modpack.name);
+
+    // Get version details
+    let pack_id: u64 = modpack_id
+        .parse()
+        .map_err(|_| AppError::ModpackNotFound(modpack_id.to_string()))?;
+    let ver_id: u64 = version_id
+        .parse()
+        .map_err(|_| AppError::ContentNotFound(version_id.to_string()))?;
+
+    emit_progress(app_handle, "Fetching version info", 5, None, 0, 0);
+    let version = ftb_service::get_version_details(&state.http_client, pack_id, ver_id).await?;
+    println!(
+        "[modpack_install] Got FTB version: {} with {} files",
+        version.name,
+        version.files.len()
+    );
+
+    // Create instance
+    let instance_name = instance_name.unwrap_or_else(|| modpack.name.clone());
+    let instance_id = Uuid::new_v4().to_string();
+
+    emit_progress(app_handle, "Creating instance", 10, None, 0, 0);
+
+    // Get instance directories
+    let instances_base = state.settings.read().instances_path.clone();
+    let instance_dir =
+        crate::utils::paths::get_instance_dir_with_base(&instances_base, &instance_id);
+    let game_dir =
+        crate::utils::paths::get_instance_game_dir_with_base(&instances_base, &instance_id);
+
+    // Create directories
+    fs::create_dir_all(&instance_dir)?;
+    fs::create_dir_all(&game_dir)?;
+
+    // Create standard game subdirectories
+    for subdir in [
+        "mods",
+        "resourcepacks",
+        "saves",
+        "screenshots",
+        "logs",
+        "config",
+        "shaderpacks",
+    ] {
+        fs::create_dir_all(game_dir.join(subdir))?;
+    }
+
+    let instance = Instance {
+        id: instance_id.clone(),
+        name: instance_name,
+        minecraft_version: version.mc_version.clone(),
+        loader_type: version.loader_type.clone(),
+        loader_version: version.loader_version.clone(),
+        created_at: Utc::now().timestamp(),
+        last_played_at: None,
+        total_play_time: 0,
+        icon_path: None,
+        java_path: None,
+        memory_min_mb: None,
+        memory_max_mb: None,
+        jvm_args: None,
+        game_args: None,
+        resolution_width: None,
+        resolution_height: None,
+        modpack_platform: Some(ModpackPlatform::FTB),
+        modpack_id: Some(modpack_id.to_string()),
+        modpack_version_id: Some(version_id.to_string()),
+    };
+
+    instance_service::save_instance(state, &instance)?;
+
+    // Download mod files
+    let total_files = version.files.len() as u32;
+    emit_progress(app_handle, "Downloading files", 15, None, total_files, 0);
+
+    for (i, file) in version.files.iter().enumerate() {
+        let filename = file.path.split('/').last().unwrap_or(&file.path);
+
+        emit_progress(
+            app_handle,
+            "Downloading files",
+            15 + ((i as u32 * 75) / total_files.max(1)),
+            Some(filename.to_string()),
+            total_files,
+            i as u32,
+        );
+
+        let dest_path = game_dir.join(&file.path);
+        if let Some(parent) = dest_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let hash = file.hash.as_deref();
+        if let Err(e) =
+            download_file_with_hash(&state.http_client, &file.url, &dest_path, hash).await
+        {
+            eprintln!("[modpack_install] Failed to download {}: {}", file.path, e);
+        }
+    }
+
+    // Install mod loader if not Vanilla
+    if instance.loader_type != LoaderType::Vanilla {
+        if let Some(ref lv) = instance.loader_version {
+            emit_progress(
+                app_handle,
+                "Installing mod loader",
+                90,
+                Some(format!("{:?} {}", instance.loader_type, lv)),
+                0,
+                0,
+            );
+
+            loader_service::install_loader(
+                &game_dir,
+                instance.loader_type.clone(),
+                &version.mc_version,
+                lv,
+                |msg, pct| {
+                    emit_progress(
+                        app_handle,
+                        &format!("Loader: {}", msg),
+                        90 + (pct / 20),
+                        None,
+                        0,
+                        0,
+                    );
+                },
+            )
+            .await?;
+        }
+    }
+
+    emit_progress(
+        app_handle,
+        "Installation complete",
+        100,
+        None,
+        total_files,
+        total_files,
+    );
+
+    // Create manifest
+    if let Err(e) = create_modpack_manifest(state, &instance.id, &game_dir) {
+        eprintln!(
+            "[modpack_install] Warning: Failed to create manifest: {}",
+            e
+        );
+    }
+
+    println!(
+        "[modpack_install] FTB modpack installed successfully: instance_id={}",
+        instance.id
+    );
+    Ok(instance)
+}
+
+/// Install a Technic modpack and create a new instance
+pub async fn install_technic_modpack(
+    state: &AppState,
+    modpack_id: &str,
+    version_id: &str,
+    instance_name: Option<String>,
+    app_handle: Option<&AppHandle>,
+) -> Result<Instance, AppError> {
+    println!(
+        "[modpack_install] install_technic_modpack: modpack_id={}, version_id={}",
+        modpack_id, version_id
+    );
+
+    emit_progress(app_handle, "Fetching modpack info", 0, None, 0, 0);
+
+    // Get full modpack info (includes solder URL if available)
+    let pack = technic_service::get_modpack_full(&state.http_client, modpack_id).await?;
+    println!("[modpack_install] Got Technic modpack: {}", pack.name);
+
+    // For Solder packs, we need to get loader info from the build, not the pack
+    // The pack-level forge field is often null even for Forge packs
+    let (mc_version, loader_type, loader_version) = if let Some(ref solder_url) = pack.solder {
+        // Try to get build info to determine loader
+        match technic_service::get_solder_build(&state.http_client, solder_url, modpack_id, version_id).await {
+            Ok(build) => {
+                let mc = build.minecraft.clone();
+                let (lt, lv) = if let Some(ref forge_ver) = build.forge {
+                    (LoaderType::Forge, Some(forge_ver.clone()))
+                } else {
+                    (LoaderType::Vanilla, None)
+                };
+                (mc, lt, lv)
+            }
+            Err(_) => {
+                // Fallback to pack-level info
+                let mc = pack.minecraft.clone().unwrap_or_else(|| "1.12.2".to_string());
+                let lt = if pack.forge.is_some() { LoaderType::Forge } else { LoaderType::Vanilla };
+                (mc, lt, pack.forge.clone())
+            }
+        }
+    } else {
+        // Non-Solder pack - use pack-level info
+        let mc = pack.minecraft.clone().unwrap_or_else(|| "1.12.2".to_string());
+        let lt = if pack.forge.is_some() { LoaderType::Forge } else { LoaderType::Vanilla };
+        (mc, lt, pack.forge.clone())
+    };
+
+    // Create instance
+    let instance_name =
+        instance_name.unwrap_or_else(|| pack.display_name.clone().unwrap_or(pack.name.clone()));
+    let instance_id = Uuid::new_v4().to_string();
+
+    emit_progress(app_handle, "Creating instance", 5, None, 0, 0);
+
+    // Get instance directories
+    let instances_base = state.settings.read().instances_path.clone();
+    let instance_dir =
+        crate::utils::paths::get_instance_dir_with_base(&instances_base, &instance_id);
+    let game_dir =
+        crate::utils::paths::get_instance_game_dir_with_base(&instances_base, &instance_id);
+
+    // Create directories
+    fs::create_dir_all(&instance_dir)?;
+    fs::create_dir_all(&game_dir)?;
+
+    // Create standard game subdirectories
+    for subdir in [
+        "mods",
+        "resourcepacks",
+        "saves",
+        "screenshots",
+        "logs",
+        "config",
+        "shaderpacks",
+    ] {
+        fs::create_dir_all(game_dir.join(subdir))?;
+    }
+
+    let instance = Instance {
+        id: instance_id.clone(),
+        name: instance_name,
+        minecraft_version: mc_version.clone(),
+        loader_type: loader_type.clone(),
+        loader_version: loader_version.clone(),
+        created_at: Utc::now().timestamp(),
+        last_played_at: None,
+        total_play_time: 0,
+        icon_path: None,
+        java_path: None,
+        memory_min_mb: None,
+        memory_max_mb: None,
+        jvm_args: None,
+        game_args: None,
+        resolution_width: None,
+        resolution_height: None,
+        modpack_platform: Some(ModpackPlatform::Technic),
+        modpack_id: Some(modpack_id.to_string()),
+        modpack_version_id: Some(version_id.to_string()),
+    };
+
+    instance_service::save_instance(state, &instance)?;
+
+    // Check if this is a Solder pack
+    if let Some(ref solder_url) = pack.solder {
+        // Solder pack - download individual mods
+        emit_progress(app_handle, "Fetching version info", 10, None, 0, 0);
+
+        let build =
+            technic_service::get_solder_build(&state.http_client, solder_url, modpack_id, version_id)
+                .await?;
+
+        let total_files = build.mods.len() as u32;
+        emit_progress(app_handle, "Downloading mods", 15, None, total_files, 0);
+
+        let mods_dir = game_dir.join("mods");
+        fs::create_dir_all(&mods_dir)?;
+
+        for (i, mod_file) in build.mods.iter().enumerate() {
+            emit_progress(
+                app_handle,
+                "Downloading mods",
+                15 + ((i as u32 * 75) / total_files.max(1)),
+                Some(mod_file.name.clone()),
+                total_files,
+                i as u32,
+            );
+
+            // Technic Solder mods are zip files that need to be extracted
+            let zip_bytes = download_bytes(&state.http_client, &mod_file.url).await?;
+
+            // Extract the zip to the game directory
+            let cursor = std::io::Cursor::new(&zip_bytes);
+            if let Ok(mut archive) = ZipArchive::new(cursor) {
+                for j in 0..archive.len() {
+                    if let Ok(mut file) = archive.by_index(j) {
+                        let name = file.name().to_string();
+                        if name.ends_with('/') {
+                            // Directory
+                            fs::create_dir_all(game_dir.join(&name))?;
+                        } else {
+                            let dest_path = game_dir.join(&name);
+                            if let Some(parent) = dest_path.parent() {
+                                fs::create_dir_all(parent)?;
+                            }
+                            let mut outfile = File::create(&dest_path)?;
+                            std::io::copy(&mut file, &mut outfile)?;
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // Non-Solder pack - download the modpack zip
+        let download_url = pack.url.ok_or_else(|| {
+            AppError::ContentNotFound("No download URL found for modpack".to_string())
+        })?;
+
+        emit_progress(app_handle, "Downloading modpack", 10, None, 0, 0);
+
+        let zip_bytes = download_bytes(&state.http_client, &download_url).await?;
+
+        emit_progress(app_handle, "Extracting modpack", 50, None, 0, 0);
+
+        // Extract the zip to the game directory
+        let cursor = std::io::Cursor::new(&zip_bytes);
+        let mut archive = ZipArchive::new(cursor)?;
+
+        let total_files = archive.len() as u32;
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i)?;
+            let name = file.name().to_string();
+
+            emit_progress(
+                app_handle,
+                "Extracting files",
+                50 + ((i as u32 * 40) / total_files.max(1)),
+                Some(name.clone()),
+                total_files,
+                i as u32,
+            );
+
+            if name.ends_with('/') {
+                fs::create_dir_all(game_dir.join(&name))?;
+            } else {
+                let dest_path = game_dir.join(&name);
+                if let Some(parent) = dest_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                let mut outfile = File::create(&dest_path)?;
+                std::io::copy(&mut file, &mut outfile)?;
+            }
+        }
+    }
+
+    // Install mod loader if not Vanilla
+    if loader_type != LoaderType::Vanilla {
+        if let Some(ref lv) = loader_version {
+            emit_progress(
+                app_handle,
+                "Installing mod loader",
+                90,
+                Some(format!("{:?} {}", loader_type, lv)),
+                0,
+                0,
+            );
+
+            loader_service::install_loader(&game_dir, loader_type.clone(), &mc_version, lv, |msg, pct| {
+                emit_progress(
+                    app_handle,
+                    &format!("Loader: {}", msg),
+                    90 + (pct / 20),
+                    None,
+                    0,
+                    0,
+                );
+            })
+            .await?;
+        }
+    }
+
+    emit_progress(app_handle, "Installation complete", 100, None, 0, 0);
+
+    // Create manifest
+    if let Err(e) = create_modpack_manifest(state, &instance.id, &game_dir) {
+        eprintln!(
+            "[modpack_install] Warning: Failed to create manifest: {}",
+            e
+        );
+    }
+
+    println!(
+        "[modpack_install] Technic modpack installed successfully: instance_id={}",
+        instance.id
+    );
+    Ok(instance)
+}
+
+/// Install an ATLauncher modpack and create a new instance
+/// Uses CDN (Configs.json) instead of blocked API
+pub async fn install_atlauncher_modpack(
+    state: &AppState,
+    modpack_id: &str,
+    version_id: &str,
+    instance_name: Option<String>,
+    app_handle: Option<&AppHandle>,
+) -> Result<Instance, AppError> {
+    println!(
+        "[modpack_install] install_atlauncher_modpack: modpack_id={}, version_id={}",
+        modpack_id, version_id
+    );
+
+    emit_progress(app_handle, "Fetching modpack info", 0, None, 0, 0);
+
+    // Get pack safe name from CDN (needed for Configs.json URL)
+    let pack_safe_name =
+        atlauncher_service::get_pack_safe_name(&state.http_client, modpack_id).await?;
+
+    println!(
+        "[modpack_install] ATLauncher pack safe name: {} -> {}",
+        modpack_id, pack_safe_name
+    );
+
+    // Fetch version manifest from CDN (Configs.json)
+    emit_progress(app_handle, "Fetching version manifest", 5, None, 0, 0);
+    let manifest = atlauncher_service::get_version_manifest(
+        &state.http_client,
+        &pack_safe_name,
+        version_id,
+    )
+    .await?;
+
+    // Parse loader info from manifest
+    let loader_type = match manifest.loader_type.as_deref() {
+        Some("forge") => LoaderType::Forge,
+        Some("neoforge") => LoaderType::NeoForge,
+        Some("fabric") => LoaderType::Fabric,
+        Some("quilt") => LoaderType::Quilt,
+        Some("liteloader") => LoaderType::LiteLoader,
+        _ => LoaderType::Vanilla,
+    };
+    let loader_version = manifest.loader_version.clone();
+
+    // Create instance
+    let instance_name = instance_name.unwrap_or_else(|| modpack_id.to_string());
+    let instance_id = Uuid::new_v4().to_string();
+
+    emit_progress(app_handle, "Creating instance", 10, None, 0, 0);
+
+    // Get instance directories
+    let instances_base = state.settings.read().instances_path.clone();
+    let instance_dir =
+        crate::utils::paths::get_instance_dir_with_base(&instances_base, &instance_id);
+    let game_dir =
+        crate::utils::paths::get_instance_game_dir_with_base(&instances_base, &instance_id);
+
+    // Create directories
+    fs::create_dir_all(&instance_dir)?;
+    fs::create_dir_all(&game_dir)?;
+
+    // Create standard game subdirectories
+    for subdir in [
+        "mods",
+        "resourcepacks",
+        "saves",
+        "screenshots",
+        "logs",
+        "config",
+        "shaderpacks",
+    ] {
+        fs::create_dir_all(game_dir.join(subdir))?;
+    }
+
+    let instance = Instance {
+        id: instance_id.clone(),
+        name: instance_name,
+        minecraft_version: manifest.minecraft.clone(),
+        loader_type: loader_type.clone(),
+        loader_version: loader_version.clone(),
+        created_at: Utc::now().timestamp(),
+        last_played_at: None,
+        total_play_time: 0,
+        icon_path: None,
+        java_path: None,
+        memory_min_mb: None,
+        memory_max_mb: None,
+        jvm_args: None,
+        game_args: None,
+        resolution_width: None,
+        resolution_height: None,
+        modpack_platform: Some(ModpackPlatform::ATLauncher),
+        modpack_id: Some(modpack_id.to_string()),
+        modpack_version_id: Some(version_id.to_string()),
+    };
+
+    instance_service::save_instance(state, &instance)?;
+
+    let cdn_base = atlauncher_service::get_cdn_base();
+
+    // Download Configs.zip if available (configs, scripts, etc.)
+    if !manifest.no_configs {
+        emit_progress(app_handle, "Downloading configs", 15, None, 0, 0);
+
+        let configs_url = format!(
+            "{}/packs/{}/versions/{}/Configs.zip",
+            cdn_base, pack_safe_name, version_id
+        );
+
+        if let Ok(config_bytes) = download_bytes(&state.http_client, &configs_url).await {
+            emit_progress(app_handle, "Extracting configs", 20, None, 0, 0);
+            let cursor = std::io::Cursor::new(&config_bytes);
+            if let Ok(mut archive) = ZipArchive::new(cursor) {
+                for i in 0..archive.len() {
+                    if let Ok(mut file) = archive.by_index(i) {
+                        let name = file.name().to_string();
+                        if name.ends_with('/') {
+                            fs::create_dir_all(game_dir.join(&name))?;
+                        } else {
+                            let dest_path = game_dir.join(&name);
+                            if let Some(parent) = dest_path.parent() {
+                                fs::create_dir_all(parent)?;
+                            }
+                            let mut outfile = File::create(&dest_path)?;
+                            std::io::copy(&mut file, &mut outfile)?;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Download mods from manifest
+    // Filter to non-optional mods, or optional mods that are selected by default
+    let mods_to_download: Vec<_> = manifest
+        .mods
+        .iter()
+        .filter(|m| !m.optional || m.selected)
+        .collect();
+
+    let total_mods = mods_to_download.len() as u32;
+    let mut browser_downloads = Vec::new();
+
+    emit_progress(app_handle, "Downloading mods", 25, None, total_mods, 0);
+
+    for (i, mod_entry) in mods_to_download.iter().enumerate() {
+        emit_progress(
+            app_handle,
+            "Downloading mods",
+            25 + ((i as u32 * 60) / total_mods.max(1)),
+            Some(mod_entry.name.clone()),
+            total_mods,
+            i as u32,
+        );
+
+        // Determine file path
+        let mod_type = mod_entry.mod_type.as_deref().unwrap_or("mods");
+        let filename = mod_entry
+            .file
+            .as_ref()
+            .map(|f| f.clone())
+            .unwrap_or_else(|| format!("{}-{}.jar", mod_entry.name, mod_entry.version));
+        let dest_path = game_dir.join(mod_type).join(&filename);
+
+        if let Some(parent) = dest_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        // Determine download URL based on download type
+        let download_type = mod_entry.download.as_deref().unwrap_or("server");
+        let download_url = match download_type {
+            "server" => {
+                // Server-hosted: prepend CDN base to URL
+                if let Some(url) = &mod_entry.url {
+                    Some(format!("{}/{}", cdn_base, url))
+                } else {
+                    eprintln!(
+                        "[atlauncher] No URL for server-hosted mod: {}",
+                        mod_entry.name
+                    );
+                    None
+                }
+            }
+            "direct" => {
+                // Direct download: use URL as-is
+                mod_entry.url.clone()
+            }
+            "browser" => {
+                // Browser download: user must manually download
+                browser_downloads.push(mod_entry.name.clone());
+                None
+            }
+            _ => {
+                eprintln!(
+                    "[atlauncher] Unknown download type '{}' for mod: {}",
+                    download_type, mod_entry.name
+                );
+                None
+            }
+        };
+
+        if let Some(url) = download_url {
+            let hash = mod_entry.md5.as_deref().or(mod_entry.sha1.as_deref());
+            if let Err(e) =
+                download_file_with_hash(&state.http_client, &url, &dest_path, hash).await
+            {
+                eprintln!(
+                    "[modpack_install] Failed to download mod {}: {}",
+                    mod_entry.name, e
+                );
+            }
+        }
+    }
+
+    // Warn about browser downloads
+    if !browser_downloads.is_empty() {
+        eprintln!(
+            "[atlauncher] {} mods require manual browser download: {:?}",
+            browser_downloads.len(),
+            browser_downloads
+        );
+    }
+
+    // Install mod loader if not Vanilla
+    if loader_type != LoaderType::Vanilla {
+        if let Some(ref lv) = loader_version {
+            emit_progress(
+                app_handle,
+                "Installing mod loader",
+                90,
+                Some(format!("{:?} {}", loader_type, lv)),
+                0,
+                0,
+            );
+
+            loader_service::install_loader(
+                &game_dir,
+                loader_type.clone(),
+                &manifest.minecraft,
+                lv,
+                |msg, pct| {
+                    emit_progress(
+                        app_handle,
+                        &format!("Loader: {}", msg),
+                        90 + (pct / 20),
+                        None,
+                        0,
+                        0,
+                    );
+                },
+            )
+            .await?;
+        }
+    }
+
+    emit_progress(app_handle, "Installation complete", 100, None, 0, 0);
+
+    // Create manifest
+    if let Err(e) = create_modpack_manifest(state, &instance.id, &game_dir) {
+        eprintln!(
+            "[modpack_install] Warning: Failed to create manifest: {}",
+            e
+        );
+    }
+
+    println!(
+        "[modpack_install] ATLauncher modpack installed successfully: instance_id={}",
+        instance.id
+    );
+    Ok(instance)
 }

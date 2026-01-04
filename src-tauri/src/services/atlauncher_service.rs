@@ -46,6 +46,10 @@ pub struct AtlauncherCdnVersion {
     pub is_recommended: bool,
     #[serde(default)]
     pub hash: Option<String>,
+    #[serde(default)]
+    pub has_loader: bool,
+    #[serde(default)]
+    pub loader_type: Option<String>,
 }
 
 // ============================================================================
@@ -165,6 +169,74 @@ pub struct AtlauncherMod {
 }
 
 // ============================================================================
+// ATLauncher CDN Configs.json Types (version manifest)
+// ============================================================================
+
+/// Full version manifest from Configs.json
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AtlauncherConfigsManifest {
+    pub version: String,
+    pub minecraft: String,
+    #[serde(default)]
+    pub loader_type: Option<String>,
+    #[serde(default)]
+    pub loader_version: Option<String>,
+    #[serde(default)]
+    pub mods: Vec<AtlauncherConfigMod>,
+    #[serde(default)]
+    pub libraries: Vec<AtlauncherConfigLibrary>,
+    #[serde(default)]
+    pub no_configs: bool,
+}
+
+/// Mod entry from Configs.json
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AtlauncherConfigMod {
+    pub name: String,
+    pub version: String,
+    /// URL path - for "server" download type, prepend CDN base
+    #[serde(default)]
+    pub url: Option<String>,
+    /// Download type: "server", "direct", or "browser"
+    #[serde(default)]
+    pub download: Option<String>,
+    #[serde(default)]
+    pub md5: Option<String>,
+    #[serde(default)]
+    pub sha1: Option<String>,
+    #[serde(default)]
+    pub size: Option<u64>,
+    #[serde(default)]
+    pub file: Option<String>,
+    /// Where to place: mods, coremods, etc.
+    #[serde(rename = "type")]
+    #[serde(default)]
+    pub mod_type: Option<String>,
+    #[serde(default)]
+    pub optional: bool,
+    /// Whether this optional mod is selected by default
+    #[serde(default)]
+    pub selected: bool,
+}
+
+/// Library entry from Configs.json
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AtlauncherConfigLibrary {
+    pub file: String,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub download: Option<String>,
+    #[serde(default)]
+    pub md5: Option<String>,
+    #[serde(default)]
+    pub size: Option<u64>,
+}
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
@@ -181,21 +253,21 @@ fn parse_loader_type(loader: Option<&str>) -> LoaderType {
 }
 
 /// Get icon URL for ATLauncher pack
-/// Uses the CDN endpoint with safeName derived from pack name
+/// Uses the CDN endpoint with lowercase safeName
 fn get_icon_url(safe_name: &str) -> String {
-    format!("{}/launcher/images/{}.png", ATLAUNCHER_CDN_BASE, safe_name)
+    format!("{}/launcher/images/{}.png", ATLAUNCHER_CDN_BASE, safe_name.to_lowercase())
 }
 
 // ============================================================================
 // Public API Functions
 // ============================================================================
 
-/// Convert pack name to safe_name (lowercase, alphanumeric only)
+/// Convert pack name to safe_name (alphanumeric only, preserves case)
+/// ATLauncher keeps capitalization, just removes non-alphanumeric characters
 fn name_to_safe_name(name: &str) -> String {
     name.chars()
         .filter(|c| c.is_alphanumeric())
         .collect::<String>()
-        .to_lowercase()
 }
 
 /// Search for modpacks on ATLauncher
@@ -360,13 +432,11 @@ pub async fn get_modpack(client: &Client, pack_name: &str) -> Result<Modpack, Ap
     })
 }
 
-/// Get versions for a modpack
-/// Uses the CDN endpoint since the API is blocked by Cloudflare
-pub async fn get_modpack_versions(
+/// Find pack in CDN and return it
+async fn find_pack_in_cdn(
     client: &Client,
-    pack_name: &str,
-) -> Result<Vec<ModpackVersion>, AppError> {
-    // Fetch all packs from CDN and find the matching one
+    pack_identifier: &str,
+) -> Result<AtlauncherCdnPack, AppError> {
     let url = format!("{}/launcher/json/packsnew.json", ATLAUNCHER_CDN_BASE);
     let packs: Vec<AtlauncherCdnPack> = client
         .get(&url)
@@ -376,23 +446,50 @@ pub async fn get_modpack_versions(
         .json()
         .await?;
 
-    // Find the pack by name or safeName
-    let pack_name_lower = pack_name.to_lowercase();
-    let pack = packs
+    // Match by ID, name (case-insensitive), or safe name (case-insensitive)
+    let pack_id_lower = pack_identifier.to_lowercase();
+    packs
         .into_iter()
         .find(|p| {
-            p.name.to_lowercase() == pack_name_lower
-                || name_to_safe_name(&p.name) == pack_name_lower
-                || p.id.to_string() == pack_name
+            p.id.to_string() == pack_identifier
+                || p.name.to_lowercase() == pack_id_lower
+                || name_to_safe_name(&p.name).to_lowercase() == pack_id_lower
         })
-        .ok_or_else(|| AppError::ModpackNotFound(pack_name.to_string()))?;
+        .ok_or_else(|| AppError::ModpackNotFound(pack_identifier.to_string()))
+}
+
+/// Get the safe name for a pack (used in CDN URLs)
+pub async fn get_pack_safe_name(
+    client: &Client,
+    pack_identifier: &str,
+) -> Result<String, AppError> {
+    let pack = find_pack_in_cdn(client, pack_identifier).await?;
+    Ok(name_to_safe_name(&pack.name))
+}
+
+/// Get versions for a modpack
+/// Uses the CDN endpoint since the API is blocked by Cloudflare
+pub async fn get_modpack_versions(
+    client: &Client,
+    pack_name: &str,
+) -> Result<Vec<ModpackVersion>, AppError> {
+    let pack = find_pack_in_cdn(client, pack_name).await?;
 
     // Convert CDN versions to ModpackVersion
-    // Note: CDN doesn't include loader info or file details, so we provide what we can
     let versions: Vec<ModpackVersion> = pack
         .versions
         .into_iter()
         .map(|v| {
+            // Use loader_type from CDN if available, otherwise check has_loader flag
+            let loader_type = if let Some(ref lt) = v.loader_type {
+                parse_loader_type(Some(lt.as_str()))
+            } else if v.has_loader {
+                // Most modpacks with has_loader=true are Forge
+                LoaderType::Forge
+            } else {
+                LoaderType::Vanilla
+            };
+
             ModpackVersion {
                 id: v.version.clone(),
                 name: if v.is_recommended {
@@ -401,7 +498,7 @@ pub async fn get_modpack_versions(
                     v.version
                 },
                 mc_version: v.minecraft,
-                loader_type: LoaderType::Vanilla, // CDN doesn't include loader info
+                loader_type,
                 loader_version: None,
                 changelog: None,
                 released_at: None,
@@ -412,4 +509,49 @@ pub async fn get_modpack_versions(
         .collect();
 
     Ok(versions)
+}
+
+/// Fetch the version manifest (Configs.json) for a specific pack version
+/// This contains the full file list and loader info needed for installation
+pub async fn get_version_manifest(
+    client: &Client,
+    pack_safe_name: &str,
+    version: &str,
+) -> Result<AtlauncherConfigsManifest, AppError> {
+    let url = format!(
+        "{}/packs/{}/versions/{}/Configs.json",
+        ATLAUNCHER_CDN_BASE, pack_safe_name, version
+    );
+
+    println!("[atlauncher] Fetching version manifest from: {}", url);
+
+    let manifest: AtlauncherConfigsManifest = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| AppError::ApiError(format!("Failed to fetch Configs.json: {}", e)))?
+        .error_for_status()
+        .map_err(|e| {
+            AppError::ApiError(format!(
+                "Configs.json not found for {}/{}: {}",
+                pack_safe_name, version, e
+            ))
+        })?
+        .json()
+        .await
+        .map_err(|e| AppError::ApiError(format!("Failed to parse Configs.json: {}", e)))?;
+
+    println!(
+        "[atlauncher] Got manifest: {} mods, loader={:?} {:?}",
+        manifest.mods.len(),
+        manifest.loader_type,
+        manifest.loader_version
+    );
+
+    Ok(manifest)
+}
+
+/// Get the CDN base URL for downloading files
+pub fn get_cdn_base() -> &'static str {
+    ATLAUNCHER_CDN_BASE
 }

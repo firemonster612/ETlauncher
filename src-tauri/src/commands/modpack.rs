@@ -283,13 +283,38 @@ pub async fn install_modpack(
             .await
             .map_err(CommandError::from)
         }
-        ModpackPlatform::FTB | ModpackPlatform::Technic | ModpackPlatform::ATLauncher => {
-            // TODO: Implement installation for these platforms
-            println!("[modpack_cmd] install_modpack: platform {:?} not implemented", platform);
-            Err(CommandError {
-                code: "NOT_IMPLEMENTED".to_string(),
-                message: format!("Modpack installation for {} is not yet implemented", platform),
-            })
+        ModpackPlatform::FTB => {
+            modpack_install_service::install_ftb_modpack(
+                &state,
+                &modpack_id,
+                &version_id,
+                instance_name,
+                Some(&app_handle),
+            )
+            .await
+            .map_err(CommandError::from)
+        }
+        ModpackPlatform::Technic => {
+            modpack_install_service::install_technic_modpack(
+                &state,
+                &modpack_id,
+                &version_id,
+                instance_name,
+                Some(&app_handle),
+            )
+            .await
+            .map_err(CommandError::from)
+        }
+        ModpackPlatform::ATLauncher => {
+            modpack_install_service::install_atlauncher_modpack(
+                &state,
+                &modpack_id,
+                &version_id,
+                instance_name,
+                Some(&app_handle),
+            )
+            .await
+            .map_err(CommandError::from)
         }
     };
     match &result {
