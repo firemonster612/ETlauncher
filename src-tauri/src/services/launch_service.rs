@@ -1,7 +1,7 @@
 use crate::error::AppError;
 use crate::models::instance::{Instance, LaunchStatus};
 use crate::models::minecraft::{GameLogLine, LogLevel};
-use crate::services::{account_service, download_service, instance_service};
+use crate::services::{account_service, download_service, instance_service, java_service};
 use crate::state::AppState;
 use crate::utils::paths::{get_assets_dir, get_instance_natives_dir_with_base};
 use crate::utils::platform::classpath_separator;
@@ -87,15 +87,24 @@ pub async fn launch_instance(
         Some(app_handle),
     ).await?;
 
+    // Get Java path - use instance override or auto-manage based on MC version
+    let java_path = if let Some(ref path) = instance.java_path {
+        path.clone()
+    } else {
+        // Auto-detect required Java version and ensure it's installed
+        let required_java = java_service::get_required_java_version(&instance.minecraft_version);
+        emit_launch_status(
+            app_handle,
+            &instance_id,
+            LaunchStatus::Preparing {
+                message: format!("Checking Java {}...", required_java),
+            },
+        );
+        java_service::ensure_java_installed(required_java, &instance_id, app_handle).await?
+    };
+
     // Emit launching status
     emit_launch_status(app_handle, &instance_id, LaunchStatus::Launching);
-
-    // Get Java path
-    let java_path = instance
-        .java_path
-        .clone()
-        .or_else(find_java)
-        .ok_or(AppError::JavaNotFound)?;
 
     // Build classpath (pass game_dir for Forge libraries)
     let classpath = download_service::get_classpath(&version_info, &instance.minecraft_version, Some(&game_dir));
@@ -396,38 +405,4 @@ fn emit_game_log(app_handle: &AppHandle, instance_id: &str, line: &str, level: L
     };
 
     let _ = app_handle.emit("game_log", log);
-}
-
-/// Find Java executable
-fn find_java() -> Option<String> {
-    // Check JAVA_HOME
-    if let Ok(java_home) = std::env::var("JAVA_HOME") {
-        let java_path = std::path::PathBuf::from(&java_home)
-            .join("bin")
-            .join(if cfg!(windows) { "java.exe" } else { "java" });
-        if java_path.exists() {
-            return Some(java_path.to_string_lossy().to_string());
-        }
-    }
-
-    // Check PATH
-    if cfg!(windows) {
-        if let Ok(output) = Command::new("where").arg("java").output() {
-            if output.status.success() {
-                if let Ok(path) = String::from_utf8(output.stdout) {
-                    if let Some(first_line) = path.lines().next() {
-                        return Some(first_line.to_string());
-                    }
-                }
-            }
-        }
-    } else if let Ok(output) = Command::new("which").arg("java").output() {
-        if output.status.success() {
-            if let Ok(path) = String::from_utf8(output.stdout) {
-                return Some(path.trim().to_string());
-            }
-        }
-    }
-
-    None
 }

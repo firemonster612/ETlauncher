@@ -3,6 +3,7 @@ pub mod account_service;
 pub mod instance_service;
 pub mod instance_export_service;
 pub mod download_service;
+pub mod java_service;
 pub mod launch_service;
 pub mod loader_service;
 pub mod modrinth_service;

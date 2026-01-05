@@ -41,6 +41,9 @@ pub enum AppError {
     #[error("Java not found")]
     JavaNotFound,
 
+    #[error("Java installation failed: {0}")]
+    JavaInstallError(String),
+
     #[error("Launch failed: {0}")]
     LaunchError(String),
 
@@ -127,6 +130,7 @@ impl From<AppError> for CommandError {
             AppError::HashMismatch(_) => "HASH_MISMATCH",
             AppError::AssetNotFound(_) => "ASSET_NOT_FOUND",
             AppError::JavaNotFound => "JAVA_NOT_FOUND",
+            AppError::JavaInstallError(_) => "JAVA_INSTALL_ERROR",
             AppError::LaunchError(_) => "LAUNCH_ERROR",
             AppError::GameCrashed(_) => "GAME_CRASHED",
             AppError::SettingsError(_) => "SETTINGS_ERROR",

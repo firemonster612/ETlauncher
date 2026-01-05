@@ -45,6 +45,16 @@ pub fn get_libraries_dir() -> PathBuf {
     get_cache_dir().join("libraries")
 }
 
+/// Get the Java installations directory
+pub fn get_java_dir() -> PathBuf {
+    get_app_data_dir().join("java")
+}
+
+/// Get the Java manifest file path
+pub fn get_java_manifest_path() -> PathBuf {
+    get_java_dir().join("manifest.json")
+}
+
 /// Get a specific instance directory by ID
 pub fn get_instance_dir(instance_id: &str) -> PathBuf {
     get_instances_dir().join(instance_id)
@@ -88,5 +98,6 @@ pub fn ensure_directories() -> std::io::Result<()> {
     std::fs::create_dir_all(get_assets_dir().join("indexes"))?;
     std::fs::create_dir_all(get_assets_dir().join("objects"))?;
     std::fs::create_dir_all(get_libraries_dir())?;
+    std::fs::create_dir_all(get_java_dir())?;
     Ok(())
 }
