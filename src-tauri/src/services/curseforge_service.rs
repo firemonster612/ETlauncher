@@ -31,6 +31,31 @@ impl CurseForgeClassId {
     }
 }
 
+/// Map category name to CurseForge modpack category ID
+fn modpack_category_to_id(category: &str) -> Option<u32> {
+    match category.to_lowercase().as_str() {
+        "adventure and rpg" | "adventure-and-rpg" => Some(4475),
+        "combat / pvp" | "combat-pvp" | "combat/pvp" => Some(4483),
+        "expert" => Some(9243),
+        "exploration" => Some(4476),
+        "extra large" | "extra-large" => Some(4482),
+        "ftb official pack" | "ftb-official-pack" => Some(4487),
+        "hardcore" => Some(4479),
+        "horror" => Some(7418),
+        "magic" => Some(4473),
+        "map based" | "map-based" => Some(4480),
+        "mini game" | "mini-game" => Some(4477),
+        "multiplayer" => Some(4484),
+        "quests" => Some(4478),
+        "sci-fi" | "scifi" => Some(4474),
+        "skyblock" => Some(4736),
+        "small / light" | "small-light" | "small/light" => Some(4481),
+        "tech" | "technology" => Some(4472),
+        "vanilla+" | "vanilla" => Some(5128),
+        _ => None,
+    }
+}
+
 /// CurseForge mod loader type
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
 pub enum CurseForgeModLoaderType {
@@ -46,7 +71,7 @@ pub enum CurseForgeModLoaderType {
 impl CurseForgeModLoaderType {
     fn from_loader_type(lt: &LoaderType) -> Self {
         match lt {
-            LoaderType::Vanilla => CurseForgeModLoaderType::Any,
+            LoaderType::Vanilla | LoaderType::Unknown => CurseForgeModLoaderType::Any,
             LoaderType::Forge => CurseForgeModLoaderType::Forge,
             LoaderType::NeoForge => CurseForgeModLoaderType::NeoForge,
             LoaderType::Fabric => CurseForgeModLoaderType::Fabric,
@@ -384,6 +409,12 @@ pub async fn search_modpacks(
         }
     }
 
+    if let Some(ref category) = params.category {
+        if let Some(category_id) = modpack_category_to_id(category) {
+            url.push_str(&format!("&categoryId={}", category_id));
+        }
+    }
+
     let sort_field = params
         .sort_by
         .as_ref()
@@ -611,6 +642,10 @@ pub async fn search_content(
         if loader_type != CurseForgeModLoaderType::Any {
             url.push_str(&format!("&modLoaderType={}", loader_type as u32));
         }
+    }
+
+    if let Some(ref category) = params.category {
+        url.push_str(&format!("&categoryId={}", urlencoding::encode(category)));
     }
 
     let sort_field = params

@@ -297,7 +297,7 @@ pub async fn get_loader_versions(
         LoaderType::Forge => get_forge_versions(mc_version).await,
         LoaderType::NeoForge => get_neoforge_versions(mc_version).await,
         LoaderType::LiteLoader => get_liteloader_versions(mc_version).await,
-        LoaderType::Vanilla => Ok(vec![]),
+        LoaderType::Vanilla | LoaderType::Unknown => Ok(vec![]),
     }
 }
 
@@ -861,8 +861,8 @@ pub async fn install_loader(
         LoaderType::Forge => install_forge(game_dir, mc_version, loader_version, progress).await,
         LoaderType::NeoForge => install_neoforge(game_dir, mc_version, loader_version, progress).await,
         LoaderType::LiteLoader => install_liteloader(game_dir, mc_version, loader_version, progress).await,
-        LoaderType::Vanilla => Err(AppError::InvalidInput(
-            "Cannot install Vanilla loader (it's the default)".to_string(),
+        LoaderType::Vanilla | LoaderType::Unknown => Err(AppError::InvalidInput(
+            "Cannot install Vanilla/Unknown loader".to_string(),
         )),
     }
 }
@@ -897,6 +897,6 @@ pub fn check_loader_installed(
             let liteloader_jar = game_dir.join("mods").join(format!("liteloader-{}.jar", loader_version));
             Ok(liteloader_jar.exists())
         }
-        LoaderType::Vanilla => Ok(true),
+        LoaderType::Vanilla | LoaderType::Unknown => Ok(true),
     }
 }

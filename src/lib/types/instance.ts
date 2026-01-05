@@ -1,5 +1,5 @@
 /** Type of mod loader for an instance */
-export type LoaderType = "vanilla" | "forge" | "neoforge" | "fabric" | "quilt" | "liteloader";
+export type LoaderType = "vanilla" | "forge" | "neoforge" | "fabric" | "quilt" | "liteloader" | "unknown";
 
 /** Platform that hosts modpacks */
 export type ModpackPlatform = "modrinth" | "curseforge" | "ftb" | "technic" | "atlauncher";

@@ -143,7 +143,7 @@ fn parse_loaders(loaders: &[String]) -> Vec<LoaderType> {
 /// Convert LoaderType to Modrinth loader string
 fn loader_to_string(loader: &LoaderType) -> Option<&'static str> {
     match loader {
-        LoaderType::Vanilla => None,
+        LoaderType::Vanilla | LoaderType::Unknown => None,
         LoaderType::Forge => Some("forge"),
         LoaderType::NeoForge => Some("neoforge"),
         LoaderType::Fabric => Some("fabric"),

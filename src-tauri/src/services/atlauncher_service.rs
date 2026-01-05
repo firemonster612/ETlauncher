@@ -248,7 +248,8 @@ fn parse_loader_type(loader: Option<&str>) -> LoaderType {
         Some("fabric") => LoaderType::Fabric,
         Some("quilt") => LoaderType::Quilt,
         Some("liteloader") => LoaderType::LiteLoader,
-        _ => LoaderType::Vanilla,
+        // Use Unknown instead of Vanilla when loader info not available
+        _ => LoaderType::Unknown,
     }
 }
 

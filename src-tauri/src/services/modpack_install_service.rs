@@ -488,9 +488,10 @@ struct CurseForgeModLoader {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct CurseForgeFileEntry {
+    #[serde(rename = "projectID")]
     project_id: u32,
+    #[serde(rename = "fileID")]
     file_id: u32,
     #[allow(dead_code)]
     required: bool,

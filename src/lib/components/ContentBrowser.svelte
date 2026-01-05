@@ -671,7 +671,7 @@
                   <Download class="h-3 w-3" />
                   {formatDownloads(content.downloads)}
                 </span>
-                {#each content.loaders.slice(0, 2) as loader}
+                {#each content.loaders.filter(l => l !== "unknown").slice(0, 2) as loader}
                   <span class="px-1 rounded {getLoaderColor(loader)}">{loader}</span>
                 {/each}
               </div>

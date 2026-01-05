@@ -170,7 +170,8 @@ fn get_loader_info(targets: &[FtbTarget]) -> (LoaderType, Option<String>) {
             return (loader_type, Some(target.version.clone()));
         }
     }
-    (LoaderType::Vanilla, None)
+    // Return Unknown instead of Vanilla when loader info is not available
+    (LoaderType::Unknown, None)
 }
 
 /// Get icon URL from art
