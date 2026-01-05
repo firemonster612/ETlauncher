@@ -7,6 +7,7 @@ import type {
   ContentSortBy,
   ContentType,
   LoaderType,
+  ResolvedDependency,
   ScanResult,
 } from "$lib/types";
 import * as contentService from "$lib/services/content";
@@ -49,6 +50,10 @@ function createContentStore() {
 
   // Download progress state
   let downloadProgress = $state<ContentDownloadProgress | null>(null);
+
+  // Resolved dependencies state
+  let resolvedDependencies = $state<ResolvedDependency[]>([]);
+  let isResolvingDeps = $state(false);
 
   return {
     // Search state getters
@@ -137,6 +142,14 @@ function createContentStore() {
       return downloadProgress;
     },
 
+    // Resolved dependencies getters
+    get resolvedDependencies() {
+      return resolvedDependencies;
+    },
+    get isResolvingDeps() {
+      return isResolvingDeps;
+    },
+
     /** Set download progress (called from event listener) */
     setDownloadProgress(progress: ContentDownloadProgress | null) {
       downloadProgress = progress;
@@ -186,9 +199,47 @@ function createContentStore() {
       return false;
     },
 
-    /** Set the selected version */
-    setSelectedVersion(version: ContentVersion | null) {
+    /** Set the selected version and resolve dependencies */
+    async setSelectedVersion(version: ContentVersion | null, platform?: ContentPlatform) {
       selectedVersion = version;
+      if (version && platform) {
+        await this.resolveDependencies(version, platform);
+      } else {
+        resolvedDependencies = [];
+      }
+    },
+
+    /** Resolve dependencies for a version */
+    async resolveDependencies(version: ContentVersion, platform: ContentPlatform) {
+      if (!instanceId || !mcVersion) {
+        resolvedDependencies = [];
+        return;
+      }
+
+      // Only resolve if there are required dependencies
+      const hasRequiredDeps = version.dependencies.some(
+        (d) => d.dependencyType === "required"
+      );
+      if (!hasRequiredDeps) {
+        resolvedDependencies = [];
+        return;
+      }
+
+      isResolvingDeps = true;
+      try {
+        resolvedDependencies = await contentService.resolveContentDependencies(
+          instanceId,
+          platform,
+          version,
+          mcVersion,
+          loader || undefined
+        );
+      } catch (e) {
+        console.error("Failed to resolve dependencies:", e);
+        resolvedDependencies = [];
+      } finally {
+        isResolvingDeps = false;
+      }
     },
 
     /** Refresh installed content by re-scanning */
@@ -338,6 +389,7 @@ function createContentStore() {
       selectedContent = null;
       selectedContentVersions = [];
       selectedVersion = null;
+      resolvedDependencies = [];
     },
 
     /** Clear search error */
@@ -374,6 +426,8 @@ function createContentStore() {
       isInstalling = false;
       installError = null;
       downloadProgress = null;
+      resolvedDependencies = [];
+      isResolvingDeps = false;
     },
   };
 }
