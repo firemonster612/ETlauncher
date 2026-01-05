@@ -5,8 +5,6 @@ export type Theme = "dark" | "light" | "system";
 export interface AppSettings {
   /** Path to instances directory */
   instancesPath: string;
-  /** Path to Java executable (auto-detected or user-set) */
-  javaPath?: string;
   /** Minimum memory allocation (MB) */
   memoryMinMb: number;
   /** Maximum memory allocation (MB) */
@@ -28,7 +26,6 @@ export interface AppSettings {
 /** Request to update settings (partial update) */
 export interface UpdateSettingsRequest {
   instancesPath?: string;
-  javaPath?: string;
   memoryMinMb?: number;
   memoryMaxMb?: number;
   concurrentDownloads?: number;

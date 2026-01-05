@@ -5,10 +5,8 @@
   import { Input } from "$lib/ui/input";
   import { Slider } from "$lib/ui/slider";
   import { settingsStore } from "$lib/stores/settings.svelte";
-  import * as settingsService from "$lib/services/settings";
-  import { RefreshCw, RotateCcw } from "@lucide/svelte";
+  import { RotateCcw } from "@lucide/svelte";
 
-  let javaDetecting = $state(false);
   let saveStatus = $state<"idle" | "saving" | "saved" | "error">("idle");
 
   // Convenience getter for settings with defaults
@@ -31,18 +29,6 @@
   onMount(() => {
     settingsStore.load();
   });
-
-  async function detectJava() {
-    javaDetecting = true;
-    try {
-      const detected = await settingsService.detectJava();
-      if (detected) {
-        await saveSettings({ javaPath: detected });
-      }
-    } finally {
-      javaDetecting = false;
-    }
-  }
 
   async function saveSettings(updates: Record<string, unknown>) {
     saveStatus = "saving";
@@ -127,36 +113,6 @@
           checked={settings.reopenLauncherOnGameClose}
           onCheckedChange={(checked) => saveSettings({ reopenLauncherOnGameClose: !!checked })}
         />
-      </div>
-    </section>
-
-    <!-- Java Settings -->
-    <section class="border-2 border-border bg-card p-4 space-y-4">
-      <h3 class="text-sm uppercase tracking-wider text-muted-foreground">Java</h3>
-
-      <div class="space-y-2">
-        <label for="javaPath" class="text-sm">Java Path</label>
-        <div class="flex gap-2">
-          <Input
-            id="javaPath"
-            type="text"
-            value={settings.javaPath ?? ""}
-            onchange={(e) => saveSettings({ javaPath: e.currentTarget.value || undefined })}
-            placeholder="Auto-detect"
-            class="flex-1"
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            onclick={detectJava}
-            disabled={javaDetecting}
-          >
-            <RefreshCw class="h-4 w-4 {javaDetecting ? 'animate-spin' : ''}" />
-          </Button>
-        </div>
-        <p class="text-xs text-muted-foreground">
-          {settings.javaPath ? `Using: ${settings.javaPath}` : "Leave empty to auto-detect"}
-        </p>
       </div>
     </section>
 

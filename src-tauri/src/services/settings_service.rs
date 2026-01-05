@@ -64,10 +64,6 @@ fn migrate_old_settings(old: &serde_json::Value) -> AppSettings {
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string())
             .unwrap_or_else(|| default_instances.clone()),
-        java_path: old.get("java_path")
-            .or_else(|| old.get("javaPath"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
         memory_min_mb: old.get("memory_min_mb")
             .or_else(|| old.get("memoryMinMb"))
             .and_then(|v| v.as_u64())
@@ -137,7 +133,6 @@ pub fn update_settings(
 ) -> AppSettings {
     AppSettings {
         instances_path: updates.instances_path.unwrap_or_else(|| current.instances_path.clone()),
-        java_path: updates.java_path.or_else(|| current.java_path.clone()),
         memory_min_mb: updates.memory_min_mb.unwrap_or(current.memory_min_mb),
         memory_max_mb: updates.memory_max_mb.unwrap_or(current.memory_max_mb),
         concurrent_downloads: updates.concurrent_downloads.unwrap_or(current.concurrent_downloads),
@@ -189,79 +184,10 @@ pub fn validate_settings(settings: &AppSettings) -> Result<(), AppError> {
         })?;
     }
 
-    // Validate Java path if specified
-    if let Some(ref java_path) = settings.java_path {
-        let java_path = Path::new(java_path);
-        if !java_path.exists() {
-            return Err(AppError::SettingsError(format!(
-                "Java path '{}' does not exist",
-                java_path.display()
-            )));
-        }
-    }
-
     Ok(())
 }
 
 /// Get the default instances path
 pub fn get_default_instances_path() -> String {
     paths::get_instances_dir().to_string_lossy().to_string()
-}
-
-/// Detect Java installations on the system
-pub fn detect_java_path() -> Option<String> {
-    // Try common Java locations
-    let candidates = if cfg!(target_os = "windows") {
-        vec![
-            std::env::var("JAVA_HOME").ok().map(|p| format!("{}\\bin\\java.exe", p)),
-            Some("C:\\Program Files\\Java\\jdk-21\\bin\\java.exe".to_string()),
-            Some("C:\\Program Files\\Java\\jdk-17\\bin\\java.exe".to_string()),
-            Some("C:\\Program Files\\Eclipse Adoptium\\jdk-21\\bin\\java.exe".to_string()),
-            Some("C:\\Program Files\\Eclipse Adoptium\\jdk-17\\bin\\java.exe".to_string()),
-        ]
-    } else if cfg!(target_os = "macos") {
-        vec![
-            std::env::var("JAVA_HOME").ok().map(|p| format!("{}/bin/java", p)),
-            Some("/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home/bin/java".to_string()),
-            Some("/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home/bin/java".to_string()),
-            Some("/usr/bin/java".to_string()),
-        ]
-    } else {
-        // Linux
-        vec![
-            std::env::var("JAVA_HOME").ok().map(|p| format!("{}/bin/java", p)),
-            Some("/usr/lib/jvm/java-21-openjdk/bin/java".to_string()),
-            Some("/usr/lib/jvm/java-17-openjdk/bin/java".to_string()),
-            Some("/usr/bin/java".to_string()),
-        ]
-    };
-
-    for candidate in candidates.into_iter().flatten() {
-        if Path::new(&candidate).exists() {
-            return Some(candidate);
-        }
-    }
-
-    // Try to find java in PATH
-    which_java()
-}
-
-/// Find java executable in PATH
-fn which_java() -> Option<String> {
-    let java_name = if cfg!(target_os = "windows") {
-        "java.exe"
-    } else {
-        "java"
-    };
-
-    std::env::var("PATH").ok().and_then(|path| {
-        let separator = if cfg!(target_os = "windows") { ';' } else { ':' };
-        for dir in path.split(separator) {
-            let candidate = Path::new(dir).join(java_name);
-            if candidate.exists() {
-                return Some(candidate.to_string_lossy().to_string());
-            }
-        }
-        None
-    })
 }

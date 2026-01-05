@@ -17,8 +17,6 @@ pub enum Theme {
 pub struct AppSettings {
     /// Path to instances directory
     pub instances_path: String,
-    /// Path to Java executable (auto-detected or user-set)
-    pub java_path: Option<String>,
     /// Minimum memory allocation (MB)
     pub memory_min_mb: u32,
     /// Maximum memory allocation (MB)
@@ -44,7 +42,6 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             instances_path: paths::get_instances_dir().to_string_lossy().to_string(),
-            java_path: None,
             memory_min_mb: 512,
             memory_max_mb: 4096,
             concurrent_downloads: 4,
@@ -63,7 +60,6 @@ impl Default for AppSettings {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateSettingsRequest {
     pub instances_path: Option<String>,
-    pub java_path: Option<String>,
     pub memory_min_mb: Option<u32>,
     pub memory_max_mb: Option<u32>,
     pub concurrent_downloads: Option<u32>,

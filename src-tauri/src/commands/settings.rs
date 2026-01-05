@@ -44,11 +44,6 @@ pub fn reset_settings(state: State<'_, AppState>) -> Result<AppSettings, Command
     let mut settings = AppSettings::default();
     settings.instances_path = settings_service::get_default_instances_path();
 
-    // Try to detect Java
-    if let Some(java_path) = settings_service::detect_java_path() {
-        settings.java_path = Some(java_path);
-    }
-
     // Update state
     {
         let mut current = state.settings.write();
@@ -65,12 +60,6 @@ pub fn reset_settings(state: State<'_, AppState>) -> Result<AppSettings, Command
 #[tauri::command]
 pub fn get_default_instances_path() -> String {
     settings_service::get_default_instances_path()
-}
-
-/// Detect Java path on the system
-#[tauri::command]
-pub fn detect_java() -> Option<String> {
-    settings_service::detect_java_path()
 }
 
 // Note: Folder picker will be handled via tauri-plugin-dialog in frontend
