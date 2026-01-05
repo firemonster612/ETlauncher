@@ -8,7 +8,6 @@ use crate::services::{
     manifest_service, modrinth_service, technic_service,
 };
 use crate::state::AppState;
-use crate::utils::hash::{murmur2_bytes, sha512_file};
 use chrono::Utc;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -974,13 +973,8 @@ fn scan_content_folder(folder: &PathBuf, content_type: ContentType) -> Result<Ve
             continue;
         }
 
-        // Compute hashes
-        let sha512_hash = sha512_file(&path).ok();
-        let murmur2_fingerprint = if let Ok(bytes) = fs::read(&path) {
-            Some(murmur2_bytes(&bytes))
-        } else {
-            None
-        };
+        // Skip hash computation during initial scan - it's too slow for large modpacks
+        // Hashes will be computed lazily when needed (during sync or identification)
 
         // Create basic entry - no platform tracking since we don't know the source
         let installed = InstalledContent {
@@ -996,8 +990,8 @@ fn scan_content_folder(folder: &PathBuf, content_type: ContentType) -> Result<Ve
             installed_at: Utc::now().timestamp(),
             is_dependency: false,
             source: ContentSource::ModpackOriginal,
-            sha512_hash,
-            murmur2_fingerprint,
+            sha512_hash: None,
+            murmur2_fingerprint: None,
         };
 
         content.push(installed);
@@ -1408,12 +1402,30 @@ pub async fn install_ftb_modpack(
     emit_progress(app_handle, "Fetching version info", 5, None, 0, 0);
     let version = ftb_service::get_version_details(&state.http_client, pack_id, ver_id).await?;
     println!(
-        "[modpack_install] Got FTB version: {} with {} files",
+        "[modpack_install] Got FTB version: {} with {} files, mc_version='{}'",
         version.name,
-        version.files.len()
+        version.files.len(),
+        version.mc_version
     );
 
-    // Create instance
+    // Check if we have files to download
+    if version.files.is_empty() {
+        return Err(AppError::InstallationError(
+            "This FTB pack has no downloadable files. It may be a legacy pack that is no longer available.".to_string()
+        ));
+    }
+
+    // Track if we need to detect metadata after download
+    let needs_mc_detection = version.mc_version.is_empty();
+    let needs_loader_detection = version.loader_type == LoaderType::Vanilla;
+    if needs_mc_detection {
+        println!("[modpack_install] No MC version from API, will detect after download");
+    }
+    if needs_loader_detection {
+        println!("[modpack_install] No loader from API, will detect after download if mods exist");
+    }
+
+    // Create instance with placeholder values if needed
     let instance_name = instance_name.unwrap_or_else(|| modpack.name.clone());
     let instance_id = Uuid::new_v4().to_string();
 
@@ -1443,10 +1455,11 @@ pub async fn install_ftb_modpack(
         fs::create_dir_all(game_dir.join(subdir))?;
     }
 
-    let instance = Instance {
+    // Create initial instance (may be updated after detection)
+    let mut instance = Instance {
         id: instance_id.clone(),
         name: instance_name,
-        minecraft_version: version.mc_version.clone(),
+        minecraft_version: if needs_mc_detection { "unknown".to_string() } else { version.mc_version.clone() },
         loader_type: version.loader_type.clone(),
         loader_version: version.loader_version.clone(),
         created_at: Utc::now().timestamp(),
@@ -1477,7 +1490,7 @@ pub async fn install_ftb_modpack(
         emit_progress(
             app_handle,
             "Downloading files",
-            15 + ((i as u32 * 75) / total_files.max(1)),
+            15 + ((i as u32 * 70) / total_files.max(1)),
             Some(filename.to_string()),
             total_files,
             i as u32,
@@ -1496,22 +1509,97 @@ pub async fn install_ftb_modpack(
         }
     }
 
+    // Detect metadata if needed after files are downloaded
+    // Check if mods folder has files (indicates we need a loader)
+    let mods_dir = game_dir.join("mods");
+    let has_mods = mods_dir.exists() && mods_dir.read_dir().map(|mut d| d.next().is_some()).unwrap_or(false);
+
+    // Run detection if:
+    // 1. MC version is missing, OR
+    // 2. Loader is Vanilla but mods folder has files (loader needs detection)
+    let should_detect = needs_mc_detection || (needs_loader_detection && has_mods);
+
+    let (final_mc_version, final_loader_type, final_loader_version) = if should_detect {
+        emit_progress(app_handle, "Detecting pack metadata", 85, None, 0, 0);
+
+        match detect_pack_metadata(&game_dir) {
+            Ok((detected_mc, detected_loader, detected_loader_ver)) => {
+                println!(
+                    "[modpack_install] Detected: mc_version={}, loader={:?}, loader_version={:?}",
+                    detected_mc, detected_loader, detected_loader_ver
+                );
+
+                // Use detected values where needed
+                let mc = if needs_mc_detection { detected_mc } else { version.mc_version.clone() };
+                let (loader, loader_ver) = if needs_loader_detection && detected_loader != LoaderType::Vanilla {
+                    (detected_loader, detected_loader_ver)
+                } else {
+                    (version.loader_type.clone(), version.loader_version.clone())
+                };
+
+                // Update instance with detected values
+                instance.minecraft_version = mc.clone();
+                instance.loader_type = loader.clone();
+                instance.loader_version = loader_ver.clone();
+                instance_service::save_instance(state, &instance)?;
+
+                (mc, loader, loader_ver)
+            }
+            Err(e) => {
+                // If we needed MC detection and it failed, that's an error
+                // If we only needed loader detection, just continue with Vanilla
+                if needs_mc_detection {
+                    eprintln!("[modpack_install] Detection failed: {}", e);
+                    let _ = fs::remove_dir_all(&instance_dir);
+                    instance_service::delete_instance(state, &instance_id, true)?;
+                    return Err(e);
+                } else {
+                    eprintln!("[modpack_install] Loader detection failed, continuing with Vanilla: {}", e);
+                    (version.mc_version.clone(), version.loader_type.clone(), version.loader_version.clone())
+                }
+            }
+        }
+    } else {
+        (version.mc_version.clone(), version.loader_type.clone(), version.loader_version.clone())
+    };
+
+    // Resolve loader type and version using centralized function
+    emit_progress(app_handle, "Resolving mod loader", 87, None, 0, 0);
+    let (final_loader_type, final_loader_version) = match resolve_loader_for_pack(
+        &final_mc_version,
+        final_loader_type,
+        final_loader_version,
+        has_mods,
+    ).await {
+        Ok((lt, lv)) => (lt, lv),
+        Err(e) => {
+            let _ = fs::remove_dir_all(&instance_dir);
+            instance_service::delete_instance(state, &instance_id, true)?;
+            return Err(e);
+        }
+    };
+
+    // Update instance with resolved loader info
+    instance.loader_type = final_loader_type.clone();
+    instance.loader_version = final_loader_version.clone();
+    instance_service::save_instance(state, &instance)?;
+
     // Install mod loader if not Vanilla
-    if instance.loader_type != LoaderType::Vanilla {
-        if let Some(ref lv) = instance.loader_version {
+    if final_loader_type != LoaderType::Vanilla {
+        if let Some(ref lv) = final_loader_version {
             emit_progress(
                 app_handle,
                 "Installing mod loader",
                 90,
-                Some(format!("{:?} {}", instance.loader_type, lv)),
+                Some(format!("{:?} {}", final_loader_type, lv)),
                 0,
                 0,
             );
 
             loader_service::install_loader(
                 &game_dir,
-                instance.loader_type.clone(),
-                &version.mc_version,
+                final_loader_type.clone(),
+                &final_mc_version,
                 lv,
                 |msg, pct| {
                     emit_progress(
@@ -1573,31 +1661,50 @@ pub async fn install_technic_modpack(
 
     // For Solder packs, we need to get loader info from the build, not the pack
     // The pack-level forge field is often null even for Forge packs
-    let (mc_version, loader_type, loader_version) = if let Some(ref solder_url) = pack.solder {
+    let (mut mc_version, mut loader_type, mut loader_version, needs_mc_detection, needs_loader_detection) = if let Some(ref solder_url) = pack.solder {
         // Try to get build info to determine loader
         match technic_service::get_solder_build(&state.http_client, solder_url, modpack_id, version_id).await {
             Ok(build) => {
                 let mc = build.minecraft.clone();
-                let (lt, lv) = if let Some(ref forge_ver) = build.forge {
-                    (LoaderType::Forge, Some(forge_ver.clone()))
+                let needs_mc = mc.is_empty();
+                let (lt, lv, needs_loader) = if let Some(ref forge_ver) = build.forge {
+                    (LoaderType::Forge, Some(forge_ver.clone()), false)
                 } else {
-                    (LoaderType::Vanilla, None)
+                    // Loader not specified - will need detection if mods exist
+                    (LoaderType::Vanilla, None, true)
                 };
-                (mc, lt, lv)
+                (mc, lt, lv, needs_mc, needs_loader)
             }
             Err(_) => {
-                // Fallback to pack-level info
-                let mc = pack.minecraft.clone().unwrap_or_else(|| "1.12.2".to_string());
-                let lt = if pack.forge.is_some() { LoaderType::Forge } else { LoaderType::Vanilla };
-                (mc, lt, pack.forge.clone())
+                // Fallback - will need detection
+                let mc = pack.minecraft.clone().unwrap_or_default();
+                let needs_mc = mc.is_empty();
+                let (lt, lv, needs_loader) = if pack.forge.is_some() {
+                    (LoaderType::Forge, pack.forge.clone(), false)
+                } else {
+                    (LoaderType::Vanilla, None, true)
+                };
+                (mc, lt, lv, needs_mc, needs_loader)
             }
         }
     } else {
-        // Non-Solder pack - use pack-level info
-        let mc = pack.minecraft.clone().unwrap_or_else(|| "1.12.2".to_string());
-        let lt = if pack.forge.is_some() { LoaderType::Forge } else { LoaderType::Vanilla };
-        (mc, lt, pack.forge.clone())
+        // Non-Solder pack - use pack-level info, detect if empty
+        let mc = pack.minecraft.clone().unwrap_or_default();
+        let needs_mc = mc.is_empty();
+        let (lt, lv, needs_loader) = if pack.forge.is_some() {
+            (LoaderType::Forge, pack.forge.clone(), false)
+        } else {
+            (LoaderType::Vanilla, None, true)
+        };
+        (mc, lt, lv, needs_mc, needs_loader)
     };
+
+    if needs_mc_detection {
+        println!("[modpack_install] No MC version from API, will detect after download");
+    }
+    if needs_loader_detection {
+        println!("[modpack_install] No loader from API, will detect after download if mods exist");
+    }
 
     // Create instance
     let instance_name =
@@ -1630,10 +1737,10 @@ pub async fn install_technic_modpack(
         fs::create_dir_all(game_dir.join(subdir))?;
     }
 
-    let instance = Instance {
+    let mut instance = Instance {
         id: instance_id.clone(),
         name: instance_name,
-        minecraft_version: mc_version.clone(),
+        minecraft_version: if needs_mc_detection { "unknown".to_string() } else { mc_version.clone() },
         loader_type: loader_type.clone(),
         loader_version: loader_version.clone(),
         created_at: Utc::now().timestamp(),
@@ -1673,7 +1780,7 @@ pub async fn install_technic_modpack(
             emit_progress(
                 app_handle,
                 "Downloading mods",
-                15 + ((i as u32 * 75) / total_files.max(1)),
+                15 + ((i as u32 * 70) / total_files.max(1)),
                 Some(mod_file.name.clone()),
                 total_files,
                 i as u32,
@@ -1727,7 +1834,7 @@ pub async fn install_technic_modpack(
             emit_progress(
                 app_handle,
                 "Extracting files",
-                50 + ((i as u32 * 40) / total_files.max(1)),
+                50 + ((i as u32 * 35) / total_files.max(1)),
                 Some(name.clone()),
                 total_files,
                 i as u32,
@@ -1745,6 +1852,77 @@ pub async fn install_technic_modpack(
             }
         }
     }
+
+    // Detect metadata if needed after files are downloaded
+    // Check if mods folder has files (indicates we need a loader)
+    let mods_dir = game_dir.join("mods");
+    let has_mods = mods_dir.exists() && mods_dir.read_dir().map(|mut d| d.next().is_some()).unwrap_or(false);
+
+    // Run detection if:
+    // 1. MC version is missing, OR
+    // 2. Loader is Vanilla but mods folder has files (loader needs detection)
+    let should_detect = needs_mc_detection || (needs_loader_detection && has_mods);
+
+    if should_detect {
+        emit_progress(app_handle, "Detecting pack metadata", 85, None, 0, 0);
+
+        match detect_pack_metadata(&game_dir) {
+            Ok((detected_mc, detected_loader, detected_loader_ver)) => {
+                println!(
+                    "[modpack_install] Detected: mc_version={}, loader={:?}, loader_version={:?}",
+                    detected_mc, detected_loader, detected_loader_ver
+                );
+
+                // Update values if we needed detection
+                if needs_mc_detection {
+                    mc_version = detected_mc;
+                }
+                if needs_loader_detection && detected_loader != LoaderType::Vanilla {
+                    loader_type = detected_loader;
+                    loader_version = detected_loader_ver;
+                }
+
+                // Update instance with detected values
+                instance.minecraft_version = mc_version.clone();
+                instance.loader_type = loader_type.clone();
+                instance.loader_version = loader_version.clone();
+                instance_service::save_instance(state, &instance)?;
+            }
+            Err(e) => {
+                // If we needed MC detection and it failed, that's an error
+                // If we only needed loader detection, just continue with Vanilla
+                if needs_mc_detection {
+                    eprintln!("[modpack_install] Detection failed: {}", e);
+                    let _ = fs::remove_dir_all(&instance_dir);
+                    instance_service::delete_instance(state, &instance_id, true)?;
+                    return Err(e);
+                } else {
+                    eprintln!("[modpack_install] Loader detection failed, continuing with Vanilla: {}", e);
+                }
+            }
+        }
+    }
+
+    // Resolve loader type and version using centralized function
+    emit_progress(app_handle, "Resolving mod loader", 87, None, 0, 0);
+    let (loader_type, loader_version) = match resolve_loader_for_pack(
+        &mc_version,
+        loader_type,
+        loader_version,
+        has_mods,
+    ).await {
+        Ok((lt, lv)) => (lt, lv),
+        Err(e) => {
+            let _ = fs::remove_dir_all(&instance_dir);
+            instance_service::delete_instance(state, &instance_id, true)?;
+            return Err(e);
+        }
+    };
+
+    // Update instance with resolved loader info
+    instance.loader_type = loader_type.clone();
+    instance.loader_version = loader_version.clone();
+    instance_service::save_instance(state, &instance)?;
 
     // Install mod loader if not Vanilla
     if loader_type != LoaderType::Vanilla {
@@ -1824,7 +2002,7 @@ pub async fn install_atlauncher_modpack(
     .await?;
 
     // Parse loader info from manifest
-    let loader_type = match manifest.loader_type.as_deref() {
+    let mut loader_type = match manifest.loader_type.as_deref() {
         Some("forge") => LoaderType::Forge,
         Some("neoforge") => LoaderType::NeoForge,
         Some("fabric") => LoaderType::Fabric,
@@ -1832,7 +2010,18 @@ pub async fn install_atlauncher_modpack(
         Some("liteloader") => LoaderType::LiteLoader,
         _ => LoaderType::Vanilla,
     };
-    let loader_version = manifest.loader_version.clone();
+    let mut loader_version = manifest.loader_version.clone();
+    let mut mc_version = manifest.minecraft.clone();
+
+    // Track if we need to detect metadata after download
+    let needs_mc_detection = mc_version.is_empty();
+    let needs_loader_detection = loader_type == LoaderType::Vanilla;
+    if needs_mc_detection {
+        println!("[modpack_install] No MC version from API, will detect after download");
+    }
+    if needs_loader_detection {
+        println!("[modpack_install] No loader from API, will detect after download if mods exist");
+    }
 
     // Create instance
     let instance_name = instance_name.unwrap_or_else(|| modpack_id.to_string());
@@ -1864,10 +2053,10 @@ pub async fn install_atlauncher_modpack(
         fs::create_dir_all(game_dir.join(subdir))?;
     }
 
-    let instance = Instance {
+    let mut instance = Instance {
         id: instance_id.clone(),
         name: instance_name,
-        minecraft_version: manifest.minecraft.clone(),
+        minecraft_version: if needs_mc_detection { "unknown".to_string() } else { mc_version.clone() },
         loader_type: loader_type.clone(),
         loader_version: loader_version.clone(),
         created_at: Utc::now().timestamp(),
@@ -2013,6 +2202,77 @@ pub async fn install_atlauncher_modpack(
         );
     }
 
+    // Detect metadata if needed after files are downloaded
+    // Check if mods folder has files (indicates we need a loader)
+    let mods_dir = game_dir.join("mods");
+    let has_mods = mods_dir.exists() && mods_dir.read_dir().map(|mut d| d.next().is_some()).unwrap_or(false);
+
+    // Run detection if:
+    // 1. MC version is missing, OR
+    // 2. Loader is Vanilla but mods folder has files (loader needs detection)
+    let should_detect = needs_mc_detection || (needs_loader_detection && has_mods);
+
+    if should_detect {
+        emit_progress(app_handle, "Detecting pack metadata", 85, None, 0, 0);
+
+        match detect_pack_metadata(&game_dir) {
+            Ok((detected_mc, detected_loader, detected_loader_ver)) => {
+                println!(
+                    "[modpack_install] Detected: mc_version={}, loader={:?}, loader_version={:?}",
+                    detected_mc, detected_loader, detected_loader_ver
+                );
+
+                // Update values if we needed detection
+                if needs_mc_detection {
+                    mc_version = detected_mc;
+                }
+                if needs_loader_detection && detected_loader != LoaderType::Vanilla {
+                    loader_type = detected_loader;
+                    loader_version = detected_loader_ver;
+                }
+
+                // Update instance with detected values
+                instance.minecraft_version = mc_version.clone();
+                instance.loader_type = loader_type.clone();
+                instance.loader_version = loader_version.clone();
+                instance_service::save_instance(state, &instance)?;
+            }
+            Err(e) => {
+                // If we needed MC detection and it failed, that's an error
+                // If we only needed loader detection, just continue with Vanilla
+                if needs_mc_detection {
+                    eprintln!("[modpack_install] Detection failed: {}", e);
+                    let _ = fs::remove_dir_all(&instance_dir);
+                    instance_service::delete_instance(state, &instance_id, true)?;
+                    return Err(e);
+                } else {
+                    eprintln!("[modpack_install] Loader detection failed, continuing with Vanilla: {}", e);
+                }
+            }
+        }
+    }
+
+    // Resolve loader type and version using centralized function
+    emit_progress(app_handle, "Resolving mod loader", 87, None, 0, 0);
+    let (loader_type, loader_version) = match resolve_loader_for_pack(
+        &mc_version,
+        loader_type,
+        loader_version,
+        has_mods,
+    ).await {
+        Ok((lt, lv)) => (lt, lv),
+        Err(e) => {
+            let _ = fs::remove_dir_all(&instance_dir);
+            instance_service::delete_instance(state, &instance_id, true)?;
+            return Err(e);
+        }
+    };
+
+    // Update instance with resolved loader info
+    instance.loader_type = loader_type.clone();
+    instance.loader_version = loader_version.clone();
+    instance_service::save_instance(state, &instance)?;
+
     // Install mod loader if not Vanilla
     if loader_type != LoaderType::Vanilla {
         if let Some(ref lv) = loader_version {
@@ -2028,7 +2288,7 @@ pub async fn install_atlauncher_modpack(
             loader_service::install_loader(
                 &game_dir,
                 loader_type.clone(),
-                &manifest.minecraft,
+                &mc_version,
                 lv,
                 |msg, pct| {
                     emit_progress(
@@ -2060,4 +2320,319 @@ pub async fn install_atlauncher_modpack(
         instance.id
     );
     Ok(instance)
+}
+
+// =============================================================================
+// PACK METADATA DETECTION (for packs without API metadata)
+// =============================================================================
+
+/// Extract Minecraft version from a filename
+/// Looks for patterns like "-1.12.2", "_1.16.5", "[1.20.1]", "(1.19.2)"
+fn extract_mc_version_from_filename(filename: &str) -> Option<String> {
+    let filename_lower = filename.to_lowercase();
+
+    // Common MC version patterns: 1.X or 1.X.Y where X is 1-20 and Y is 0-9
+    // We look for these after common delimiters
+    let delimiters = ['-', '_', '[', '(', '+', ' '];
+
+    for delim in delimiters {
+        for part in filename_lower.split(delim) {
+            // Check if this part looks like a MC version
+            if let Some(version) = parse_mc_version(part) {
+                return Some(version);
+            }
+        }
+    }
+
+    // Also try to find version in the middle of the string
+    // Look for patterns like "1.12.2" or "1.16"
+    let chars: Vec<char> = filename_lower.chars().collect();
+    for i in 0..chars.len().saturating_sub(3) {
+        if chars[i] == '1' && chars.get(i + 1) == Some(&'.') {
+            // Potential MC version start
+            let remaining: String = chars[i..].iter().collect();
+            if let Some(version) = parse_mc_version(&remaining) {
+                return Some(version);
+            }
+        }
+    }
+
+    None
+}
+
+/// Try to parse a string as a Minecraft version (1.X or 1.X.Y)
+fn parse_mc_version(s: &str) -> Option<String> {
+    let s = s.trim_end_matches(|c: char| !c.is_numeric() && c != '.');
+    let s = s.trim_start_matches(|c: char| !c.is_numeric());
+
+    if !s.starts_with("1.") {
+        return None;
+    }
+
+    let parts: Vec<&str> = s.split('.').collect();
+    if parts.len() < 2 || parts.len() > 3 {
+        return None;
+    }
+
+    // Validate: first part must be "1"
+    if parts[0] != "1" {
+        return None;
+    }
+
+    // Second part should be a number between 0 and 21 (MC versions 1.0 to 1.21+)
+    let minor: u32 = match parts[1].parse() {
+        Ok(n) if n <= 25 => n,
+        _ => return None,
+    };
+
+    // Third part (if present) should be a small number (patch version)
+    if parts.len() == 3 {
+        let patch: u32 = match parts[2].chars().take_while(|c| c.is_numeric()).collect::<String>().parse() {
+            Ok(n) if n <= 20 => n,
+            _ => return None,
+        };
+        return Some(format!("1.{}.{}", minor, patch));
+    }
+
+    Some(format!("1.{}", minor))
+}
+
+/// Resolve the loader type and version for a modpack
+/// This is the central function that handles ALL loader resolution logic:
+/// - If no mods exist → (Vanilla, None)
+/// - If loader version is already set → return current values
+/// - If MC < 1.14 with mods → assume Forge, look up version
+/// - If MC >= 1.14 with mods → use detected loader, look up version
+/// - Fail with clear error if can't determine
+async fn resolve_loader_for_pack(
+    mc_version: &str,
+    current_loader: LoaderType,
+    current_loader_version: Option<String>,
+    has_mods: bool,
+) -> Result<(LoaderType, Option<String>), AppError> {
+    // No mods = no loader needed
+    if !has_mods {
+        return Ok((LoaderType::Vanilla, None));
+    }
+
+    // If loader version is already set, we're good
+    if current_loader_version.is_some() {
+        return Ok((current_loader, current_loader_version));
+    }
+
+    // Parse MC version to determine if legacy (pre-1.14)
+    let parts: Vec<&str> = mc_version.split('.').collect();
+    let is_legacy = parts.len() >= 2 && parts[1].parse::<u32>().map(|m| m < 14).unwrap_or(false);
+
+    if is_legacy {
+        // For legacy MC (pre-1.14), assume Forge and look up version
+        eprintln!("[resolve_loader] Legacy MC {} with mods - looking up Forge version", mc_version);
+
+        match loader_service::get_forge_versions(mc_version).await {
+            Ok(versions) => {
+                if let Some(forge_ver) = versions.first() {
+                    eprintln!("[resolve_loader] Found Forge version: {}", forge_ver.version);
+                    Ok((LoaderType::Forge, Some(forge_ver.version.clone())))
+                } else {
+                    Err(AppError::InstallationError(
+                        format!("No Forge versions available for Minecraft {}. This pack may be too old and unsupported.", mc_version)
+                    ))
+                }
+            }
+            Err(e) => {
+                Err(AppError::InstallationError(
+                    format!("Failed to look up Forge versions for Minecraft {}: {}. This pack may be unsupported.", mc_version, e)
+                ))
+            }
+        }
+    } else {
+        // For modern MC (1.14+), we need to know the loader type
+        if current_loader == LoaderType::Vanilla {
+            // Can't determine loader for modern pack
+            return Err(AppError::InstallationError(
+                "Could not determine mod loader for this pack. The pack has mods but no loader information was found.".to_string()
+            ));
+        }
+
+        // Look up version for the detected loader
+        eprintln!("[resolve_loader] Modern MC {} with {:?} loader - looking up version", mc_version, current_loader);
+
+        match loader_service::get_loader_versions(current_loader.clone(), mc_version).await {
+            Ok(versions) => {
+                if let Some(loader_ver) = versions.first() {
+                    eprintln!("[resolve_loader] Found {:?} version: {}", current_loader, loader_ver.version);
+                    Ok((current_loader, Some(loader_ver.version.clone())))
+                } else {
+                    Err(AppError::InstallationError(
+                        format!("No {:?} versions available for Minecraft {}. This pack may be unsupported.", current_loader, mc_version)
+                    ))
+                }
+            }
+            Err(e) => {
+                Err(AppError::InstallationError(
+                    format!("Failed to look up {:?} versions for Minecraft {}: {}. This pack may be unsupported.", current_loader, mc_version, e)
+                ))
+            }
+        }
+    }
+}
+
+/// Detect pack metadata (MC version and loader) from downloaded files
+/// Scans the mods folder for known loader signatures and extracts MC version from filenames
+pub fn detect_pack_metadata(game_dir: &std::path::Path) -> Result<(String, LoaderType, Option<String>), AppError> {
+    let mods_dir = game_dir.join("mods");
+
+    if !mods_dir.exists() {
+        return Err(AppError::InstallationError(
+            "Could not detect Minecraft version: no mods folder found".to_string()
+        ));
+    }
+
+    let mut detected_loader = LoaderType::Vanilla;
+    let mut loader_version: Option<String> = None;
+    let mut mc_versions: Vec<String> = Vec::new();
+
+    // Scan mod files
+    let entries = fs::read_dir(&mods_dir).map_err(|e| {
+        AppError::InstallationError(format!("Failed to read mods folder: {}", e))
+    })?;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let filename = path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default()
+            .to_string();
+
+        let filename_lower = filename.to_lowercase();
+
+        // Skip non-jar files
+        if !filename_lower.ends_with(".jar") {
+            continue;
+        }
+
+        // Detect loader from known loader JARs
+        // Only match actual Forge installer/universal JARs, not mods with "forge" in the name
+        let is_forge_jar = (filename_lower.starts_with("forge-") || filename_lower.starts_with("minecraftforge-"))
+            && (filename_lower.contains("universal") || filename_lower.contains("installer"));
+
+        if is_forge_jar && !filename_lower.contains("neoforge") {
+            if detected_loader == LoaderType::Vanilla {
+                detected_loader = LoaderType::Forge;
+                // Try to extract forge version from filename
+                // e.g., "forge-1.12.2-14.23.5.2854-universal.jar"
+                if let Some(ver_start) = filename_lower.find("forge-") {
+                    let after_forge = &filename[ver_start + 6..];
+                    // Version might be after the MC version: "1.12.2-14.23.5.2854"
+                    let parts: Vec<&str> = after_forge.split('-').collect();
+                    if parts.len() >= 2 {
+                        // Validate it looks like a Forge version (starts with a number >= 10)
+                        let potential_ver = parts[1].trim_end_matches(".jar");
+                        if let Some(first_num) = potential_ver.split('.').next().and_then(|s| s.parse::<u32>().ok()) {
+                            if first_num >= 10 {
+                                loader_version = Some(potential_ver.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        } else if filename_lower.contains("neoforge") {
+            detected_loader = LoaderType::NeoForge;
+        } else if filename_lower.contains("fabric-loader") || filename_lower.contains("fabric-api") {
+            if detected_loader == LoaderType::Vanilla || detected_loader == LoaderType::Forge {
+                detected_loader = LoaderType::Fabric;
+            }
+        } else if filename_lower.contains("quilt-loader") || filename_lower.contains("quilt-standard-libraries") {
+            detected_loader = LoaderType::Quilt;
+        }
+
+        // Try to extract MC version from filename
+        if let Some(version) = extract_mc_version_from_filename(&filename) {
+            if !mc_versions.contains(&version) {
+                mc_versions.push(version);
+            }
+        }
+    }
+
+    // Also check config folder for loader-specific files
+    let config_dir = game_dir.join("config");
+    if config_dir.exists() {
+        if config_dir.join("forge-client.toml").exists() || config_dir.join("forge.cfg").exists() {
+            if detected_loader == LoaderType::Vanilla {
+                detected_loader = LoaderType::Forge;
+            }
+        }
+        if config_dir.join("fabric").exists() {
+            if detected_loader == LoaderType::Vanilla {
+                detected_loader = LoaderType::Fabric;
+            }
+        }
+    }
+
+    // Check for additional Forge indicators
+    // Many Technic packs have these files even without a standalone Forge JAR
+    if detected_loader == LoaderType::Vanilla {
+        // Check for fml.log or FML markers
+        if game_dir.join("logs").join("fml-client-latest.log").exists()
+            || game_dir.join("fml.log").exists()
+            || game_dir.join("ForgeModLoader-client-0.log").exists()
+        {
+            detected_loader = LoaderType::Forge;
+        }
+
+        // Check bin folder for modpack.jar (common in Technic packs)
+        let bin_dir = game_dir.join("bin");
+        if bin_dir.exists() {
+            if let Ok(entries) = fs::read_dir(&bin_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_lowercase();
+                    if filename.ends_with(".jar") && (filename.contains("modpack") || filename.contains("forge")) {
+                        detected_loader = LoaderType::Forge;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Check libraries folder for Forge
+        let libs_dir = game_dir.join("libraries");
+        if libs_dir.exists() {
+            let forge_path = libs_dir.join("net").join("minecraftforge");
+            if forge_path.exists() {
+                detected_loader = LoaderType::Forge;
+            }
+        }
+    }
+
+    // Determine the most likely MC version
+    // Prefer versions that appear most frequently
+    let mc_version = if mc_versions.is_empty() {
+        return Err(AppError::InstallationError(
+            "Could not detect Minecraft version from pack files. This pack may not be supported.".to_string()
+        ));
+    } else {
+        // Count occurrences of each version
+        let mut version_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for v in &mc_versions {
+            *version_counts.entry(v.clone()).or_insert(0) += 1;
+        }
+
+        // Get the most common version
+        version_counts.into_iter()
+            .max_by_key(|(_, count)| *count)
+            .map(|(v, _)| v)
+            .unwrap_or_else(|| mc_versions[0].clone())
+    };
+
+    eprintln!(
+        "[detect_pack_metadata] Detected: mc_version={}, loader={:?}, loader_version={:?}",
+        mc_version, detected_loader, loader_version
+    );
+
+    Ok((mc_version, detected_loader, loader_version))
 }
