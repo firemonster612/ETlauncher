@@ -9,6 +9,7 @@
     Loader2,
     X,
     ChevronDown,
+    ChevronLeft,
     Check,
     AlertTriangle,
     CheckCircle,
@@ -46,6 +47,9 @@
 
   let searchInput = $state("");
   let selectedContentDetail = $state<Content | null>(null);
+
+  // Navigation history for dependency drilling
+  let contentHistory = $state<Content[]>([]);
 
   // View mode: "browse" for searching online, "installed" for local files
   let viewMode = $state<"browse" | "installed">("browse");
@@ -296,38 +300,61 @@
     }
   }
 
-  /** Check if a dependency is installed based on its ID */
-  function isDependencyInstalled(depId: string, platform: ContentPlatform): boolean {
-    const result = contentStore.scanResult;
-    if (!result) return false;
-
-    // Handle version-based IDs (version:xxx format)
-    // These can't be checked directly - we'd need to resolve them first
-    if (depId.startsWith("version:")) {
-      return false;
-    }
-
-    // Only Modrinth mods can be identified via hash lookup
-    if (platform === "modrinth") {
-      return result.items.some((item) => item.modrinthProject?.projectId === depId);
-    }
-
-    // CurseForge cannot be identified via hash lookup
-    return false;
-  }
-
   async function handleContentClick(content: Content) {
     selectedContentDetail = content;
     await contentStore.selectContent(content);
+    // Auto-resolve deps for first version
+    if (contentStore.selectedVersion) {
+      await contentStore.resolveDependencies(
+        contentStore.selectedVersion,
+        content.platform
+      );
+    }
   }
 
   function closeContentDetail() {
     selectedContentDetail = null;
+    contentHistory = [];
     contentStore.clearSelection();
   }
 
   function handleVersionSelect(version: ContentVersion) {
-    contentStore.setSelectedVersion(version);
+    if (selectedContentDetail) {
+      contentStore.setSelectedVersion(version, selectedContentDetail.platform);
+    }
+  }
+
+  async function handleDependencyClick(content: Content) {
+    // Push current content to history
+    if (selectedContentDetail) {
+      contentHistory = [...contentHistory, selectedContentDetail];
+    }
+    // Navigate to the dependency
+    selectedContentDetail = content;
+    await contentStore.selectContent(content);
+    // Resolve deps for the new content's first version
+    if (contentStore.selectedVersion) {
+      await contentStore.resolveDependencies(
+        contentStore.selectedVersion,
+        content.platform
+      );
+    }
+  }
+
+  async function handleBackClick() {
+    if (contentHistory.length === 0) return;
+
+    const previous = contentHistory[contentHistory.length - 1];
+    contentHistory = contentHistory.slice(0, -1);
+
+    selectedContentDetail = previous;
+    await contentStore.selectContent(previous);
+    if (contentStore.selectedVersion) {
+      await contentStore.resolveDependencies(
+        contentStore.selectedVersion,
+        previous.platform
+      );
+    }
   }
 
   async function handleInstall() {
@@ -904,6 +931,16 @@
       <!-- Header -->
       <div class="p-4 border-b border-border">
         <div class="flex gap-3">
+          <!-- Back button when navigating dependencies -->
+          {#if contentHistory.length > 0}
+            <button
+              class="text-muted-foreground hover:text-foreground flex-shrink-0 self-center -ml-1 mr-1"
+              onclick={handleBackClick}
+              title="Back to {contentHistory[contentHistory.length - 1]?.name}"
+            >
+              <ChevronLeft class="h-6 w-6" />
+            </button>
+          {/if}
           {#if selectedContentDetail.iconUrl}
             <img
               src={selectedContentDetail.iconUrl}
@@ -1007,46 +1044,87 @@
         {/if}
 
         <!-- Dependencies Section -->
-        {#if selectedContentDetail && contentStore.selectedVersion && contentStore.selectedVersion.dependencies.filter(d => d.dependencyType === "required").length > 0}
-          {@const requiredDeps = contentStore.selectedVersion.dependencies.filter(d => d.dependencyType === "required")}
-          {@const contentPlatform = selectedContentDetail.platform}
-          {@const allDepsInstalled = requiredDeps.every(d => isDependencyInstalled(d.id, contentPlatform))}
-          <div class="mt-4 p-3 rounded border-2 {allDepsInstalled ? 'bg-green-500/10 border-green-500/50' : 'bg-amber-500/10 border-amber-500/50'}">
-            <div class="flex items-center gap-2 text-sm font-medium {allDepsInstalled ? 'text-green-500' : 'text-amber-500'}">
-              {#if allDepsInstalled}
-                <CheckCircle class="h-4 w-4" />
-                Dependencies Installed
-              {:else}
-                <AlertTriangle class="h-4 w-4" />
-                Required Dependencies
-              {/if}
-            </div>
-            <p class="text-xs text-muted-foreground mt-1">
-              {#if allDepsInstalled}
-                All required dependencies are already installed.
-              {:else}
-                This {selectedContentDetail.contentType} requires the following (will be auto-installed):
-              {/if}
-            </p>
-            <ul class="text-xs mt-2 space-y-1">
-              {#each requiredDeps as dep}
-                {@const isInstalled = isDependencyInstalled(dep.id, contentPlatform)}
-                <li class="flex items-center gap-2">
-                  {#if isInstalled}
-                    <CheckCircle class="h-3 w-3 text-green-500" />
+        {#if selectedContentDetail && contentStore.selectedVersion}
+          {@const hasRequiredDeps = contentStore.selectedVersion.dependencies.some(
+            d => d.dependencyType === "required"
+          )}
+
+          {#if hasRequiredDeps}
+            {#if contentStore.isResolvingDeps}
+              <!-- Loading state -->
+              <div class="mt-4 p-3 rounded border-2 bg-muted/50 border-border">
+                <div class="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 class="h-4 w-4 animate-spin" />
+                  Loading dependencies...
+                </div>
+              </div>
+            {:else if contentStore.resolvedDependencies.length > 0}
+              {@const allDepsInstalled = contentStore.resolvedDependencies.every(d => d.alreadyInstalled)}
+              <div class="mt-4 p-3 rounded border-2 {allDepsInstalled
+                ? 'bg-green-500/10 border-green-500/50'
+                : 'bg-amber-500/10 border-amber-500/50'}">
+                <div class="flex items-center gap-2 text-sm font-medium {allDepsInstalled
+                  ? 'text-green-500'
+                  : 'text-amber-500'}">
+                  {#if allDepsInstalled}
+                    <CheckCircle class="h-4 w-4" />
+                    Dependencies Installed
                   {:else}
-                    <span class="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+                    <AlertTriangle class="h-4 w-4" />
+                    Required Dependencies
                   {/if}
-                  <span class={isInstalled ? "text-muted-foreground" : ""}>
-                    {dep.name || dep.id}
-                  </span>
-                  {#if isInstalled}
-                    <span class="text-green-500 text-[10px]">installed</span>
+                </div>
+                <p class="text-xs text-muted-foreground mt-1">
+                  {#if allDepsInstalled}
+                    All required dependencies are already installed.
+                  {:else}
+                    This {selectedContentDetail.contentType} requires the following (will be auto-installed):
                   {/if}
-                </li>
-              {/each}
-            </ul>
-          </div>
+                </p>
+                <ul class="text-xs mt-2 space-y-1">
+                  {#each contentStore.resolvedDependencies as resolved}
+                    <li class="flex items-center gap-2">
+                      {#if resolved.alreadyInstalled}
+                        <CheckCircle class="h-3 w-3 text-green-500" />
+                      {:else}
+                        <span class="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+                      {/if}
+                      <button
+                        type="button"
+                        class="underline text-primary hover:text-primary/80 transition-colors text-left flex items-center gap-1 {resolved.alreadyInstalled ? 'text-green-500/80 hover:text-green-500' : ''}"
+                        onclick={() => handleDependencyClick(resolved.content)}
+                      >
+                        {resolved.content.name}
+                        <ExternalLink class="h-2.5 w-2.5" />
+                      </button>
+                      {#if resolved.alreadyInstalled}
+                        <span class="text-green-500 text-[10px]">installed</span>
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {:else}
+              <!-- Fallback if resolution failed - show raw IDs -->
+              {@const requiredDeps = contentStore.selectedVersion.dependencies.filter(
+                d => d.dependencyType === "required"
+              )}
+              <div class="mt-4 p-3 rounded border-2 bg-amber-500/10 border-amber-500/50">
+                <div class="flex items-center gap-2 text-sm font-medium text-amber-500">
+                  <AlertTriangle class="h-4 w-4" />
+                  Required Dependencies
+                </div>
+                <ul class="text-xs mt-2 space-y-1">
+                  {#each requiredDeps as dep}
+                    <li class="flex items-center gap-2">
+                      <span class="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+                      <span class="text-muted-foreground italic">{dep.id}</span>
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {/if}
+          {/if}
         {/if}
       </div>
 
