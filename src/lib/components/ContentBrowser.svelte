@@ -988,10 +988,10 @@
             href={selectedContentDetail.url}
             target="_blank"
             rel="noopener noreferrer"
-            class="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-2"
+            class="inline-flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/80 px-2.5 py-1.5 rounded mt-3 transition-colors"
           >
+            <ExternalLink class="h-3.5 w-3.5" />
             View on {selectedContentDetail.platform}
-            <ExternalLink class="h-3 w-3" />
           </a>
         {/if}
       </div>

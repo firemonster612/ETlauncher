@@ -235,7 +235,7 @@ pub async fn search_modpacks(
             }
             Some(Modpack {
                 id: hit.project_id,
-                slug: hit.slug,
+                slug: hit.slug.clone(),
                 name: hit.title,
                 author: hit.author,
                 description: hit.description,
@@ -248,7 +248,7 @@ pub async fn search_modpacks(
                 mc_versions: hit.versions,
                 loaders: parse_loaders(&hit.loaders),
                 latest_version: None,
-                url: None,
+                url: Some(format!("https://modrinth.com/modpack/{}", hit.slug)),
                 updated_at: parse_date(&hit.date_modified),
                 created_at: parse_date(&hit.date_created),
             })
@@ -549,9 +549,14 @@ pub async fn search_content(
         .into_iter()
         .filter_map(|hit| {
             let content_type = project_type_to_content_type(&hit.project_type)?;
+            let url_path = match content_type {
+                ContentType::Mod => "mod",
+                ContentType::Shader => "shader",
+                ContentType::ResourcePack => "resourcepack",
+            };
             Some(Content {
                 id: hit.project_id,
-                slug: hit.slug,
+                slug: hit.slug.clone(),
                 name: hit.title,
                 author: hit.author,
                 description: hit.description,
@@ -564,7 +569,7 @@ pub async fn search_content(
                 mc_versions: hit.versions,
                 loaders: parse_loaders(&hit.loaders),
                 latest_version: None,
-                url: None,
+                url: Some(format!("https://modrinth.com/{}/{}", url_path, hit.slug)),
                 updated_at: parse_date(&hit.date_modified),
                 created_at: parse_date(&hit.date_created),
             })
