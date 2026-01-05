@@ -146,6 +146,10 @@ pub async fn launch_instance(
     replacements.insert("launcher_name".to_string(), "ETLauncher".to_string());
     replacements.insert("launcher_version".to_string(), "0.1.0".to_string());
     replacements.insert("classpath".to_string(), classpath_str.clone());
+    replacements.insert("classpath_separator".to_string(), classpath_separator().to_string());
+    // Xbox/Microsoft auth placeholders (some version JSONs use these)
+    replacements.insert("clientid".to_string(), "c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb".to_string());
+    replacements.insert("auth_xuid".to_string(), String::new()); // Xbox User ID - not critical for gameplay
 
     // Build JVM arguments
     let mut jvm_args = vec![
@@ -155,16 +159,82 @@ pub async fn launch_instance(
     ];
 
     // Add version-specific JVM args
-    jvm_args.extend(download_service::build_jvm_arguments(&version_info, &replacements));
+    let version_jvm_args = download_service::build_jvm_arguments(&version_info, &replacements);
+
+    // Check if version JVM args already include -cp (Forge/NeoForge do this)
+    let has_classpath_in_jvm_args = version_jvm_args.iter().any(|arg| arg == "-cp" || arg == "-classpath");
+
+    // For NeoForge/Forge with BootstrapLauncher, we need to add legacyClassPath
+    // The BootstrapLauncher reads libraries from this property, not from -cp
+    if version_info.main_class == "cpw.mods.bootstraplauncher.BootstrapLauncher" {
+        // Extract artifact prefixes from module path jars to avoid version conflicts
+        // e.g., "asm-9.8.jar" -> "asm-" so we exclude "asm-9.3.jar" too
+        let mut module_path_prefixes: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut next_is_module_path = false;
+        for arg in &version_jvm_args {
+            if next_is_module_path {
+                // Split module path by classpath separator and extract artifact prefixes
+                for path in arg.split(classpath_separator()) {
+                    if let Some(filename) = std::path::Path::new(path).file_name() {
+                        let name = filename.to_string_lossy();
+                        // Extract artifact prefix: "artifact-version.jar" -> "artifact-"
+                        // Look for pattern: name followed by dash and digit
+                        if let Some(idx) = name.find(|c: char| c == '-').and_then(|dash_idx| {
+                            name[dash_idx + 1..].chars().next().and_then(|c| {
+                                if c.is_ascii_digit() { Some(dash_idx + 1) } else { None }
+                            })
+                        }) {
+                            module_path_prefixes.insert(name[..idx].to_string());
+                        } else {
+                            // Fallback: use full filename
+                            module_path_prefixes.insert(name.to_string());
+                        }
+                    }
+                }
+                next_is_module_path = false;
+            } else if arg == "-p" || arg == "--module-path" {
+                next_is_module_path = true;
+            }
+        }
+
+        // Build legacyClassPath from all classpath entries excluding module path artifacts
+        // Use a set to deduplicate entries
+        let mut seen_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let legacy_classpath: Vec<String> = classpath
+            .iter()
+            .filter(|p| {
+                if let Some(filename) = p.file_name() {
+                    let name = filename.to_string_lossy();
+                    // Check if this jar's artifact prefix matches any module path prefix
+                    !module_path_prefixes.iter().any(|prefix| name.starts_with(prefix))
+                } else {
+                    true
+                }
+            })
+            .map(|p| p.to_string_lossy().to_string())
+            .filter(|path| seen_paths.insert(path.clone())) // Deduplicate
+            .collect();
+
+        if !legacy_classpath.is_empty() {
+            jvm_args.push(format!(
+                "-DlegacyClassPath={}",
+                legacy_classpath.join(classpath_separator())
+            ));
+        }
+    }
+
+    jvm_args.extend(version_jvm_args);
 
     // Add custom JVM args from instance
     if let Some(ref custom_jvm) = instance.jvm_args {
         jvm_args.extend(custom_jvm.split_whitespace().map(String::from));
     }
 
-    // Add classpath
-    jvm_args.push("-cp".to_string());
-    jvm_args.push(classpath_str);
+    // Only add classpath if version doesn't already specify it
+    if !has_classpath_in_jvm_args {
+        jvm_args.push("-cp".to_string());
+        jvm_args.push(classpath_str);
+    }
 
     // Main class
     jvm_args.push(version_info.main_class.clone());
@@ -182,6 +252,16 @@ pub async fn launch_instance(
     let mut all_args = jvm_args;
     all_args.extend(all_game_args);
 
+    // Debug logging for launch command
+    eprintln!("[launch] ===== LAUNCH DEBUG =====");
+    eprintln!("[launch] Java path: {}", java_path);
+    eprintln!("[launch] Working dir: {}", game_dir.display());
+    eprintln!("[launch] Main class: {}", version_info.main_class);
+    eprintln!("[launch] Full command args ({}):", all_args.len());
+    for (i, arg) in all_args.iter().enumerate() {
+        eprintln!("[launch]   [{}] {}", i, arg);
+    }
+    eprintln!("[launch] =========================");
 
     // Spawn the process
     let mut child = Command::new(&java_path)

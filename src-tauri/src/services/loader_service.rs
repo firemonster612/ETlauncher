@@ -5,7 +5,9 @@ use crate::models::loader::{
     LoaderVersion, NeoForgeMavenResponse,
 };
 use std::path::Path;
+use std::time::Duration;
 use tokio::process::Command;
+use tokio::time::timeout;
 
 /// Fabric meta API base URL
 const FABRIC_META_URL: &str = "https://meta.fabricmc.net/v2";
@@ -309,17 +311,19 @@ async fn download_file_with_progress(
         .await
         .map_err(|e| AppError::HttpError(e))?;
 
-    let total_bytes = response
-        .content_length()
-        .ok_or_else(|| AppError::DownloadError("Missing content length".to_string()))?;
+    let total_bytes = response.content_length();
 
     let bytes = response
         .bytes()
         .await
         .map_err(|e| AppError::HttpError(e))?;
 
-    let downloaded_bytes = bytes.len();
-    let percent = ((downloaded_bytes as f64 / total_bytes as f64) * 100.0) as u32;
+    // Calculate progress if we have content-length, otherwise just report 100%
+    let percent = if let Some(total) = total_bytes {
+        ((bytes.len() as f64 / total as f64) * 100.0) as u32
+    } else {
+        100
+    };
     progress(percent);
 
     tokio::fs::write(destination, bytes)
@@ -534,6 +538,22 @@ pub async fn install_quilt(
     Ok(())
 }
 
+/// Check if a Minecraft version is legacy (1.12.2 or earlier)
+/// Legacy versions use different Forge installer arguments
+fn is_legacy_mc_version(mc_version: &str) -> bool {
+    // Parse major.minor version
+    let parts: Vec<&str> = mc_version.split('.').collect();
+    if parts.len() < 2 {
+        return true; // Assume legacy if can't parse
+    }
+
+    let major: u32 = parts[0].parse().unwrap_or(1);
+    let minor: u32 = parts[1].parse().unwrap_or(0);
+
+    // 1.12 and earlier are legacy
+    major == 1 && minor <= 12
+}
+
 /// Install Forge loader to a game directory
 pub async fn install_forge(
     game_dir: &Path,
@@ -570,14 +590,47 @@ pub async fn install_forge(
 
     progress("Running Forge installer...".to_string(), 40);
 
-    let output = Command::new("java")
-        .arg("-jar")
-        .arg(&installer_path)
-        .arg("--installClient")
-        .arg(game_dir)
-        .output()
-        .await
-        .map_err(|e| AppError::ProcessError(format!("Failed to run Forge installer: {}", e)))?;
+    let is_legacy = is_legacy_mc_version(mc_version);
+
+    let output = if is_legacy {
+        // Legacy Forge (1.12.2 and earlier) - run headless, installer will use the
+        // minecraft.launcher.brand property and install to the directory we specify
+        // via minecraft home. We also need to use extract mode or handle differently.
+        eprintln!("[forge] Using legacy installer mode for MC {}", mc_version);
+
+        // For legacy Forge, we run it headless and set the game directory as the
+        // user.home so it finds .minecraft there
+        let dot_minecraft = game_dir.join(".minecraft");
+        tokio::fs::create_dir_all(&dot_minecraft).await.ok();
+
+        // Copy launcher_profiles.json to the .minecraft subfolder if needed
+        let profiles_src = game_dir.join("launcher_profiles.json");
+        let profiles_dst = dot_minecraft.join("launcher_profiles.json");
+        if profiles_src.exists() && !profiles_dst.exists() {
+            tokio::fs::copy(&profiles_src, &profiles_dst).await.ok();
+        }
+
+        Command::new("java")
+            .arg("-Djava.awt.headless=true")
+            .arg("-jar")
+            .arg(&installer_path)
+            .arg("--installClient")
+            .arg(&dot_minecraft)
+            .output()
+            .await
+            .map_err(|e| AppError::ProcessError(format!("Failed to run Forge installer: {}", e)))?
+    } else {
+        // Modern Forge (1.13+) - use --installClient
+        Command::new("java")
+            .arg("-Djava.awt.headless=true")
+            .arg("-jar")
+            .arg(&installer_path)
+            .arg("--installClient")
+            .arg(game_dir)
+            .output()
+            .await
+            .map_err(|e| AppError::ProcessError(format!("Failed to run Forge installer: {}", e)))?
+    };
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -588,27 +641,104 @@ pub async fn install_forge(
         )));
     }
 
-    // Cleanup
+    // Cleanup installer
     let _ = tokio::fs::remove_file(&installer_path).await;
 
     progress("Verifying installation...".to_string(), 90);
 
-    // Verify installation by checking for Forge version JSON
-    let version_id = format!("{}-forge-{}", mc_version, loader_version);
-    let version_json = game_dir
-        .join("versions")
-        .join(&version_id)
-        .join(format!("{}.json", version_id));
+    // For legacy installs, move files from .minecraft subfolder to game_dir if needed
+    if is_legacy {
+        let dot_minecraft = game_dir.join(".minecraft");
+        if dot_minecraft.exists() {
+            // Move versions folder
+            let src_versions = dot_minecraft.join("versions");
+            let dst_versions = game_dir.join("versions");
+            if src_versions.exists() {
+                move_dir_contents(&src_versions, &dst_versions).await?;
+            }
 
-    if !version_json.exists() {
+            // Move libraries folder
+            let src_libraries = dot_minecraft.join("libraries");
+            let dst_libraries = game_dir.join("libraries");
+            if src_libraries.exists() {
+                move_dir_contents(&src_libraries, &dst_libraries).await?;
+            }
+
+            // Clean up .minecraft folder
+            let _ = tokio::fs::remove_dir_all(&dot_minecraft).await;
+        }
+    }
+
+    // Verify installation by checking for Forge version JSON
+    // Try multiple possible version ID formats
+    let possible_version_ids = vec![
+        format!("{}-forge-{}", mc_version, loader_version),
+        format!("{}-forge{}-{}", mc_version, mc_version, loader_version),
+        format!("{}-Forge{}-{}", mc_version, mc_version, loader_version),
+    ];
+
+    let versions_dir = game_dir.join("versions");
+    let mut found = false;
+
+    for version_id in &possible_version_ids {
+        let version_json = versions_dir
+            .join(version_id)
+            .join(format!("{}.json", version_id));
+        if version_json.exists() {
+            found = true;
+            break;
+        }
+    }
+
+    // Also check if any forge-related version exists
+    if !found && versions_dir.exists() {
+        if let Ok(mut entries) = tokio::fs::read_dir(&versions_dir).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.to_lowercase().contains("forge") && name.contains(mc_version) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if !found {
         return Err(AppError::InstallationError(
-            format!("Forge installation verification failed - version JSON not found at {:?}", version_json),
+            format!("Forge installation verification failed - no Forge version found in {:?}", versions_dir),
         ));
     }
 
     progress("Installation complete".to_string(), 100);
 
     Ok(())
+}
+
+/// Move contents of one directory to another
+fn move_dir_contents<'a>(src: &'a Path, dst: &'a Path) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), AppError>> + Send + 'a>> {
+    Box::pin(async move {
+        tokio::fs::create_dir_all(dst).await.map_err(|e| AppError::IoError(e))?;
+
+        let mut entries = tokio::fs::read_dir(src).await.map_err(|e| AppError::IoError(e))?;
+        while let Some(entry) = entries.next_entry().await.map_err(|e| AppError::IoError(e))? {
+            let src_path = entry.path();
+            let dst_path = dst.join(entry.file_name());
+
+            if src_path.is_dir() {
+                // Recursively move directory
+                move_dir_contents(&src_path, &dst_path).await?;
+                let _ = tokio::fs::remove_dir(&src_path).await;
+            } else {
+                // Move file (copy + delete since rename may fail across filesystems)
+                if !dst_path.exists() {
+                    tokio::fs::copy(&src_path, &dst_path).await.map_err(|e| AppError::IoError(e))?;
+                }
+                let _ = tokio::fs::remove_file(&src_path).await;
+            }
+        }
+
+        Ok(())
+    })
 }
 
 /// Install NeoForge loader to a game directory
