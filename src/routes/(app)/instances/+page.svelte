@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount } from "svelte";
   import { Layers, Plus, Search, Play, Square, Settings, Copy, Trash2, Clock, Calendar, Loader2, FolderOpen, PackagePlus, Upload, CheckCircle, AlertTriangle, FileDown } from "@lucide/svelte";
   import { save, open } from "@tauri-apps/plugin-dialog";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -76,11 +76,7 @@
     instancesStore.load();
     versionsStore.load();
     accountsStore.load();
-    launchStore.init();
-  });
-
-  onDestroy(() => {
-    launchStore.cleanup();
+    // launchStore is initialized at app layout level
   });
 
   // Set default version when versions load
