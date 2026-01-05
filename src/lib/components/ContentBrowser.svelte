@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { SvelteSet } from "svelte/reactivity";
   import { listen } from "@tauri-apps/api/event";
   import {
     Package,
@@ -55,7 +56,7 @@
   let viewMode = $state<"browse" | "installed">("browse");
 
   // Multi-select state for installed tab
-  let selectedItems = $state<Set<string>>(new Set());
+  let selectedItems = new SvelteSet<string>();
 
   // Derived: installed items list from scan result
   const installedItems = $derived(contentStore.scanResult?.items ?? []);
@@ -135,7 +136,7 @@
   async function handleContentTypeChange(type: ContentType) {
     await contentStore.setContentType(type);
     // Clear selection when changing content type
-    selectedItems = new Set();
+    selectedItems = new SvelteSet();
     if (viewMode === "browse") {
       contentStore.search();
     }
@@ -143,25 +144,23 @@
 
   function handleViewModeChange(mode: "browse" | "installed") {
     viewMode = mode;
-    selectedItems = new Set();
+    selectedItems = new SvelteSet();
     bulkActionError = null;
   }
 
   function toggleItemSelection(filename: string) {
-    const newSet = new Set(selectedItems);
-    if (newSet.has(filename)) {
-      newSet.delete(filename);
+    if (selectedItems.has(filename)) {
+      selectedItems.delete(filename);
     } else {
-      newSet.add(filename);
+      selectedItems.add(filename);
     }
-    selectedItems = newSet;
   }
 
   function toggleSelectAll() {
     if (allSelected) {
-      selectedItems = new Set();
+      selectedItems = new SvelteSet();
     } else {
-      selectedItems = new Set(installedItems.map((item) => item.filename));
+      selectedItems = new SvelteSet(installedItems.map((item) => item.filename));
     }
   }
 
@@ -176,9 +175,9 @@
       await contentService.disableContent(instanceId, filenames, contentStore.contentType);
       // Refresh scan results
       await contentStore.refreshInstalledContent();
-      selectedItems = new Set();
-    } catch (e: any) {
-      bulkActionError = e?.message || "Failed to disable content";
+      selectedItems = new SvelteSet();
+    } catch (e: unknown) {
+      bulkActionError = e instanceof Error ? e.message : "Failed to disable content";
     } finally {
       isBulkActioning = false;
     }
@@ -195,9 +194,9 @@
       await contentService.enableContent(instanceId, filenames, contentStore.contentType);
       // Refresh scan results
       await contentStore.refreshInstalledContent();
-      selectedItems = new Set();
-    } catch (e: any) {
-      bulkActionError = e?.message || "Failed to enable content";
+      selectedItems = new SvelteSet();
+    } catch (e: unknown) {
+      bulkActionError = e instanceof Error ? e.message : "Failed to enable content";
     } finally {
       isBulkActioning = false;
     }
@@ -220,10 +219,10 @@
       }
       // Refresh scan results
       await contentStore.refreshInstalledContent();
-      selectedItems = new Set();
+      selectedItems = new SvelteSet();
       showRemoveConfirm = false;
-    } catch (e: any) {
-      bulkActionError = e?.message || "Failed to remove content";
+    } catch (e: unknown) {
+      bulkActionError = e instanceof Error ? e.message : "Failed to remove content";
     } finally {
       isBulkActioning = false;
     }
@@ -392,9 +391,9 @@
         closeContentDetail();
         installSuccess = null;
       }, 1500);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("[ContentBrowser] Installation failed:", e);
-      installError = e?.message || (typeof e === "string" ? e : JSON.stringify(e));
+      installError = e instanceof Error ? e.message : (typeof e === "string" ? e : JSON.stringify(e));
     } finally {
       isInstalling = false;
       contentStore.setDownloadProgress(null);
@@ -442,9 +441,9 @@
 
       // Close the detail modal
       closeContentDetail();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("[ContentBrowser] Uninstall failed:", e);
-      uninstallError = e?.message || (typeof e === "string" ? e : JSON.stringify(e));
+      uninstallError = e instanceof Error ? e.message : (typeof e === "string" ? e : JSON.stringify(e));
     } finally {
       isUninstalling = false;
     }
@@ -495,7 +494,7 @@
 
   <!-- Content Type Tabs -->
   <div class="p-4 border-b border-border flex gap-2">
-    {#each contentTypes as { value, label }}
+    {#each contentTypes as { value, label } (value)}
       <Button
         variant={contentStore.contentType === value ? "default" : "secondary"}
         size="sm"
@@ -564,7 +563,7 @@
       </div>
     </div>
     <div class="flex gap-2 flex-wrap">
-      {#each platforms as { value, label }}
+      {#each platforms as { value, label } (value)}
         <Button
           variant={contentStore.platform === (value === "all" ? null : value) ? "default" : "outline"}
           size="sm"
@@ -583,7 +582,7 @@
             Sort: {sortOptions.find((o) => o.value === contentStore.sortBy)?.label}
           </Select.Trigger>
           <Select.Content class="border-2 border-border bg-card">
-            {#each sortOptions as { value, label }}
+            {#each sortOptions as { value, label } (value)}
               <Select.Item {value} {label}>{label}</Select.Item>
             {/each}
           </Select.Content>
@@ -671,7 +670,7 @@
                   <Download class="h-3 w-3" />
                   {formatDownloads(content.downloads)}
                 </span>
-                {#each content.loaders.filter(l => l !== "unknown").slice(0, 2) as loader}
+                {#each content.loaders.filter(l => l !== "unknown").slice(0, 2) as loader (loader)}
                   <span class="px-1 rounded {getLoaderColor(loader)}">{loader}</span>
                 {/each}
               </div>
@@ -835,7 +834,7 @@
         </span>
         <button
           class="text-xs text-muted-foreground hover:text-foreground"
-          onclick={() => selectedItems = new Set()}
+          onclick={() => selectedItems = new SvelteSet()}
         >
           Clear selection
         </button>
@@ -1008,7 +1007,7 @@
           <p class="text-sm text-muted-foreground">No compatible versions found</p>
         {:else}
           <div class="space-y-1">
-            {#each contentStore.selectedContentVersions.slice(0, 15) as version}
+            {#each contentStore.selectedContentVersions.slice(0, 15) as version (version.id)}
               {@const isSelected = contentStore.selectedVersion?.id === version.id}
               {@const hasRequiredDeps = version.dependencies.some(d => d.dependencyType === "required")}
               <button
@@ -1082,7 +1081,7 @@
                   {/if}
                 </p>
                 <ul class="text-xs mt-2 space-y-1">
-                  {#each contentStore.resolvedDependencies as resolved}
+                  {#each contentStore.resolvedDependencies as resolved (resolved.content.id)}
                     <li class="flex items-center gap-2">
                       {#if resolved.alreadyInstalled}
                         <CheckCircle class="h-3 w-3 text-green-500" />
@@ -1115,7 +1114,7 @@
                   Required Dependencies
                 </div>
                 <ul class="text-xs mt-2 space-y-1">
-                  {#each requiredDeps as dep}
+                  {#each requiredDeps as dep (dep.id)}
                     <li class="flex items-center gap-2">
                       <span class="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
                       <span class="text-muted-foreground italic">{dep.id}</span>

@@ -31,7 +31,7 @@
   async function saveSettings(updates: Record<string, unknown>) {
     saveStatus = "saving";
     try {
-      await settingsStore.update(updates as any);
+      await settingsStore.update(updates as Parameters<typeof settingsStore.update>[0]);
       saveStatus = "saved";
       setTimeout(() => {
         saveStatus = "idle";

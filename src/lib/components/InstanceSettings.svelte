@@ -21,7 +21,7 @@
     showUpdateDialog = true;
   }
 
-  function handleInstanceUpdated(updatedInstance: Instance) {
+  function handleInstanceUpdated() {
     // Reload the instances store to get updated data
     instancesStore.load();
   }

@@ -300,7 +300,7 @@
                   {/if}
                 </SelectTrigger>
                 <SelectContent>
-                  {#each modpackCheck.availableVersions as version}
+                  {#each modpackCheck.availableVersions as version (version.versionId)}
                     <SelectItem value={version.versionId} disabled={version.isCurrent}>
                       <div class="flex items-center gap-2">
                         <span>{version.versionName}</span>
@@ -333,7 +333,7 @@
                 These mods were added by you and are not part of the modpack. Choose what to do with each:
               </p>
               <div class="space-y-3 max-h-64 overflow-y-auto">
-                {#each modpackCheck.userAddedContent as item}
+                {#each modpackCheck.userAddedContent as item (item.filename)}
                   <div class="p-3 bg-muted/30 rounded space-y-2">
                     <div class="font-medium text-sm">{item.name || item.filename}</div>
                     <div class="flex gap-4">
@@ -422,7 +422,7 @@
                 These will be updated to versions compatible with {instanceCheck.latestMcVersion}.
               </p>
               <div class="mt-2 space-y-1 max-h-32 overflow-y-auto">
-                {#each instanceCheck.compatibleContent as item}
+                {#each instanceCheck.compatibleContent as item (item.filename)}
                   <div class="text-sm p-2 bg-muted/30 rounded">
                     {item.name}
                   </div>
@@ -442,7 +442,7 @@
                 These mods don't have compatible versions for {instanceCheck.latestMcVersion}. Choose what to do with each:
               </p>
               <div class="space-y-3 max-h-64 overflow-y-auto">
-                {#each instanceCheck.incompatibleContent as item}
+                {#each instanceCheck.incompatibleContent as item (item.filename)}
                   <div class="p-3 bg-muted/30 rounded space-y-2">
                     <div class="font-medium text-sm">{item.name}</div>
                     <div class="flex gap-4">
@@ -489,7 +489,7 @@
                 These mods couldn't be identified and will be kept as-is.
               </p>
               <div class="mt-2 space-y-1 max-h-32 overflow-y-auto">
-                {#each instanceCheck.unidentifiedContent as item}
+                {#each instanceCheck.unidentifiedContent as item (item.filename)}
                   <div class="text-sm p-2 bg-muted/30 rounded text-muted-foreground">
                     {item.filename}
                   </div>

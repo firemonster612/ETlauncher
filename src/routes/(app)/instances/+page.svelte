@@ -198,9 +198,9 @@
 
       const resultPath = await instanceService.exportInstance(instance.id, filePath);
       exportResult = { success: true, path: resultPath };
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (showExportModal) {
-        exportResult = { success: false, error: e?.message || "Export failed" };
+        exportResult = { success: false, error: e instanceof Error ? e.message : "Export failed" };
       }
     } finally {
       isExporting = false;
@@ -229,7 +229,7 @@
       importFilePath = filePath as string;
       importInstanceName = "";
       importResult = null;
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Failed to open file dialog:", e);
     }
   }
@@ -263,8 +263,8 @@
       importResult = { success: true, instance };
       // Refresh instance list
       await instancesStore.load();
-    } catch (e: any) {
-      importResult = { success: false, error: e?.message || "Import failed" };
+    } catch (e: unknown) {
+      importResult = { success: false, error: e instanceof Error ? e.message : "Import failed" };
     } finally {
       unlisten?.();
       isImporting = false;

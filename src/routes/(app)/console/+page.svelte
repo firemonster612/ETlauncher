@@ -127,7 +127,7 @@
     <div class="border-2 border-border bg-card p-4">
       <h3 class="text-sm uppercase tracking-wider text-muted-foreground mb-2">Running Instances</h3>
       <div class="space-y-2">
-        {#each [...launchStore.launchStates.entries()] as [instanceId, state]}
+        {#each [...launchStore.launchStates.entries()] as [instanceId, state] (instanceId)}
           {@const instance = instancesStore.instances.find((i) => i.id === instanceId)}
           <div class="flex items-center justify-between text-sm">
             <span>{instance?.name ?? instanceId}</span>

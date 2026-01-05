@@ -292,7 +292,7 @@
 
   <!-- Platform Tabs -->
   <div class="flex gap-2 flex-wrap">
-    {#each platforms as { value, label }}
+    {#each platforms as { value, label } (value)}
       <Button
         variant={modpacksStore.platform === (value === "all" ? null : value) ? "default" : "secondary"}
         size="sm"
@@ -325,7 +325,7 @@
         {sortOptions.find((o) => o.value === modpacksStore.sortBy)?.label || "Sort by"}
       </Select.Trigger>
       <Select.Content class="border-2 border-border bg-card">
-        {#each sortOptions as { value, label }}
+        {#each sortOptions as { value, label } (value)}
           <Select.Item {value} {label}>{label}</Select.Item>
         {/each}
       </Select.Content>
@@ -356,7 +356,7 @@
                 </Select.Trigger>
                 <Select.Content class="border-2 border-border bg-card max-h-[300px]">
                   <Select.Item value="" label="Any version">Any version</Select.Item>
-                  {#each versionsStore.versions.filter((v) => v.type === "release") as version}
+                  {#each versionsStore.versions.filter((v) => v.type === "release") as version (version.id)}
                     <Select.Item value={version.id} label={version.id}>{version.id}</Select.Item>
                   {/each}
                 </Select.Content>
@@ -416,7 +416,7 @@
                     {/if}
                   </div>
                   <div class="p-2 space-y-1">
-                    {#each availableCategories as category}
+                    {#each availableCategories as category (category)}
                       <button
                         type="button"
                         class="w-full flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-muted/50 rounded text-left"
@@ -495,7 +495,7 @@
                 >
                   {modpack.platform}
                 </span>
-                {#each modpack.loaders.filter(l => l !== "unknown").slice(0, 2) as loader}
+                {#each modpack.loaders.filter(l => l !== "unknown").slice(0, 2) as loader (loader)}
                   <span class="text-xs px-1.5 py-0.5 rounded {getLoaderColor(loader)}">
                     {loader}
                   </span>
@@ -567,7 +567,7 @@
               >
                 {selectedModpackDetail.platform}
               </span>
-              {#each selectedModpackDetail.loaders.filter(l => l !== "unknown") as loader}
+              {#each selectedModpackDetail.loaders.filter(l => l !== "unknown") as loader (loader)}
                 <span class="text-xs px-1.5 py-0.5 rounded {getLoaderColor(loader)}">
                   {loader}
                 </span>
@@ -609,7 +609,7 @@
           <p class="text-sm text-muted-foreground">No versions available</p>
         {:else}
           <div class="space-y-2 pb-4">
-            {#each modpacksStore.selectedModpackVersions.slice(0, 10) as version}
+            {#each modpacksStore.selectedModpackVersions.slice(0, 10) as version (version.id)}
               <div class="flex items-center justify-between p-3 bg-muted/50 rounded">
                 <div>
                   <div class="font-medium">{version.name}</div>

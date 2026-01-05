@@ -115,7 +115,7 @@
         {/if}
       </SelectTrigger>
       <SelectContent>
-        {#each loaders as loader}
+        {#each loaders as loader (loader.value)}
           <SelectItem value={String(loader.value)}>
             {loader.label}
           </SelectItem>
@@ -145,7 +145,7 @@
           {/if}
         </SelectTrigger>
         <SelectContent>
-          {#each loaderVersions as version}
+          {#each loaderVersions as version (version.version)}
             <SelectItem value={String(version.version)}>
               {version.version}
               {#if version.stable}

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import { resolve } from "$app/paths";
   import { accountsStore } from "$lib/stores/accounts.svelte";
   import { Button } from "$lib/ui/button";
   import { ChevronUp, LogIn, Settings, Copy, Check, ExternalLink } from "@lucide/svelte";
@@ -40,7 +41,7 @@
 
   function goToAccounts() {
     isOpen = false;
-    goto("/accounts");
+    goto(resolve("/accounts"));
   }
 
   function startLogin() {
