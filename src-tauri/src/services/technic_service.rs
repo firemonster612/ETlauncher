@@ -251,7 +251,8 @@ pub async fn get_modpack(client: &Client, slug: &str) -> Result<Modpack, AppErro
     let loaders = if pack.forge.is_some() {
         vec![LoaderType::Forge]
     } else {
-        vec![]
+        // Use Unknown instead of empty when loader info not available
+        vec![LoaderType::Unknown]
     };
 
     let mc_versions = pack.minecraft.clone().map(|v| vec![v]).unwrap_or_default();
@@ -311,7 +312,8 @@ pub async fn get_modpack_versions(
     let loader_type = if pack.forge.is_some() {
         LoaderType::Forge
     } else {
-        LoaderType::Vanilla
+        // Use Unknown instead of Vanilla when loader info not available
+        LoaderType::Unknown
     };
 
     Ok(vec![ModpackVersion {
@@ -378,7 +380,8 @@ async fn get_solder_versions(
                             let loader_type = if build_info.forge.is_some() {
                                 LoaderType::Forge
                             } else {
-                                LoaderType::Vanilla
+                                // Use Unknown instead of Vanilla when loader info not available
+                                LoaderType::Unknown
                             };
 
                             let files: Vec<ModpackFile> = build_info

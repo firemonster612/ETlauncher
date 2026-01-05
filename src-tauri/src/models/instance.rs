@@ -12,6 +12,8 @@ pub enum LoaderType {
     Fabric,
     Quilt,
     LiteLoader,
+    /// Unknown loader - used when platform doesn't provide loader info
+    Unknown,
 }
 
 impl FromStr for LoaderType {
@@ -25,6 +27,7 @@ impl FromStr for LoaderType {
             "fabric" => Ok(LoaderType::Fabric),
             "quilt" => Ok(LoaderType::Quilt),
             "liteloader" => Ok(LoaderType::LiteLoader),
+            "unknown" => Ok(LoaderType::Unknown),
             _ => Err(format!("Unknown loader type: {}", s)),
         }
     }
@@ -39,6 +42,7 @@ impl std::fmt::Display for LoaderType {
             LoaderType::Fabric => write!(f, "fabric"),
             LoaderType::Quilt => write!(f, "quilt"),
             LoaderType::LiteLoader => write!(f, "liteloader"),
+            LoaderType::Unknown => write!(f, "unknown"),
         }
     }
 }

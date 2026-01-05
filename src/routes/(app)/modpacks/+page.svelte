@@ -495,7 +495,7 @@
                 >
                   {modpack.platform}
                 </span>
-                {#each modpack.loaders.slice(0, 2) as loader}
+                {#each modpack.loaders.filter(l => l !== "unknown").slice(0, 2) as loader}
                   <span class="text-xs px-1.5 py-0.5 rounded {getLoaderColor(loader)}">
                     {loader}
                   </span>
@@ -567,7 +567,7 @@
               >
                 {selectedModpackDetail.platform}
               </span>
-              {#each selectedModpackDetail.loaders as loader}
+              {#each selectedModpackDetail.loaders.filter(l => l !== "unknown") as loader}
                 <span class="text-xs px-1.5 py-0.5 rounded {getLoaderColor(loader)}">
                   {loader}
                 </span>
