@@ -531,11 +531,11 @@
 </div>
 
 <!-- Modpack Detail Modal -->
-{#if selectedModpackDetail}
+ {#if selectedModpackDetail}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-    <div class="bg-card border-2 border-border max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+    <div class="bg-card border-2 border-border max-w-2xl w-full max-h-[80vh] flex flex-col">
       <!-- Header -->
-      <div class="p-6 border-b border-border">
+      <div class="p-6 border-b border-border flex-shrink-0">
         <div class="flex gap-4">
           {#if selectedModpackDetail.iconUrl}
             <img
@@ -582,7 +582,7 @@
       </div>
 
       <!-- Description -->
-      <div class="p-6 border-b border-border">
+      <div class="p-6 border-b border-border flex-shrink-0">
         <p class="text-sm">{selectedModpackDetail.description}</p>
         {#if selectedModpackDetail.url}
           <a
@@ -597,8 +597,8 @@
         {/if}
       </div>
 
-      <!-- Versions -->
-      <div class="p-6">
+      <!-- Scrollable Versions -->
+      <div class="flex-1 overflow-y-auto p-6">
         <h3 class="font-semibold mb-3">Versions</h3>
         {#if modpacksStore.isLoadingVersions}
           <div class="flex items-center gap-2 text-muted-foreground">
@@ -608,7 +608,7 @@
         {:else if modpacksStore.selectedModpackVersions.length === 0}
           <p class="text-sm text-muted-foreground">No versions available</p>
         {:else}
-          <div class="space-y-2 max-h-[300px] overflow-y-auto">
+          <div class="space-y-2 pb-4">
             {#each modpacksStore.selectedModpackVersions.slice(0, 10) as version}
               <div class="flex items-center justify-between p-3 bg-muted/50 rounded">
                 <div>
@@ -636,21 +636,21 @@
               </div>
             {/each}
           </div>
-
-          <!-- Install Progress -->
-          {#if modpacksStore.isInstalling && installProgress}
-            <div class="border-t border-border pt-4 mt-4">
-              <DownloadProgress
-                stage={installProgress.stage}
-                progress={installProgress.progress}
-                currentItem={installProgress.currentItem}
-                totalItems={installProgress.totalItems}
-                completedItems={installProgress.completedItems}
-              />
-            </div>
-          {/if}
         {/if}
       </div>
+
+      <!-- Sticky Install Progress -->
+      {#if modpacksStore.isInstalling && installProgress}
+        <div class="border-t border-border p-4 bg-card flex-shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+          <DownloadProgress
+            stage={installProgress.stage}
+            progress={installProgress.progress}
+            currentItem={installProgress.currentItem}
+            totalItems={installProgress.totalItems}
+            completedItems={installProgress.completedItems}
+          />
+        </div>
+      {/if}
     </div>
   </div>
 {/if}
