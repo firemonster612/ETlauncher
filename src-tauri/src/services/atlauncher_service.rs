@@ -342,6 +342,26 @@ pub async fn search_modpacks(
             let mc_versions: Vec<String> = pack.versions.iter().map(|v| v.minecraft.clone()).collect();
             let safe_name = name_to_safe_name(&pack.name);
 
+            // Extract loaders from CDN versions
+            let mut loaders: Vec<LoaderType> = pack
+                .versions
+                .iter()
+                .filter_map(|v| {
+                    if let Some(ref lt) = v.loader_type {
+                        Some(parse_loader_type(Some(lt.as_str())))
+                    } else if v.has_loader {
+                        Some(LoaderType::Forge) // Most modpacks with has_loader=true are Forge
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            loaders.dedup();
+            // If no loaders found but pack has versions, mark as Unknown
+            if loaders.is_empty() && !pack.versions.is_empty() {
+                loaders.push(LoaderType::Unknown);
+            }
+
             Modpack {
                 id: pack.id.to_string(),
                 slug: safe_name.clone(),
@@ -355,7 +375,7 @@ pub async fn search_modpacks(
                 platform: ModpackPlatform::ATLauncher,
                 categories: vec![],
                 mc_versions,
-                loaders: vec![], // Would need full pack details
+                loaders,
                 latest_version: None,
                 url: None,
                 updated_at: None,

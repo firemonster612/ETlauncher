@@ -213,7 +213,7 @@ pub async fn search_modpacks(
             platform: ModpackPlatform::Technic,
             categories: vec![],
             mc_versions: vec![],
-            loaders: vec![],
+            loaders: vec![LoaderType::Unknown], // Technic search doesn't include loader info
             latest_version: None,
             url: m.platform_url.or(m.url),
             updated_at: None,

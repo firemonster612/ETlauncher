@@ -140,6 +140,32 @@ fn parse_loaders(loaders: &[String]) -> Vec<LoaderType> {
         .collect()
 }
 
+/// Extract loaders from categories (Modrinth includes loaders in categories for search results)
+fn extract_loaders_from_categories(categories: &[String]) -> Vec<LoaderType> {
+    categories
+        .iter()
+        .filter_map(|c| {
+            match c.to_lowercase().as_str() {
+                "forge" => Some(LoaderType::Forge),
+                "neoforge" => Some(LoaderType::NeoForge),
+                "fabric" => Some(LoaderType::Fabric),
+                "quilt" => Some(LoaderType::Quilt),
+                "liteloader" => Some(LoaderType::LiteLoader),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// Filter out loader names from categories to get actual categories
+fn filter_categories(categories: Vec<String>) -> Vec<String> {
+    let loader_names = ["forge", "neoforge", "fabric", "quilt", "liteloader"];
+    categories
+        .into_iter()
+        .filter(|c| !loader_names.contains(&c.to_lowercase().as_str()))
+        .collect()
+}
+
 /// Convert LoaderType to Modrinth loader string
 fn loader_to_string(loader: &LoaderType) -> Option<&'static str> {
     match loader {
@@ -233,6 +259,13 @@ pub async fn search_modpacks(
             if !matches!(hit.project_type, ModrinthProjectType::Modpack) {
                 return None;
             }
+            // Modrinth search doesn't return loaders separately - they're in categories
+            let loaders = if hit.loaders.is_empty() {
+                extract_loaders_from_categories(&hit.categories)
+            } else {
+                parse_loaders(&hit.loaders)
+            };
+            let categories = filter_categories(hit.categories);
             Some(Modpack {
                 id: hit.project_id,
                 slug: hit.slug.clone(),
@@ -244,9 +277,9 @@ pub async fn search_modpacks(
                 banner_url: None,
                 downloads: hit.downloads,
                 platform: ModpackPlatform::Modrinth,
-                categories: hit.categories,
+                categories,
                 mc_versions: hit.versions,
-                loaders: parse_loaders(&hit.loaders),
+                loaders,
                 latest_version: None,
                 url: Some(format!("https://modrinth.com/modpack/{}", hit.slug)),
                 updated_at: parse_date(&hit.date_modified),
@@ -293,6 +326,14 @@ pub async fn get_modpack(client: &Client, id_or_slug: &str) -> Result<Modpack, A
     // Get team info for author
     let author = get_project_author(client, &project.team).await.unwrap_or_else(|_| "Unknown".to_string());
 
+    // Project endpoint returns loaders, but fallback to categories just in case
+    let loaders = if project.loaders.is_empty() {
+        extract_loaders_from_categories(&project.categories)
+    } else {
+        parse_loaders(&project.loaders)
+    };
+    let categories = filter_categories(project.categories);
+
     Ok(Modpack {
         id: project.id.clone(),
         slug: project.slug,
@@ -304,9 +345,9 @@ pub async fn get_modpack(client: &Client, id_or_slug: &str) -> Result<Modpack, A
         banner_url: None,
         downloads: project.downloads,
         platform: ModpackPlatform::Modrinth,
-        categories: project.categories,
+        categories,
         mc_versions: project.game_versions,
-        loaders: parse_loaders(&project.loaders),
+        loaders,
         latest_version: None,
         url: Some(format!("https://modrinth.com/modpack/{}", project.id)),
         updated_at: parse_date(&project.updated),
@@ -554,6 +595,13 @@ pub async fn search_content(
                 ContentType::Shader => "shader",
                 ContentType::ResourcePack => "resourcepack",
             };
+            // Modrinth search doesn't return loaders separately - they're in categories
+            let loaders = if hit.loaders.is_empty() {
+                extract_loaders_from_categories(&hit.categories)
+            } else {
+                parse_loaders(&hit.loaders)
+            };
+            let categories = filter_categories(hit.categories);
             Some(Content {
                 id: hit.project_id,
                 slug: hit.slug.clone(),
@@ -565,9 +613,9 @@ pub async fn search_content(
                 downloads: hit.downloads,
                 platform: ContentPlatform::Modrinth,
                 content_type,
-                categories: hit.categories,
+                categories,
                 mc_versions: hit.versions,
-                loaders: parse_loaders(&hit.loaders),
+                loaders,
                 latest_version: None,
                 url: Some(format!("https://modrinth.com/{}/{}", url_path, hit.slug)),
                 updated_at: parse_date(&hit.date_modified),
@@ -616,6 +664,14 @@ pub async fn get_content(client: &Client, id_or_slug: &str) -> Result<Content, A
         ContentType::ResourcePack => "resourcepack",
     };
 
+    // Project endpoint returns loaders, but fallback to categories just in case
+    let loaders = if project.loaders.is_empty() {
+        extract_loaders_from_categories(&project.categories)
+    } else {
+        parse_loaders(&project.loaders)
+    };
+    let categories = filter_categories(project.categories);
+
     Ok(Content {
         id: project.id.clone(),
         slug: project.slug.clone(),
@@ -627,9 +683,9 @@ pub async fn get_content(client: &Client, id_or_slug: &str) -> Result<Content, A
         downloads: project.downloads,
         platform: ContentPlatform::Modrinth,
         content_type,
-        categories: project.categories,
+        categories,
         mc_versions: project.game_versions,
-        loaders: parse_loaders(&project.loaders),
+        loaders,
         latest_version: None,
         url: Some(format!("https://modrinth.com/{}/{}", url_path, project.slug)),
         updated_at: parse_date(&project.updated),

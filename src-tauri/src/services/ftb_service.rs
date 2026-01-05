@@ -276,6 +276,26 @@ pub async fn search_modpacks(
     })
 }
 
+/// Fetch loader info from version manifest (lightweight - just targets)
+async fn fetch_version_loader_info(client: &Client, pack_id: u64, version_id: u64) -> Option<(LoaderType, Option<String>)> {
+    let url = format!("{}/modpack/{}/{}", FTB_API_BASE, pack_id, version_id);
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        client.get(&url).send()
+    ).await {
+        Ok(Ok(response)) => {
+            if let Ok(manifest) = response.json::<FtbVersionManifest>().await {
+                let (loader_type, loader_version) = get_loader_info(&manifest.targets);
+                if loader_type != LoaderType::Unknown {
+                    return Some((loader_type, loader_version));
+                }
+            }
+        }
+        _ => {}
+    }
+    None
+}
+
 /// Get pack details by ID
 async fn get_pack_details(client: &Client, pack_id: u64) -> Result<Modpack, AppError> {
     let url = format!("{}/modpack/{}", FTB_API_BASE, pack_id);
@@ -295,6 +315,17 @@ async fn get_pack_details(client: &Client, pack_id: u64) -> Result<Modpack, AppE
         .json()
         .await?;
 
+    // Try to get loader info from the latest version
+    let (loaders, mc_versions) = if let Some(latest_version) = pack.versions.first() {
+        if let Some((loader_type, _)) = fetch_version_loader_info(client, pack_id, latest_version.id).await {
+            (vec![loader_type], vec![])
+        } else {
+            (vec![LoaderType::Unknown], vec![])
+        }
+    } else {
+        (vec![LoaderType::Unknown], vec![])
+    };
+
     Ok(Modpack {
         id: pack.id.to_string(),
         slug: pack.name.to_lowercase().replace(' ', "-"),
@@ -307,9 +338,9 @@ async fn get_pack_details(client: &Client, pack_id: u64) -> Result<Modpack, AppE
         downloads: pack.installs,
         platform: ModpackPlatform::FTB,
         categories: pack.tags.into_iter().map(|t| t.name).collect(),
-        mc_versions: vec![], // Would need to fetch version details
-        loaders: vec![], // Would need to fetch version details
-        latest_version: None, // Would need to fetch version details
+        mc_versions,
+        loaders,
+        latest_version: None,
         url: Some(format!("https://www.feed-the-beast.com/modpacks/{}", pack.id)),
         updated_at: if pack.updated > 0 { Some(pack.updated as i64) } else { None },
         created_at: if pack.released > 0 { Some(pack.released as i64) } else { None },
@@ -364,7 +395,7 @@ pub async fn get_modpack_versions(
                             id: version_id.to_string(),
                             name: version_name,
                             mc_version: String::new(),
-                            loader_type: LoaderType::Vanilla,
+                            loader_type: LoaderType::Unknown,
                             loader_version: None,
                             changelog: None,
                             released_at: None,
