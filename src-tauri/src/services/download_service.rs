@@ -227,6 +227,9 @@ pub async fn download_game_files_with_version(
     // Collect all downloads needed
     let mut downloads: Vec<DownloadTask> = Vec::new();
 
+    // Track all native JARs that need extraction (whether cached or downloaded)
+    let mut all_natives: Vec<PathBuf> = Vec::new();
+
     // 1. Client JAR
     let client_jar_path = get_versions_cache_dir()
         .join(version_id)
@@ -251,6 +254,32 @@ pub async fn download_game_files_with_version(
 
         // Regular library artifact (Mojang-style)
         if let Some(ref lib_downloads) = library.downloads {
+            // Handle native classifiers FIRST (before any continue statements)
+            // This ensures natives are always collected even if the main artifact is cached
+            if let Some(ref classifiers) = lib_downloads.classifiers {
+                let natives_key = get_natives_key(library);
+                if let Some(key) = natives_key {
+                    if let Some(native_artifact) = classifiers.get(&key) {
+                        let native_path = get_libraries_dir().join(&native_artifact.path);
+
+                        // Always track this native for extraction
+                        all_natives.push(native_path.clone());
+
+                        // Only download if not already cached
+                        if !file_valid(&native_path, &native_artifact.sha1) {
+                            downloads.push(DownloadTask {
+                                url: native_artifact.url.clone(),
+                                path: native_path,
+                                sha1: native_artifact.sha1.clone(),
+                                size: native_artifact.size,
+                                is_native: true,
+                            });
+                        }
+                    }
+                }
+            }
+
+            // Handle main artifact
             if let Some(ref artifact) = lib_downloads.artifact {
                 let cache_lib_path = get_libraries_dir().join(&artifact.path);
                 let game_lib_path = game_libraries_dir.join(&artifact.path);
@@ -281,25 +310,6 @@ pub async fn download_game_files_with_version(
                     });
                 } else {
                     eprintln!("WARN: No URL for library {}", library.name);
-                }
-            }
-
-            // Native classifiers
-            if let Some(ref classifiers) = lib_downloads.classifiers {
-                let natives_key = get_natives_key(library);
-                if let Some(key) = natives_key {
-                    if let Some(native_artifact) = classifiers.get(&key) {
-                        let native_path = get_libraries_dir().join(&native_artifact.path);
-                        if !file_valid(&native_path, &native_artifact.sha1) {
-                            downloads.push(DownloadTask {
-                                url: native_artifact.url.clone(),
-                                path: native_path.clone(),
-                                sha1: native_artifact.sha1.clone(),
-                                size: native_artifact.size,
-                                is_native: true,
-                            });
-                        }
-                    }
                 }
             }
         } else if let Some(ref base_url) = library.url {
@@ -360,6 +370,17 @@ pub async fn download_game_files_with_version(
     let total_files = downloads.len() as u32;
     let total_bytes: u64 = downloads.iter().map(|d| d.size).sum();
 
+    // Extract natives first (even if no downloads needed)
+    // This ensures natives are always present in the instance's natives dir
+    if !all_natives.is_empty() {
+        fs::create_dir_all(&natives_dir)?;
+        for native_path in &all_natives {
+            if native_path.exists() {
+                extract_natives(native_path, &natives_dir)?;
+            }
+        }
+    }
+
     if total_files == 0 {
         return Ok(());
     }
@@ -368,7 +389,6 @@ pub async fn download_game_files_with_version(
     let completed_files = Arc::new(AtomicU64::new(0));
     let downloaded_bytes = Arc::new(AtomicU64::new(0));
     let current_file = Arc::new(Mutex::new(String::new()));
-    let natives_to_extract = Arc::new(Mutex::new(Vec::new()));
 
     let client = reqwest::Client::new();
 
@@ -378,7 +398,6 @@ pub async fn download_game_files_with_version(
             let completed_files = completed_files.clone();
             let downloaded_bytes = downloaded_bytes.clone();
             let current_file = current_file.clone();
-            let natives_to_extract = natives_to_extract.clone();
             let app_handle_clone = app_handle.cloned();
 
             async move {
@@ -407,10 +426,6 @@ pub async fn download_game_files_with_version(
                 if result.is_ok() {
                     completed_files.fetch_add(1, Ordering::Relaxed);
                     downloaded_bytes.fetch_add(task.size, Ordering::Relaxed);
-
-                    if task.is_native {
-                        natives_to_extract.lock().await.push(task.path.clone());
-                    }
                 }
 
                 result
@@ -423,12 +438,6 @@ pub async fn download_game_files_with_version(
     // Check for errors
     for result in results {
         result?;
-    }
-
-    // Extract natives
-    let natives_list = natives_to_extract.lock().await;
-    for native_path in natives_list.iter() {
-        extract_natives(native_path, &natives_dir)?;
     }
 
     Ok(())
