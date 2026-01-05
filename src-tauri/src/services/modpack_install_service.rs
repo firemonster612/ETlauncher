@@ -89,6 +89,18 @@ pub async fn install_modrinth_modpack(
     println!("[modpack_install] Parsed index: mc_version={}, loader={:?}, loader_version={:?}, files={}",
         mc_version, loader_type, loader_version, index.files.len());
 
+    // Resolve loader version if we have a loader type but no version
+    let has_mods = index.files.iter().any(|f| f.path.starts_with("mods/"));
+    let (final_loader_type, final_loader_version) = resolve_loader_for_pack(
+        &mc_version,
+        loader_type.unwrap_or(LoaderType::Vanilla),
+        loader_version,
+        has_mods,
+    ).await?;
+
+    println!("[modpack_install] Resolved loader: type={:?}, version={:?}",
+        final_loader_type, final_loader_version);
+
     // Create instance
     let instance_name = instance_name.unwrap_or_else(|| modpack.name.clone());
     let instance_id = Uuid::new_v4().to_string();
@@ -114,8 +126,8 @@ pub async fn install_modrinth_modpack(
         id: instance_id.clone(),
         name: instance_name,
         minecraft_version: mc_version.clone(),
-        loader_type: loader_type.unwrap_or(LoaderType::Vanilla),
-        loader_version: loader_version,
+        loader_type: final_loader_type.clone(),
+        loader_version: final_loader_version.clone(),
         created_at: Utc::now().timestamp(),
         last_played_at: None,
         total_play_time: 0,
@@ -298,6 +310,18 @@ pub async fn install_curseforge_modpack(
         (None, None)
     };
 
+    // Resolve loader version if we have a loader type but no version
+    let has_mods = !manifest.files.is_empty();
+    let (final_loader_type, final_loader_version) = resolve_loader_for_pack(
+        &mc_version,
+        loader_type.unwrap_or(LoaderType::Vanilla),
+        loader_version,
+        has_mods,
+    ).await?;
+
+    println!("[modpack_install] CurseForge resolved loader: type={:?}, version={:?}",
+        final_loader_type, final_loader_version);
+
     // Create instance
     let instance_name = instance_name.unwrap_or_else(|| modpack.name.clone());
     let instance_id = Uuid::new_v4().to_string();
@@ -322,8 +346,8 @@ pub async fn install_curseforge_modpack(
         id: instance_id.clone(),
         name: instance_name,
         minecraft_version: mc_version.clone(),
-        loader_type: loader_type.unwrap_or(LoaderType::Vanilla),
-        loader_version: loader_version,
+        loader_type: final_loader_type.clone(),
+        loader_version: final_loader_version.clone(),
         created_at: Utc::now().timestamp(),
         last_played_at: None,
         total_play_time: 0,
@@ -724,6 +748,18 @@ pub async fn import_from_mrpack_file(
         mc_version, loader_type, loader_version, index.files.len()
     );
 
+    // Resolve loader version if we have a loader type but no version
+    let has_mods = index.files.iter().any(|f| f.path.starts_with("mods/"));
+    let (final_loader_type, final_loader_version) = resolve_loader_for_pack(
+        &mc_version,
+        loader_type.unwrap_or(LoaderType::Vanilla),
+        loader_version,
+        has_mods,
+    ).await?;
+
+    println!("[modpack_install] mrpack import resolved loader: type={:?}, version={:?}",
+        final_loader_type, final_loader_version);
+
     // Create instance
     let pack_name = index.name.clone();
     let instance_name = instance_name.unwrap_or(pack_name);
@@ -763,8 +799,8 @@ pub async fn import_from_mrpack_file(
         id: instance_id.clone(),
         name: instance_name,
         minecraft_version: mc_version.clone(),
-        loader_type: loader_type.unwrap_or(LoaderType::Vanilla),
-        loader_version,
+        loader_type: final_loader_type.clone(),
+        loader_version: final_loader_version.clone(),
         created_at: Utc::now().timestamp(),
         last_played_at: None,
         total_play_time: 0,
@@ -1094,10 +1130,19 @@ where
         .unwrap_or_else(|| "1.20.1".to_string());
     let (loader_type, loader_version) = determine_loader(&index.dependencies);
 
-    if let (Some(lt), Some(lv)) = (loader_type, loader_version) {
-        if lt != LoaderType::Vanilla {
+    // Resolve loader version if we have a loader type but no version
+    let has_mods = index.files.iter().any(|f| f.path.starts_with("mods/"));
+    let (final_loader_type, final_loader_version) = resolve_loader_for_pack(
+        &mc_version,
+        loader_type.unwrap_or(LoaderType::Vanilla),
+        loader_version,
+        has_mods,
+    ).await?;
+
+    if final_loader_type != LoaderType::Vanilla {
+        if let Some(ref lv) = final_loader_version {
             progress_callback("Installing mod loader", 90);
-            loader_service::install_loader(game_dir, lt, &mc_version, &lv, |_, _| {}).await?;
+            loader_service::install_loader(game_dir, final_loader_type, &mc_version, lv, |_, _| {}).await?;
         }
     }
 
@@ -1183,13 +1228,25 @@ where
 
     // Get loader info and install
     let mc_version = manifest.minecraft.version.clone();
-    if let Some(loader) = manifest.minecraft.mod_loaders.first() {
-        let (loader_type, loader_version) = parse_curseforge_loader(&loader.id);
-        if let (Some(lt), Some(lv)) = (loader_type, loader_version) {
-            if lt != LoaderType::Vanilla {
-                progress_callback("Installing mod loader", 90);
-                loader_service::install_loader(game_dir, lt, &mc_version, &lv, |_, _| {}).await?;
-            }
+    let (loader_type, loader_version) = if let Some(loader) = manifest.minecraft.mod_loaders.first() {
+        parse_curseforge_loader(&loader.id)
+    } else {
+        (None, None)
+    };
+
+    // Resolve loader version if we have a loader type but no version
+    let has_mods = !manifest.files.is_empty();
+    let (final_loader_type, final_loader_version) = resolve_loader_for_pack(
+        &mc_version,
+        loader_type.unwrap_or(LoaderType::Vanilla),
+        loader_version,
+        has_mods,
+    ).await?;
+
+    if final_loader_type != LoaderType::Vanilla {
+        if let Some(ref lv) = final_loader_version {
+            progress_callback("Installing mod loader", 90);
+            loader_service::install_loader(game_dir, final_loader_type, &mc_version, lv, |_, _| {}).await?;
         }
     }
 
@@ -1236,18 +1293,19 @@ where
         let _ = download_file_with_hash(&state.http_client, &file.url, &dest_path, hash).await;
     }
 
-    // Install loader
-    if version.loader_type != LoaderType::Vanilla {
-        if let Some(ref lv) = version.loader_version {
+    // Install loader - resolve version if not specified
+    let has_mods = version.files.iter().any(|f| f.path.starts_with("mods/"));
+    let (final_loader_type, final_loader_version) = resolve_loader_for_pack(
+        &version.mc_version,
+        version.loader_type.clone(),
+        version.loader_version.clone(),
+        has_mods,
+    ).await?;
+
+    if final_loader_type != LoaderType::Vanilla {
+        if let Some(ref lv) = final_loader_version {
             progress_callback("Installing mod loader", 90);
-            loader_service::install_loader(
-                game_dir,
-                version.loader_type.clone(),
-                &version.mc_version,
-                lv,
-                |_, _| {},
-            )
-            .await?;
+            loader_service::install_loader(game_dir, final_loader_type, &version.mc_version, lv, |_, _| {}).await?;
         }
     }
 
@@ -1294,18 +1352,19 @@ where
         let _ = download_file_with_hash(&state.http_client, &file.url, &dest_path, hash).await;
     }
 
-    // Install loader
-    if version.loader_type != LoaderType::Vanilla {
-        if let Some(ref lv) = version.loader_version {
+    // Install loader - resolve version if not specified
+    let has_mods = version.files.iter().any(|f| f.path.starts_with("mods/"));
+    let (final_loader_type, final_loader_version) = resolve_loader_for_pack(
+        &version.mc_version,
+        version.loader_type.clone(),
+        version.loader_version.clone(),
+        has_mods,
+    ).await?;
+
+    if final_loader_type != LoaderType::Vanilla {
+        if let Some(ref lv) = final_loader_version {
             progress_callback("Installing mod loader", 90);
-            loader_service::install_loader(
-                game_dir,
-                version.loader_type.clone(),
-                &version.mc_version,
-                lv,
-                |_, _| {},
-            )
-            .await?;
+            loader_service::install_loader(game_dir, final_loader_type, &version.mc_version, lv, |_, _| {}).await?;
         }
     }
 
@@ -1350,18 +1409,19 @@ where
         let _ = download_file_with_hash(&state.http_client, &file.url, &dest_path, hash).await;
     }
 
-    // Install loader
-    if version.loader_type != LoaderType::Vanilla {
-        if let Some(ref lv) = version.loader_version {
+    // Install loader - resolve version if not specified
+    let has_mods = version.files.iter().any(|f| f.path.starts_with("mods/"));
+    let (final_loader_type, final_loader_version) = resolve_loader_for_pack(
+        &version.mc_version,
+        version.loader_type.clone(),
+        version.loader_version.clone(),
+        has_mods,
+    ).await?;
+
+    if final_loader_type != LoaderType::Vanilla {
+        if let Some(ref lv) = final_loader_version {
             progress_callback("Installing mod loader", 90);
-            loader_service::install_loader(
-                game_dir,
-                version.loader_type.clone(),
-                &version.mc_version,
-                lv,
-                |_, _| {},
-            )
-            .await?;
+            loader_service::install_loader(game_dir, final_loader_type, &version.mc_version, lv, |_, _| {}).await?;
         }
     }
 
