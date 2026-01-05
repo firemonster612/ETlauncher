@@ -32,6 +32,4 @@
   <Sidebar.Footer>
     <AccountSwitcher />
   </Sidebar.Footer>
-
-  <Sidebar.Rail />
 </Sidebar.Root>
