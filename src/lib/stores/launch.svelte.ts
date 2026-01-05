@@ -23,15 +23,43 @@ interface LaunchState {
   status: LaunchStatus;
 }
 
+// Unique ID counter for log entries
+let logIdCounter = 0;
+
 /** Create the launch store */
 function createLaunchStore() {
   let launchStates = $state<Map<string, LaunchState>>(new Map());
-  let gameLogs = $state<GameLogLine[]>([]);
+  let gameLogs = $state<(GameLogLine & { id: number })[]>([]);
   let error = $state<string | null>(null);
 
   // Event listeners
   let unlistenStatus: UnlistenFn | null = null;
   let unlistenLog: UnlistenFn | null = null;
+  let initialized = false;
+
+  // Log batching to prevent UI freeze from rapid log updates
+  let pendingLogs: (GameLogLine & { id: number })[] = [];
+  let logFlushTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  function flushLogs() {
+    if (pendingLogs.length === 0) return;
+
+    // Batch update logs
+    const newLogs = [...gameLogs, ...pendingLogs];
+    // Keep only last 1000 logs
+    gameLogs = newLogs.length > 1000 ? newLogs.slice(-1000) : newLogs;
+    pendingLogs = [];
+    logFlushTimeout = null;
+  }
+
+  function queueLog(log: GameLogLine) {
+    // Add unique ID to each log
+    pendingLogs.push({ ...log, id: logIdCounter++ });
+    // Flush logs every 100ms to batch updates
+    if (!logFlushTimeout) {
+      logFlushTimeout = setTimeout(flushLogs, 100);
+    }
+  }
 
   return {
     // Getters
@@ -57,7 +85,7 @@ function createLaunchStore() {
     },
 
     /** Get logs for a specific instance */
-    getLogsForInstance(instanceId: string): GameLogLine[] {
+    getLogsForInstance(instanceId: string) {
       return gameLogs.filter((log) => log.instanceId === instanceId);
     },
 
@@ -86,6 +114,13 @@ function createLaunchStore() {
 
     /** Initialize event listeners */
     async init() {
+      // Guard against multiple init calls
+      if (initialized) {
+        console.log("[launchStore] Already initialized, skipping");
+        return;
+      }
+      initialized = true;
+
       // Listen for launch status events
       unlistenStatus = await listen<{ instance_id: string; status: LaunchStatus }>(
         "launch_status",
@@ -108,14 +143,9 @@ function createLaunchStore() {
         }
       );
 
-      // Listen for game log events
+      // Listen for game log events with batching to prevent UI freeze
       unlistenLog = await listen<GameLogLine>("game_log", (event) => {
-        gameLogs = [...gameLogs, event.payload];
-
-        // Keep only last 1000 logs
-        if (gameLogs.length > 1000) {
-          gameLogs = gameLogs.slice(-1000);
-        }
+        queueLog(event.payload);
       });
 
       // Get initially running instances
@@ -137,6 +167,15 @@ function createLaunchStore() {
     cleanup() {
       unlistenStatus?.();
       unlistenLog?.();
+      unlistenStatus = null;
+      unlistenLog = null;
+      initialized = false;
+      // Flush any pending logs before cleanup
+      if (logFlushTimeout) {
+        clearTimeout(logFlushTimeout);
+        logFlushTimeout = null;
+      }
+      flushLogs();
     },
 
     /** Clear logs for an instance */

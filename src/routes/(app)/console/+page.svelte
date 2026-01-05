@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount } from "svelte";
   import { launchStore } from "$lib/stores/launch.svelte";
   import { instancesStore } from "$lib/stores/instances.svelte";
   import { Trash2, Copy } from "@lucide/svelte";
@@ -12,12 +12,8 @@
   let autoScroll = $state(true);
 
   onMount(() => {
-    launchStore.init();
+    // launchStore is initialized at app layout level
     instancesStore.load();
-  });
-
-  onDestroy(() => {
-    launchStore.cleanup();
   });
 
   const filteredLogs = $derived(
@@ -115,7 +111,7 @@
         </div>
       {:else}
         <div class="space-y-0.5">
-          {#each filteredLogs as log (log.timestamp + log.line)}
+          {#each filteredLogs as log (log.id)}
             <div class="flex gap-2 {getLogColor(log.level)}">
               <span class="text-muted-foreground shrink-0">[{formatTimestamp(log.timestamp)}]</span>
               <span class="break-all">{log.line}</span>
