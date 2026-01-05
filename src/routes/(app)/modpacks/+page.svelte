@@ -589,10 +589,10 @@
             href={selectedModpackDetail.url}
             target="_blank"
             rel="noopener noreferrer"
-            class="inline-flex items-center gap-1 text-sm text-primary hover:underline mt-2"
+            class="inline-flex items-center gap-1.5 text-sm bg-muted hover:bg-muted/80 px-3 py-1.5 rounded mt-3 transition-colors"
           >
+            <ExternalLink class="h-4 w-4" />
             View on {selectedModpackDetail.platform}
-            <ExternalLink class="h-3 w-3" />
           </a>
         {/if}
       </div>
