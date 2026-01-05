@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import { Button } from "$lib/ui/button";
   import { Checkbox } from "$lib/ui/checkbox";
+  import { Input } from "$lib/ui/input";
+  import { Slider } from "$lib/ui/slider";
   import { settingsStore } from "$lib/stores/settings.svelte";
   import * as settingsService from "$lib/services/settings";
   import { RefreshCw, RotateCcw } from "@lucide/svelte";
@@ -11,6 +13,20 @@
 
   // Convenience getter for settings with defaults
   const settings = $derived(settingsStore.settings);
+
+  // Local state for sliders (for instant visual feedback)
+  let memoryMin = $state(0);
+  let memoryMax = $state(0);
+  let concurrentDownloads = $state(1);
+
+  // Sync local state when settings load
+  $effect(() => {
+    if (settings) {
+      memoryMin = settings.memoryMinMb;
+      memoryMax = settings.memoryMaxMb;
+      concurrentDownloads = settings.concurrentDownloads;
+    }
+  });
 
   onMount(() => {
     settingsStore.load();
@@ -80,12 +96,12 @@
       <div class="space-y-2">
         <label for="instancesPath" class="text-sm">Instances Path</label>
         <div class="flex gap-2">
-          <input
+          <Input
             id="instancesPath"
             type="text"
             value={settings.instancesPath}
             onchange={(e) => saveSettings({ instancesPath: e.currentTarget.value })}
-            class="flex-1 h-9 px-3 bg-background border-2 border-border text-sm"
+            class="flex-1"
           />
         </div>
         <p class="text-xs text-muted-foreground">Where game instances are stored</p>
@@ -121,13 +137,13 @@
       <div class="space-y-2">
         <label for="javaPath" class="text-sm">Java Path</label>
         <div class="flex gap-2">
-          <input
+          <Input
             id="javaPath"
             type="text"
             value={settings.javaPath ?? ""}
             onchange={(e) => saveSettings({ javaPath: e.currentTarget.value || undefined })}
             placeholder="Auto-detect"
-            class="flex-1 h-9 px-3 bg-background border-2 border-border text-sm"
+            class="flex-1"
           />
           <Button
             variant="outline"
@@ -151,42 +167,46 @@
       <div class="space-y-2">
         <div class="flex justify-between text-sm">
           <span>Minimum RAM</span>
-          <span class="text-primary">{formatMemory(settings.memoryMinMb)}</span>
+          <span class="text-primary">{formatMemory(memoryMin)}</span>
         </div>
-        <input
-          type="range"
-          min="256"
-          max="8192"
-          step="256"
-          value={settings.memoryMinMb}
-          onchange={(e) => {
-            const value = parseInt(e.currentTarget.value);
-            if (value <= settings.memoryMaxMb) {
+        <Slider
+          min={256}
+          max={8192}
+          step={256}
+          value={memoryMin}
+          onValueChange={(value) => {
+            if (value <= memoryMax) {
+              memoryMin = value;
+            }
+          }}
+          onValueCommit={(value) => {
+            if (value <= memoryMax) {
               saveSettings({ memoryMinMb: value });
             }
           }}
-          class="w-full h-2 accent-primary"
         />
       </div>
 
       <div class="space-y-2">
         <div class="flex justify-between text-sm">
           <span>Maximum RAM</span>
-          <span class="text-primary">{formatMemory(settings.memoryMaxMb)}</span>
+          <span class="text-primary">{formatMemory(memoryMax)}</span>
         </div>
-        <input
-          type="range"
-          min="512"
-          max="16384"
-          step="512"
-          value={settings.memoryMaxMb}
-          onchange={(e) => {
-            const value = parseInt(e.currentTarget.value);
-            if (value >= settings.memoryMinMb) {
+        <Slider
+          min={512}
+          max={16384}
+          step={512}
+          value={memoryMax}
+          onValueChange={(value) => {
+            if (value >= memoryMin) {
+              memoryMax = value;
+            }
+          }}
+          onValueCommit={(value) => {
+            if (value >= memoryMin) {
               saveSettings({ memoryMaxMb: value });
             }
           }}
-          class="w-full h-2 accent-primary"
         />
       </div>
 
@@ -202,16 +222,17 @@
       <div class="space-y-2">
         <div class="flex justify-between text-sm">
           <span>Concurrent Downloads</span>
-          <span class="text-primary">{settings.concurrentDownloads}</span>
+          <span class="text-primary">{concurrentDownloads}</span>
         </div>
-        <input
-          type="range"
-          min="1"
-          max="16"
-          step="1"
-          value={settings.concurrentDownloads}
-          onchange={(e) => saveSettings({ concurrentDownloads: parseInt(e.currentTarget.value) })}
-          class="w-full h-2 accent-primary"
+        <Slider
+          min={1}
+          max={16}
+          step={1}
+          value={concurrentDownloads}
+          onValueChange={(value) => {
+            concurrentDownloads = value;
+          }}
+          onValueCommit={(value) => saveSettings({ concurrentDownloads: value })}
         />
         <p class="text-xs text-muted-foreground">
           Number of files to download simultaneously

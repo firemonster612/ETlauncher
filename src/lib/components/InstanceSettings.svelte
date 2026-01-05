@@ -1,6 +1,9 @@
 <script lang="ts">
   import { Download, Loader2, RefreshCw } from "@lucide/svelte";
   import { Button } from "$lib/ui/button";
+  import { Input } from "$lib/ui/input";
+  import { Slider } from "$lib/ui/slider";
+  import { Textarea } from "$lib/ui/textarea";
   import * as Sheet from "$lib/ui/sheet";
   import { instancesStore } from "$lib/stores/instances.svelte";
   import UpdateDialog from "./UpdateDialog.svelte";
@@ -117,12 +120,11 @@
       <!-- Instance Name -->
       <div class="space-y-3">
         <label for="instance-name" class="text-sm font-medium">Instance Name</label>
-        <input
+        <Input
           id="instance-name"
           type="text"
           bind:value={name}
           placeholder="My Instance"
-          class="w-full h-10 px-3 bg-background border-2 border-border text-sm focus:border-primary outline-none"
         />
       </div>
 
@@ -130,12 +132,11 @@
       <div class="space-y-3">
         <label for="java-path" class="text-sm font-medium">Java Path</label>
         <p class="text-xs text-muted-foreground">Leave empty to use the default Java installation</p>
-        <input
+        <Input
           id="java-path"
           type="text"
           bind:value={javaPath}
           placeholder="Auto-detect"
-          class="w-full h-10 px-3 bg-background border-2 border-border text-sm focus:border-primary outline-none"
         />
       </div>
 
@@ -152,13 +153,11 @@
               <span>Minimum</span>
               <span class="text-primary">{formatMemory(memoryMin)}</span>
             </div>
-            <input
-              type="range"
-              min="512"
-              max="16384"
-              step="512"
+            <Slider
+              min={512}
+              max={16384}
+              step={512}
               bind:value={memoryMin}
-              class="w-full h-2 accent-primary"
             />
           </div>
 
@@ -167,13 +166,11 @@
               <span>Maximum</span>
               <span class="text-primary">{formatMemory(memoryMax)}</span>
             </div>
-            <input
-              type="range"
-              min="512"
-              max="32768"
-              step="512"
+            <Slider
+              min={512}
+              max={32768}
+              step={512}
               bind:value={memoryMax}
-              class="w-full h-2 accent-primary"
             />
           </div>
         </div>
@@ -183,26 +180,24 @@
       <div class="space-y-3">
         <label for="jvm-args" class="text-sm font-medium">JVM Arguments</label>
         <p class="text-xs text-muted-foreground">Additional arguments passed to the Java Virtual Machine</p>
-        <textarea
+        <Textarea
           id="jvm-args"
           bind:value={jvmArgs}
           placeholder="-XX:+UseG1GC"
           rows={3}
-          class="w-full px-3 py-2 bg-background border-2 border-border text-sm focus:border-primary outline-none resize-none"
-        ></textarea>
+        />
       </div>
 
       <!-- Game Arguments -->
       <div class="space-y-3">
         <label for="game-args" class="text-sm font-medium">Game Arguments</label>
         <p class="text-xs text-muted-foreground">Additional arguments passed to Minecraft</p>
-        <textarea
+        <Textarea
           id="game-args"
           bind:value={gameArgs}
           placeholder="--width 1920 --height 1080"
           rows={2}
-          class="w-full px-3 py-2 bg-background border-2 border-border text-sm focus:border-primary outline-none resize-none"
-        ></textarea>
+        />
       </div>
 
       <!-- Resolution -->
@@ -210,20 +205,20 @@
         <label class="text-sm font-medium">Window Resolution</label>
         <p class="text-xs text-muted-foreground">Set to 0 for default resolution</p>
         <div class="flex gap-3 items-center">
-          <input
+          <Input
             type="number"
             bind:value={resolutionWidth}
             placeholder="Width"
             min={0}
-            class="w-24 h-10 px-3 bg-background border-2 border-border text-sm focus:border-primary outline-none"
+            class="w-24"
           />
           <span class="text-muted-foreground">×</span>
-          <input
+          <Input
             type="number"
             bind:value={resolutionHeight}
             placeholder="Height"
             min={0}
-            class="w-24 h-10 px-3 bg-background border-2 border-border text-sm focus:border-primary outline-none"
+            class="w-24"
           />
         </div>
       </div>

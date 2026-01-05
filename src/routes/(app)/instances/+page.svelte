@@ -278,12 +278,12 @@
     <h1 class="text-2xl">Instances</h1>
     <div class="flex items-center gap-4 flex-1 max-w-md">
       <div class="relative flex-1">
-        <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <input
+        <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
+        <Input
           type="text"
           placeholder="Search..."
           bind:value={search}
-          class="w-full h-9 pl-9 pr-3 bg-card border-2 border-border text-sm focus:border-primary outline-none"
+          class="pl-9"
         />
       </div>
       <Button variant="outline" onclick={openImportModal} title="Import .mrpack file">
@@ -468,12 +468,11 @@
       <div class="space-y-4">
         <div>
           <label for="name" class="text-sm text-muted-foreground block mb-1">Instance Name</label>
-          <input
+          <Input
             id="name"
             type="text"
             bind:value={createName}
             placeholder="My Instance"
-            class="w-full h-9 px-3 bg-background border-2 border-border text-sm focus:border-primary outline-none"
           />
         </div>
 

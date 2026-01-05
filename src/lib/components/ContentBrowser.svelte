@@ -22,6 +22,7 @@
     Minus,
   } from "@lucide/svelte";
   import { Button } from "$lib/ui/button";
+  import { Input } from "$lib/ui/input";
   import * as Select from "$lib/ui/select";
   import { contentStore } from "$lib/stores/content.svelte";
   import * as contentService from "$lib/services/content";
@@ -553,12 +554,12 @@
     <div class="flex gap-2">
       <div class="relative flex-1">
         <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <input
+        <Input
           type="text"
           placeholder="Search {contentStore.contentType}s..."
           value={searchInput}
           oninput={(e) => handleSearchInput(e.currentTarget.value)}
-          class="w-full h-9 pl-9 pr-3 bg-background border-2 border-border text-sm focus:border-primary outline-none"
+          class="pl-9"
         />
       </div>
     </div>

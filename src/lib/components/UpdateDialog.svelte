@@ -3,6 +3,7 @@
   import { Button } from "$lib/ui/button";
   import * as Sheet from "$lib/ui/sheet";
   import { Select, SelectContent, SelectItem, SelectTrigger } from "$lib/ui/select";
+  import * as RadioGroup from "$lib/ui/radio-group";
   import * as updateService from "$lib/services/update";
   import type {
     ModpackInstanceUpdateCheck,
@@ -336,30 +337,20 @@
                 {#each modpackCheck.userAddedContent as item (item.filename)}
                   <div class="p-3 bg-muted/30 rounded space-y-2">
                     <div class="font-medium text-sm">{item.name || item.filename}</div>
-                    <div class="flex gap-4">
+                    <RadioGroup.Root
+                      value={userContentDecisions[item.filename]}
+                      onValueChange={(v) => { userContentDecisions[item.filename] = v as UserContentDecision; }}
+                      class="flex gap-4 flex-row"
+                    >
                       <label class="flex items-center gap-2 cursor-pointer text-sm">
-                        <input
-                          type="radio"
-                          name={`user-content-${item.filename}`}
-                          value="keep"
-                          checked={userContentDecisions[item.filename] === "keep"}
-                          onchange={() => { userContentDecisions[item.filename] = "keep"; }}
-                          class="w-4 h-4 accent-primary"
-                        />
+                        <RadioGroup.Item value="keep" />
                         Keep
                       </label>
                       <label class="flex items-center gap-2 cursor-pointer text-sm">
-                        <input
-                          type="radio"
-                          name={`user-content-${item.filename}`}
-                          value="remove"
-                          checked={userContentDecisions[item.filename] === "remove"}
-                          onchange={() => { userContentDecisions[item.filename] = "remove"; }}
-                          class="w-4 h-4 accent-primary"
-                        />
+                        <RadioGroup.Item value="remove" />
                         Remove
                       </label>
-                    </div>
+                    </RadioGroup.Root>
                     {#if userContentDecisions[item.filename] === "pending"}
                       <p class="text-xs text-yellow-500">Please select an option</p>
                     {/if}
@@ -445,30 +436,20 @@
                 {#each instanceCheck.incompatibleContent as item (item.filename)}
                   <div class="p-3 bg-muted/30 rounded space-y-2">
                     <div class="font-medium text-sm">{item.name}</div>
-                    <div class="flex gap-4">
+                    <RadioGroup.Root
+                      value={incompatibleDecisions[item.filename]}
+                      onValueChange={(v) => { incompatibleDecisions[item.filename] = v as UserContentDecision; }}
+                      class="flex gap-4 flex-row"
+                    >
                       <label class="flex items-center gap-2 cursor-pointer text-sm">
-                        <input
-                          type="radio"
-                          name={`incompatible-${item.filename}`}
-                          value="keep"
-                          checked={incompatibleDecisions[item.filename] === "keep"}
-                          onchange={() => { incompatibleDecisions[item.filename] = "keep"; }}
-                          class="w-4 h-4 accent-primary"
-                        />
+                        <RadioGroup.Item value="keep" />
                         Keep (may cause issues)
                       </label>
                       <label class="flex items-center gap-2 cursor-pointer text-sm">
-                        <input
-                          type="radio"
-                          name={`incompatible-${item.filename}`}
-                          value="remove"
-                          checked={incompatibleDecisions[item.filename] === "remove"}
-                          onchange={() => { incompatibleDecisions[item.filename] = "remove"; }}
-                          class="w-4 h-4 accent-primary"
-                        />
+                        <RadioGroup.Item value="remove" />
                         Remove
                       </label>
-                    </div>
+                    </RadioGroup.Root>
                     {#if incompatibleDecisions[item.filename] === "pending"}
                       <p class="text-xs text-yellow-500">Please select an option</p>
                     {/if}

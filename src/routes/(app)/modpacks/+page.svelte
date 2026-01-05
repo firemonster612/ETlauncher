@@ -10,10 +10,11 @@
     Filter,
     X,
     ChevronDown,
-    Check,
   } from "@lucide/svelte";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { Button } from "$lib/ui/button";
+  import { Checkbox } from "$lib/ui/checkbox";
+  import { Input } from "$lib/ui/input";
   import * as Select from "$lib/ui/select";
   import { modpacksStore } from "$lib/stores/modpacks.svelte";
   import { versionsStore } from "$lib/stores/versions.svelte";
@@ -306,13 +307,13 @@
   <!-- Search and Sort -->
   <div class="flex items-center gap-4">
     <div class="relative flex-1 max-w-md">
-      <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-      <input
+      <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
+      <Input
         type="text"
         placeholder="Search modpacks..."
         value={searchInput}
         oninput={(e) => handleSearchInput(e.currentTarget.value)}
-        class="w-full h-9 pl-9 pr-3 bg-card border-2 border-border text-sm focus:border-primary outline-none"
+        class="pl-9"
       />
     </div>
     <Select.Root
@@ -422,11 +423,10 @@
                         class="w-full flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-muted/50 rounded text-left"
                         onclick={() => toggleCategory(category)}
                       >
-                        <div class="w-4 h-4 border border-border rounded flex items-center justify-center shrink-0 {selectedCategories.includes(category) ? 'bg-primary border-primary' : ''}">
-                          {#if selectedCategories.includes(category)}
-                            <Check class="h-3 w-3 text-primary-foreground" />
-                          {/if}
-                        </div>
+                        <Checkbox
+                          checked={selectedCategories.includes(category)}
+                          class="pointer-events-none"
+                        />
                         <span class="capitalize">{category.replace(/-/g, " ")}</span>
                       </button>
                     {/each}
@@ -581,25 +581,27 @@
         </div>
       </div>
 
-      <!-- Description -->
-      <div class="p-6 border-b border-border flex-shrink-0">
-        <p class="text-sm">{selectedModpackDetail.description}</p>
-        {#if selectedModpackDetail.url}
-          <a
-            href={selectedModpackDetail.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            class="inline-flex items-center gap-1.5 text-sm bg-muted hover:bg-muted/80 px-3 py-1.5 rounded mt-3 transition-colors"
-          >
-            <ExternalLink class="h-4 w-4" />
-            View on {selectedModpackDetail.platform}
-          </a>
-        {/if}
-      </div>
+      <!-- Scrollable Content (Description + Versions) -->
+      <div class="flex-1 overflow-y-auto min-h-0">
+        <!-- Description -->
+        <div class="p-6 border-b border-border">
+          <p class="text-sm">{selectedModpackDetail.description}</p>
+          {#if selectedModpackDetail.url}
+            <a
+              href={selectedModpackDetail.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex items-center gap-1.5 text-sm bg-muted hover:bg-muted/80 px-3 py-1.5 rounded mt-3 transition-colors"
+            >
+              <ExternalLink class="h-4 w-4" />
+              View on {selectedModpackDetail.platform}
+            </a>
+          {/if}
+        </div>
 
-      <!-- Scrollable Versions -->
-      <div class="flex-1 overflow-y-auto p-6">
-        <h3 class="font-semibold mb-3">Versions</h3>
+        <!-- Versions -->
+        <div class="p-6">
+          <h3 class="font-semibold mb-3">Versions</h3>
         {#if modpacksStore.isLoadingVersions}
           <div class="flex items-center gap-2 text-muted-foreground">
             <Loader2 class="h-4 w-4 animate-spin" />
@@ -637,6 +639,7 @@
             {/each}
           </div>
         {/if}
+        </div>
       </div>
 
       <!-- Sticky Install Progress -->

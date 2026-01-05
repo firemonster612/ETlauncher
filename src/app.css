@@ -177,6 +177,15 @@ button, [role="button"] {
   transition: all 0.1s ease-out;
 }
 
+/* Checkbox buttons need visible borders */
+button[data-checkbox-root] {
+  border-color: var(--muted-foreground);
+}
+
+button[data-checkbox-root][data-state="checked"] {
+  border-color: var(--primary);
+}
+
 button:hover, [role="button"]:hover {
   transform: translateY(-1px);
 }
@@ -265,4 +274,15 @@ input:focus, textarea:focus, select:focus {
 /* Pixelated images (Minecraft skins/avatars) */
 .pixelated {
   image-rendering: pixelated;
+}
+
+/* Prevent slider thumb from triggering scroll on focus */
+[role="slider"] {
+  scroll-margin: 0 !important;
+  transform: none !important;
+}
+
+[role="slider"]:hover,
+[role="slider"]:active {
+  transform: none !important;
 }
