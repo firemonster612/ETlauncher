@@ -4,10 +4,9 @@ use crate::models::loader::{
     FabricInstallerMeta, FabricLoaderForVersion, ForgePromotions, LiteLoaderVersionsResponse,
     LoaderVersion, NeoForgeMavenResponse,
 };
+use crate::services::java_service;
 use std::path::Path;
-use std::time::Duration;
 use tokio::process::Command;
-use tokio::time::timeout;
 
 /// Fabric meta API base URL
 const FABRIC_META_URL: &str = "https://meta.fabricmc.net/v2";
@@ -554,6 +553,147 @@ fn is_legacy_mc_version(mc_version: &str) -> bool {
     major == 1 && minor <= 12
 }
 
+/// Check if a Minecraft version is very old (1.7.x or earlier)
+/// Very old Forge installers don't support --installClient at all
+fn is_very_old_mc_version(mc_version: &str) -> bool {
+    let parts: Vec<&str> = mc_version.split('.').collect();
+    if parts.len() < 2 {
+        return true;
+    }
+
+    let major: u32 = parts[0].parse().unwrap_or(1);
+    let minor: u32 = parts[1].parse().unwrap_or(0);
+
+    // 1.7 and earlier are very old
+    major == 1 && minor <= 7
+}
+
+/// Extract old Forge installer manually (for 1.7.x and earlier)
+/// These installers don't support headless mode, so we extract the contents directly
+async fn extract_old_forge_installer(
+    game_dir: &Path,
+    mc_version: &str,
+    loader_version: &str,
+    installer_path: &Path,
+) -> Result<(), AppError> {
+    let game_dir = game_dir.to_path_buf();
+    let mc_version = mc_version.to_string();
+    let loader_version = loader_version.to_string();
+    let installer_path = installer_path.to_path_buf();
+
+    tokio::task::spawn_blocking(move || {
+        extract_old_forge_installer_sync(&game_dir, &mc_version, &loader_version, &installer_path)
+    })
+    .await
+    .map_err(|e| AppError::InstallationError(format!("Task join error: {}", e)))?
+}
+
+/// Synchronous extraction of old Forge installer
+fn extract_old_forge_installer_sync(
+    game_dir: &Path,
+    mc_version: &str,
+    loader_version: &str,
+    installer_path: &Path,
+) -> Result<(), AppError> {
+    use std::io::Read;
+
+    let file = std::fs::File::open(installer_path)?;
+    let mut archive = zip::ZipArchive::new(file)?;
+
+    // Create necessary directories
+    let versions_dir = game_dir.join("versions");
+    let libraries_dir = game_dir.join("libraries");
+    std::fs::create_dir_all(&versions_dir)?;
+    std::fs::create_dir_all(&libraries_dir)?;
+
+    // The version ID for old Forge - matches the format expected by the launcher
+    let version_id = format!("{}-forge-{}", mc_version, loader_version);
+    let version_dir = versions_dir.join(&version_id);
+    std::fs::create_dir_all(&version_dir)?;
+
+    // Look for install_profile.json to get the version info
+    let mut version_json_content = None;
+    let mut universal_jar_data = None;
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        let name = file.name().to_string();
+
+        if name == "install_profile.json" {
+            let mut content = String::new();
+            file.read_to_string(&mut content)?;
+
+            // Parse the install profile to extract version info
+            if let Ok(profile) = serde_json::from_str::<serde_json::Value>(&content) {
+                // Old Forge install_profile.json has a "versionInfo" field
+                if let Some(version_info) = profile.get("versionInfo") {
+                    version_json_content = Some(serde_json::to_string_pretty(version_info)?);
+                }
+            }
+        } else if name.contains("universal") && name.ends_with(".jar") {
+            // Read the universal jar
+            let mut data = Vec::new();
+            file.read_to_end(&mut data)?;
+            universal_jar_data = Some((name, data));
+        } else if name.starts_with("maven/") || (name.contains('/') && name.ends_with(".jar")) {
+            // Extract library files
+            let lib_path = if name.starts_with("maven/") {
+                libraries_dir.join(&name[6..]) // Strip "maven/" prefix
+            } else {
+                libraries_dir.join(&name)
+            };
+
+            if let Some(parent) = lib_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+
+            let mut data = Vec::new();
+            file.read_to_end(&mut data)?;
+            std::fs::write(&lib_path, &data)?;
+        }
+    }
+
+    // Write the version JSON
+    if let Some(json_content) = version_json_content {
+        // Update the id field in the JSON to match our expected version_id format
+        let mut json_value: serde_json::Value = serde_json::from_str(&json_content)?;
+        if let Some(obj) = json_value.as_object_mut() {
+            obj.insert("id".to_string(), serde_json::Value::String(version_id.clone()));
+        }
+        let updated_json = serde_json::to_string_pretty(&json_value)?;
+
+        let json_path = version_dir.join(format!("{}.json", version_id));
+        std::fs::write(&json_path, &updated_json)?;
+        eprintln!("[forge] Wrote version JSON to {:?}", json_path);
+    } else {
+        return Err(AppError::InstallationError(
+            "Could not find versionInfo in Forge installer".to_string()
+        ));
+    }
+
+    // Write the universal jar to the libraries directory
+    if let Some((_jar_name, jar_data)) = universal_jar_data {
+        // The jar should go to libraries/net/minecraftforge/forge/{mc}-{forge}/forge-{mc}-{forge}-universal.jar
+        // Old Forge references libraries with :universal classifier
+        let forge_lib_dir = libraries_dir
+            .join("net/minecraftforge/forge")
+            .join(format!("{}-{}", mc_version, loader_version));
+        std::fs::create_dir_all(&forge_lib_dir)?;
+
+        // Write with -universal suffix (what the version.json expects)
+        let jar_path = forge_lib_dir.join(format!("forge-{}-{}-universal.jar", mc_version, loader_version));
+        std::fs::write(&jar_path, &jar_data)?;
+        eprintln!("[forge] Wrote Forge universal jar to {:?}", jar_path);
+
+        // Also write without suffix as fallback (some version.json variants reference it this way)
+        let jar_path_alt = forge_lib_dir.join(format!("forge-{}-{}.jar", mc_version, loader_version));
+        std::fs::write(&jar_path_alt, &jar_data)?;
+    }
+
+    eprintln!("[forge] Manual extraction complete for {} Forge {}", mc_version, loader_version);
+    Ok(())
+}
+
 /// Install Forge loader to a game directory
 pub async fn install_forge(
     game_dir: &Path,
@@ -591,15 +731,32 @@ pub async fn install_forge(
     progress("Running Forge installer...".to_string(), 40);
 
     let is_legacy = is_legacy_mc_version(mc_version);
+    let is_very_old = is_very_old_mc_version(mc_version);
 
-    let output = if is_legacy {
-        // Legacy Forge (1.12.2 and earlier) - run headless, installer will use the
-        // minecraft.launcher.brand property and install to the directory we specify
-        // via minecraft home. We also need to use extract mode or handle differently.
+    // Get the correct Java for this MC version (old Forge needs Java 8)
+    let required_java = java_service::get_required_java_version(mc_version);
+    let java_path = java_service::get_installed_java(required_java)
+        .unwrap_or_else(|| "java".to_string());
+
+    eprintln!("[forge] Using Java {} at {} for MC {}", required_java, java_path, mc_version);
+
+    let output = if is_very_old {
+        // Very old Forge (1.7.x and earlier) - these installers don't support headless mode
+        // and always try to launch a GUI. We need to extract the installer manually.
+        eprintln!("[forge] Using manual extraction for very old Forge MC {}", mc_version);
+
+        extract_old_forge_installer(game_dir, mc_version, loader_version, &installer_path).await?;
+
+        // Return a fake successful output since we handled it manually
+        std::process::Output {
+            status: std::process::ExitStatus::default(),
+            stdout: b"Manually extracted".to_vec(),
+            stderr: Vec::new(),
+        }
+    } else if is_legacy {
+        // Legacy Forge (1.8 - 1.12.2) - run headless with --installClient
         eprintln!("[forge] Using legacy installer mode for MC {}", mc_version);
 
-        // For legacy Forge, we run it headless and set the game directory as the
-        // user.home so it finds .minecraft there
         let dot_minecraft = game_dir.join(".minecraft");
         tokio::fs::create_dir_all(&dot_minecraft).await.ok();
 
@@ -610,7 +767,7 @@ pub async fn install_forge(
             tokio::fs::copy(&profiles_src, &profiles_dst).await.ok();
         }
 
-        Command::new("java")
+        Command::new(&java_path)
             .arg("-Djava.awt.headless=true")
             .arg("-jar")
             .arg(&installer_path)
@@ -621,7 +778,7 @@ pub async fn install_forge(
             .map_err(|e| AppError::ProcessError(format!("Failed to run Forge installer: {}", e)))?
     } else {
         // Modern Forge (1.13+) - use --installClient
-        Command::new("java")
+        Command::new(&java_path)
             .arg("-Djava.awt.headless=true")
             .arg("-jar")
             .arg(&installer_path)
@@ -778,7 +935,11 @@ pub async fn install_neoforge(
 
     progress("Running NeoForge installer...".to_string(), 40);
 
-    let output = Command::new("java")
+    // NeoForge is for modern MC (1.20.1+), needs Java 21
+    let java_path = java_service::get_installed_java(21)
+        .unwrap_or_else(|| "java".to_string());
+
+    let output = Command::new(&java_path)
         .arg("-jar")
         .arg(&installer_path)
         .arg("--installClient")

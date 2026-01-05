@@ -142,6 +142,8 @@ pub async fn launch_instance(
     replacements.insert("auth_access_token".to_string(), access_token);
     replacements.insert("user_type".to_string(), "msa".to_string());
     replacements.insert("version_type".to_string(), "release".to_string());
+    // Old MC versions (1.7.x) need user_properties as empty JSON object
+    replacements.insert("user_properties".to_string(), "{}".to_string());
     replacements.insert(
         "natives_directory".to_string(),
         natives_dir.to_string_lossy().to_string(),

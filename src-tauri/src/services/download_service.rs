@@ -291,8 +291,9 @@ pub async fn download_game_files_with_version(
 
                 // If artifact URL is empty, try to construct from Maven repos
                 let url = if artifact.url.is_empty() {
-                    // Try NeoForge Maven, Forge Maven, then Maven Central
-                    maven_name_to_url(&library.name, "https://maven.neoforged.net/releases/")
+                    // Try Minecraft libraries, NeoForge Maven, Forge Maven, then Maven Central
+                    maven_name_to_url(&library.name, "https://libraries.minecraft.net/")
+                        .or_else(|| maven_name_to_url(&library.name, "https://maven.neoforged.net/releases/"))
                         .or_else(|| maven_name_to_url(&library.name, "https://maven.minecraftforge.net/"))
                         .or_else(|| maven_name_to_url(&library.name, "https://repo1.maven.org/maven2"))
                         .unwrap_or_default()
@@ -315,25 +316,55 @@ pub async fn download_game_files_with_version(
         } else if let Some(ref base_url) = library.url {
             // Maven-style library (used by Fabric, Quilt, Forge, etc.)
             if let Some(path) = maven_name_to_path(&library.name) {
-                let lib_path = get_libraries_dir().join(&path);
-                if !lib_path.exists() {
-                    if let Some(url) = maven_name_to_url(&library.name, base_url) {
-                        downloads.push(DownloadTask {
-                            url,
-                            path: lib_path,
-                            sha1: String::new(), // Maven libs often don't have SHA1 in version JSON
-                            size: 0,
-                            is_native: false,
-                        });
+                let cache_lib_path = get_libraries_dir().join(&path);
+                let game_lib_path = game_libraries_dir.join(&path);
+
+                // Check both cache and game directory (Forge extracts to game dir)
+                if !cache_lib_path.exists() && !game_lib_path.exists() {
+                    // For old Forge, try -universal suffix if regular name fails
+                    let lib_name_with_universal = if library.name.contains("minecraftforge:forge:") && !library.name.contains(":universal") {
+                        format!("{}:universal", library.name)
+                    } else {
+                        library.name.clone()
+                    };
+
+                    // Also check for universal variant in game dir
+                    let universal_path = maven_name_to_path(&lib_name_with_universal);
+                    let universal_exists = universal_path.as_ref()
+                        .map(|p| game_libraries_dir.join(p).exists())
+                        .unwrap_or(false);
+
+                    if !universal_exists {
+                        // Try to download with universal suffix for old Forge
+                        if let Some(url) = maven_name_to_url(&lib_name_with_universal, base_url) {
+                            let target_path = if lib_name_with_universal != library.name {
+                                // Use universal path if we modified the name
+                                universal_path.map(|p| get_libraries_dir().join(p)).unwrap_or(cache_lib_path)
+                            } else {
+                                cache_lib_path
+                            };
+                            downloads.push(DownloadTask {
+                                url,
+                                path: target_path,
+                                sha1: String::new(),
+                                size: 0,
+                                is_native: false,
+                            });
+                        }
                     }
                 }
             }
         } else {
-            // Library with just a name (no downloads, no url) - try Maven Central
+            // Library with just a name (no downloads, no url) - try multiple Maven repos
             if let Some(path) = maven_name_to_path(&library.name) {
                 let lib_path = get_libraries_dir().join(&path);
                 if !lib_path.exists() {
-                    if let Some(url) = maven_name_to_url(&library.name, "https://repo1.maven.org/maven2") {
+                    // Try Minecraft libraries first (for old MC libs), then Forge, then Maven Central
+                    let url = maven_name_to_url(&library.name, "https://libraries.minecraft.net/")
+                        .or_else(|| maven_name_to_url(&library.name, "https://maven.minecraftforge.net/"))
+                        .or_else(|| maven_name_to_url(&library.name, "https://repo1.maven.org/maven2"));
+
+                    if let Some(url) = url {
                         downloads.push(DownloadTask {
                             url,
                             path: lib_path,
