@@ -86,38 +86,61 @@ pub struct FtbTag {
     pub name: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FtbVersionManifest {
+    #[serde(default)]
     pub id: u64,
+    #[serde(default)]
     pub name: String,
     #[serde(rename = "type")]
+    #[serde(default)]
     pub version_type: String,
+    #[serde(default)]
     pub updated: u64,
+    #[serde(default)]
     pub targets: Vec<FtbTarget>,
+    #[serde(default)]
     pub files: Vec<FtbFile>,
+    // Error response fields - FTB API returns these instead of manifest for invalid packs
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct FtbTarget {
+    #[serde(default)]
     pub id: u64,
+    #[serde(default)]
     pub name: String,
     #[serde(rename = "type")]
+    #[serde(default)]
     pub target_type: String,
+    #[serde(default)]
     pub version: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FtbFile {
+    #[serde(default)]
     pub id: u64,
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub path: String,
+    #[serde(default)]
     pub url: String,
+    #[serde(default)]
     pub sha1: Option<String>,
+    #[serde(default)]
     pub size: u64,
     #[serde(rename = "type")]
+    #[serde(default)]
     pub file_type: String,
+    #[serde(default)]
     pub updated: u64,
 }
 
@@ -365,6 +388,9 @@ pub async fn get_modpack_versions(
 }
 
 /// Get version details
+/// Returns a ModpackVersion with whatever data is available.
+/// If JSON parsing fails completely, returns a version with empty fields.
+/// The caller should check if files are empty and handle accordingly.
 pub async fn get_version_details(
     client: &Client,
     pack_id: u64,
@@ -372,22 +398,51 @@ pub async fn get_version_details(
 ) -> Result<ModpackVersion, AppError> {
     let url = format!("{}/modpack/{}/{}", FTB_API_BASE, pack_id, version_id);
 
-    let manifest: FtbVersionManifest = client
-        .get(&url)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
+    // Try to fetch and parse the manifest, fall back to default on any error
+    let manifest: FtbVersionManifest = match client.get(&url).send().await {
+        Ok(response) => {
+            match response.error_for_status() {
+                Ok(resp) => {
+                    match resp.json().await {
+                        Ok(m) => m,
+                        Err(e) => {
+                            eprintln!("[ftb] Failed to parse version manifest JSON: {}", e);
+                            FtbVersionManifest::default()
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[ftb] API returned error status: {}", e);
+                    FtbVersionManifest::default()
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("[ftb] Failed to fetch version manifest: {}", e);
+            FtbVersionManifest::default()
+        }
+    };
+
+    // Check if FTB API returned an error response
+    if let Some(ref status) = manifest.status {
+        if status == "error" {
+            let msg = manifest.message.clone().unwrap_or_else(|| "Unknown FTB API error".to_string());
+            eprintln!("[ftb] API error response: {}", msg);
+            // Don't fail - return empty manifest and let caller handle
+        }
+    }
 
     let mc_version = get_mc_version(&manifest.targets).unwrap_or_default();
     let (loader_type, loader_version) = get_loader_info(&manifest.targets);
 
-    // Get the main modpack file
+    // Get the modpack files, filtering out entries with empty URLs
     let files: Vec<ModpackFile> = manifest
         .files
         .into_iter()
-        .filter(|f| f.file_type == "mod" || f.file_type == "config" || f.file_type == "modpack")
+        .filter(|f| {
+            !f.url.is_empty() &&
+            (f.file_type == "mod" || f.file_type == "config" || f.file_type == "modpack" || f.file_type.is_empty())
+        })
         .map(|f| ModpackFile {
             url: f.url,
             hash: f.sha1,
@@ -398,14 +453,17 @@ pub async fn get_version_details(
         })
         .collect();
 
+    // Note: We don't fail on empty files here - let the caller decide what to do
+    // The caller can check if files.is_empty() and mc_version.is_empty() to detect legacy packs
+
     Ok(ModpackVersion {
-        id: manifest.id.to_string(),
-        name: manifest.name,
+        id: if manifest.id > 0 { manifest.id.to_string() } else { version_id.to_string() },
+        name: if manifest.name.is_empty() { format!("Version {}", version_id) } else { manifest.name },
         mc_version,
         loader_type,
         loader_version,
         changelog: None,
-        released_at: Some(manifest.updated as i64),
+        released_at: if manifest.updated > 0 { Some(manifest.updated as i64) } else { None },
         downloads: None,
         files,
     })
