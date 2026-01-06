@@ -363,25 +363,39 @@ function createContentStore() {
       isLoadingVersions = true;
 
       try {
+        // Pull full project details so the UI can show long descriptions and gallery
+        try {
+          const detailed = await contentService.getContent(content.platform, content.id);
+          selectedContent = { ...content, ...detailed };
+        } catch (e) {
+          console.error("Failed to load detailed content info:", e);
+          selectedContent = content;
+        }
+
         // Only apply loader filter for mods - shaders/resourcepacks use different loader
         // identifiers (like "iris", "optifine") or none at all
-        const shouldFilterByLoader = content.contentType === "mod";
+        const shouldFilterByLoader = selectedContent.contentType === "mod";
 
         selectedContentVersions = await contentService.getContentVersions(
-          content.platform,
-          content.id,
+          selectedContent.platform,
+          selectedContent.id,
           mcVersion || undefined,
           shouldFilterByLoader ? (loader || undefined) : undefined
         );
         // Auto-select the first version (already filtered & sorted by backend)
         if (selectedContentVersions.length > 0) {
-          selectedVersion = selectedContentVersions[0];
+          await this.setSelectedVersion(
+            selectedContentVersions[0],
+            selectedContent.platform
+          );
         }
       } catch (e: any) {
         console.error("Failed to load content versions:", e);
       } finally {
         isLoadingVersions = false;
       }
+
+      return selectedContent;
     },
 
     /** Clear selected content */

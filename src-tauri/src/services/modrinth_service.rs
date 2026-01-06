@@ -1,6 +1,6 @@
 use crate::error::AppError;
 use crate::models::{
-    Content, ContentFile, ContentPlatform, ContentSearchParams, ContentSearchResult,
+    Content, ContentFile, ContentGalleryImage, ContentPlatform, ContentSearchParams, ContentSearchResult,
     ContentType, ContentVersion, ContentDependency, DependencyType,
     LoaderType, Modpack, ModpackFile, ModpackSearchParams, ModpackSearchResult,
     ModpackSortBy, ModpackVersion,
@@ -68,6 +68,19 @@ pub struct ModrinthProject {
     pub team: String,
     pub updated: String,
     pub published: String,
+    #[serde(default)]
+    pub gallery: Option<Vec<ModrinthGalleryImage>>,
+}
+
+/// Modrinth gallery image
+#[derive(Debug, Clone, Deserialize)]
+pub struct ModrinthGalleryImage {
+    pub url: String,
+    pub raw_url: Option<String>,
+    pub featured: Option<bool>,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub ordering: Option<i64>,
 }
 
 /// Modrinth version file
@@ -614,6 +627,7 @@ pub async fn search_content(
                 platform: ContentPlatform::Modrinth,
                 content_type,
                 categories,
+                gallery: Vec::new(),
                 mc_versions: hit.versions,
                 loaders,
                 latest_version: None,
@@ -671,6 +685,18 @@ pub async fn get_content(client: &Client, id_or_slug: &str) -> Result<Content, A
         parse_loaders(&project.loaders)
     };
     let categories = filter_categories(project.categories);
+    let gallery = project
+        .gallery
+        .unwrap_or_default()
+        .into_iter()
+        .map(|image| ContentGalleryImage {
+            url: image.url,
+            raw_url: image.raw_url,
+            title: image.title,
+            description: image.description,
+            featured: image.featured.unwrap_or(false),
+        })
+        .collect();
 
     Ok(Content {
         id: project.id.clone(),
@@ -684,6 +710,7 @@ pub async fn get_content(client: &Client, id_or_slug: &str) -> Result<Content, A
         platform: ContentPlatform::Modrinth,
         content_type,
         categories,
+        gallery,
         mc_versions: project.game_versions,
         loaders,
         latest_version: None,

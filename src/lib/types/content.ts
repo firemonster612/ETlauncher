@@ -91,6 +91,20 @@ export interface ContentVersion {
   changelog?: string;
 }
 
+/** Gallery image for content */
+export interface ContentGalleryImage {
+  /** Processed image URL */
+  url: string;
+  /** Original image URL if available */
+  rawUrl?: string;
+  /** Optional title */
+  title?: string;
+  /** Optional description */
+  description?: string;
+  /** Whether the platform marks this as featured */
+  featured?: boolean;
+}
+
 /** Content item from any platform (mod, shader, resourcepack) */
 export interface Content {
   /** Unique ID on the platform */
@@ -115,6 +129,8 @@ export interface Content {
   contentType: ContentType;
   /** Categories/tags */
   categories: string[];
+  /** Gallery images */
+  gallery?: ContentGalleryImage[];
   /** Available Minecraft versions */
   mcVersions: string[];
   /** Available mod loaders */

@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
   import { listen } from "@tauri-apps/api/event";
+  import { marked } from "marked";
   import {
     Package,
     Search,
@@ -50,6 +51,8 @@
 
   let searchInput = $state("");
   let selectedContentDetail = $state<Content | null>(null);
+  let isLoadingDetail = $state(false);
+  let detailError = $state<string | null>(null);
 
   // Navigation history for dependency drilling
   let contentHistory = $state<Content[]>([]);
@@ -434,21 +437,42 @@
     }
   }
 
+  function renderDescription(body?: string | null, fallback?: string): string {
+    const source = (body && body.trim()) || fallback || "";
+    if (!source) return "";
+
+    try {
+      return marked.parse(source, { mangle: false, headerIds: false }) as string;
+    } catch (e) {
+      console.error("Failed to render description", e);
+      return source.replace(/\n/g, "<br/>");
+    }
+  }
+
   async function handleContentClick(content: Content) {
-    selectedContentDetail = content;
-    await contentStore.selectContent(content);
-    // Auto-resolve deps for first version
-    if (contentStore.selectedVersion) {
-      await contentStore.resolveDependencies(
-        contentStore.selectedVersion,
-        content.platform
-      );
+    installSuccess = null;
+    installError = null;
+    uninstallError = null;
+    isLoadingDetail = true;
+    detailError = null;
+    contentHistory = [];
+
+    try {
+      const detailed = await contentStore.selectContent(content);
+      selectedContentDetail = detailed || content;
+    } catch (e) {
+      detailError = e instanceof Error ? e.message : "Failed to load content details";
+      selectedContentDetail = content;
+    } finally {
+      isLoadingDetail = false;
     }
   }
 
   function closeContentDetail() {
     selectedContentDetail = null;
     contentHistory = [];
+    detailError = null;
+    isLoadingDetail = false;
     contentStore.clearSelection();
   }
 
@@ -463,15 +487,16 @@
     if (selectedContentDetail) {
       contentHistory = [...contentHistory, selectedContentDetail];
     }
-    // Navigate to the dependency
-    selectedContentDetail = content;
-    await contentStore.selectContent(content);
-    // Resolve deps for the new content's first version
-    if (contentStore.selectedVersion) {
-      await contentStore.resolveDependencies(
-        contentStore.selectedVersion,
-        content.platform
-      );
+    isLoadingDetail = true;
+    detailError = null;
+    try {
+      const detailed = await contentStore.selectContent(content);
+      selectedContentDetail = detailed || content;
+    } catch (e) {
+      detailError = e instanceof Error ? e.message : "Failed to load dependency";
+      selectedContentDetail = content;
+    } finally {
+      isLoadingDetail = false;
     }
   }
 
@@ -481,13 +506,16 @@
     const previous = contentHistory[contentHistory.length - 1];
     contentHistory = contentHistory.slice(0, -1);
 
-    selectedContentDetail = previous;
-    await contentStore.selectContent(previous);
-    if (contentStore.selectedVersion) {
-      await contentStore.resolveDependencies(
-        contentStore.selectedVersion,
-        previous.platform
-      );
+    isLoadingDetail = true;
+    detailError = null;
+    try {
+      const detailed = await contentStore.selectContent(previous);
+      selectedContentDetail = detailed || previous;
+    } catch (e) {
+      detailError = e instanceof Error ? e.message : "Failed to load previous content";
+      selectedContentDetail = previous;
+    } finally {
+      isLoadingDetail = false;
     }
   }
 
@@ -521,11 +549,9 @@
         ? `Installed ${selectedContentDetail.name} and ${installed.length - 1} dependencies`
         : `Installed ${selectedContentDetail.name}`;
 
-      // Close the detail modal after a short delay
-      setTimeout(() => {
-        closeContentDetail();
-        installSuccess = null;
-      }, 1500);
+      // Close the detail modal immediately after installation completes
+      closeContentDetail();
+      installSuccess = null;
     } catch (e: unknown) {
       console.error("[ContentBrowser] Installation failed:", e);
       installError = e instanceof Error ? e.message : (typeof e === "string" ? e : JSON.stringify(e));
@@ -618,34 +644,23 @@
 <!-- Backdrop -->
 <button
   type="button"
-  class="fixed inset-0 bg-black/50 z-50"
+  class="fixed inset-x-0 top-[var(--titlebar-height)] h-[calc(100vh-var(--titlebar-height))] bg-black/50 z-50"
   onclick={onClose}
   aria-label="Close content browser"
 ></button>
 
 <!-- Panel -->
-<div class="fixed inset-y-0 right-0 w-full max-w-2xl bg-card border-l-2 border-border z-50 flex flex-col">
-  <!-- Header -->
-  <div class="p-4 border-b border-border flex items-center justify-between">
-    <div>
-      <h2 class="text-lg font-bold">{viewMode === "browse" ? "Add Content" : "Manage Content"}</h2>
-      <p class="text-sm text-muted-foreground">
-        {instanceName} &bull; MC {mcVersion}
-        {#if loaderType !== "vanilla"}
-          &bull; {loaderType}
-        {/if}
-      </p>
-    </div>
-    <button
-      class="text-muted-foreground hover:text-foreground p-2"
-      onclick={onClose}
-    >
-      <X class="h-5 w-5" />
-    </button>
-  </div>
+<div class="fixed inset-x-0 top-[var(--titlebar-height)] h-[calc(100vh-var(--titlebar-height))] md:left-[var(--sidebar-width)] md:w-[calc(100vw-var(--sidebar-width))] w-full max-w-none bg-card border-l-2 border-border z-50 flex flex-col shadow-2xl overflow-hidden">
+  <!-- Close Button -->
+  <button
+    class="absolute top-2 right-2 text-muted-foreground hover:text-foreground p-2 z-10"
+    onclick={onClose}
+  >
+    <X class="h-5 w-5" />
+  </button>
 
   <!-- Content Type Tabs -->
-  <div class="p-4 border-b border-border flex gap-2" data-tutorial="content-browser-types">
+  <div class="px-4 pt-2 pb-2 border-b border-border flex gap-2" data-tutorial="content-browser-types">
     {#each contentTypes as { value, label } (value)}
       <Button
         variant={contentStore.contentType === value ? "default" : "secondary"}
@@ -1102,7 +1117,7 @@
 
 <!-- Remove Confirmation Modal -->
 {#if showRemoveConfirm}
-  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+  <div class="fixed inset-x-0 top-[var(--titlebar-height)] h-[calc(100vh-var(--titlebar-height))] bg-black/50 flex items-center justify-center z-[60] p-4">
     <div class="bg-card border-2 border-border max-w-sm w-full p-4">
       <h3 class="font-bold mb-2">Remove {selectedItems.size} item{selectedItems.size === 1 ? '' : 's'}?</h3>
       <p class="text-sm text-muted-foreground mb-4">
@@ -1137,12 +1152,11 @@
 
 <!-- Content Detail Modal -->
 {#if selectedContentDetail}
-  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-    <div class="bg-card border-2 border-border max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col">
+  <div class="fixed inset-x-0 top-[var(--titlebar-height)] h-[calc(100vh-var(--titlebar-height))] bg-black/50 flex items-center justify-center z-[60] p-4">
+    <div class="bg-card border-2 border-border max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col rounded-lg shadow-2xl">
       <!-- Header -->
-      <div class="p-4 border-b border-border">
-        <div class="flex gap-3">
-          <!-- Back button when navigating dependencies -->
+      <div class="p-5 border-b border-border">
+        <div class="flex gap-4 items-start">
           {#if contentHistory.length > 0}
             <button
               class="text-muted-foreground hover:text-foreground flex-shrink-0 self-center -ml-1 mr-1"
@@ -1163,7 +1177,7 @@
               <Package class="h-8 w-8 text-muted-foreground/50" />
             </div>
           {/if}
-          <div class="flex-1 min-w-0">
+          <div class="flex-1 min-w-0 space-y-1">
             <div class="flex items-start justify-between gap-2">
               <h2 class="font-bold truncate">{selectedContentDetail.name}</h2>
               <button
@@ -1191,157 +1205,217 @@
                 </span>
               {/if}
             </div>
+            <p class="text-sm text-muted-foreground line-clamp-3">
+              {selectedContentDetail.description}
+            </p>
           </div>
         </div>
-        <p class="text-sm mt-3">{selectedContentDetail.description}</p>
-        {#if selectedContentDetail.url}
-          <a
-            href={selectedContentDetail.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            class="inline-flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/80 px-2.5 py-1.5 rounded mt-3 transition-colors"
-          >
-            <ExternalLink class="h-3.5 w-3.5" />
-            View on {selectedContentDetail.platform}
-          </a>
-        {/if}
       </div>
 
-      <!-- Version Selection -->
-      <div class="flex-1 overflow-y-auto p-4">
-        <h3 class="font-semibold mb-2 text-sm">Select Version</h3>
-        {#if contentStore.isLoadingVersions}
-          <div class="flex items-center gap-2 text-muted-foreground text-sm">
-            <Loader2 class="h-4 w-4 animate-spin" />
-            Loading versions...
-          </div>
-        {:else if contentStore.selectedContentVersions.length === 0}
-          <p class="text-sm text-muted-foreground">No compatible versions found</p>
-        {:else}
-          <div class="space-y-1">
-            {#each contentStore.selectedContentVersions.slice(0, 15) as version (version.id)}
-              {@const isSelected = contentStore.selectedVersion?.id === version.id}
-              {@const hasRequiredDeps = version.dependencies.some(d => d.dependencyType === "required")}
-              <button
-                class="w-full p-2 text-left rounded border-2 transition-colors {isSelected
-                  ? 'border-primary bg-primary/10'
-                  : 'border-border hover:border-primary/50'}"
-                onclick={() => handleVersionSelect(version)}
-              >
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2">
-                    {#if isSelected}
-                      <Check class="h-4 w-4 text-primary" />
-                    {/if}
-                    <span class="font-medium text-sm">{version.versionNumber}</span>
-                  </div>
-                  {#if hasRequiredDeps}
-                    <span class="text-xs text-amber-500 flex items-center gap-1">
-                      <AlertTriangle class="h-3 w-3" />
-                      Dependencies
-                    </span>
-                  {/if}
-                </div>
-                <div class="text-xs text-muted-foreground mt-0.5">
-                  {version.mcVersions.slice(0, 3).join(", ")}
-                  {#if version.mcVersions.length > 3}+{version.mcVersions.length - 3} more{/if}
-                  {#if version.releasedAt}
-                    &bull; {new Date(version.releasedAt * 1000).toLocaleDateString()}
-                  {/if}
-                </div>
-              </button>
-            {/each}
-          </div>
-        {/if}
-
-        <!-- Dependencies Section -->
-        {#if selectedContentDetail && contentStore.selectedVersion}
-          {@const hasRequiredDeps = contentStore.selectedVersion.dependencies.some(
-            d => d.dependencyType === "required"
-          )}
-
-          {#if hasRequiredDeps}
-            {#if contentStore.isResolvingDeps}
-              <!-- Loading state -->
-              <div class="mt-4 p-3 rounded border-2 bg-muted/50 border-border">
-                <div class="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 class="h-4 w-4 animate-spin" />
-                  Loading dependencies...
-                </div>
-              </div>
-            {:else if contentStore.resolvedDependencies.length > 0}
-              {@const allDepsInstalled = contentStore.resolvedDependencies.every(d => d.alreadyInstalled)}
-              <div class="mt-4 p-3 rounded border-2 {allDepsInstalled
-                ? 'bg-green-500/10 border-green-500/50'
-                : 'bg-amber-500/10 border-amber-500/50'}">
-                <div class="flex items-center gap-2 text-sm font-medium {allDepsInstalled
-                  ? 'text-green-500'
-                  : 'text-amber-500'}">
-                  {#if allDepsInstalled}
-                    <CheckCircle class="h-4 w-4" />
-                    Dependencies Installed
-                  {:else}
-                    <AlertTriangle class="h-4 w-4" />
-                    Required Dependencies
-                  {/if}
-                </div>
-                <p class="text-xs text-muted-foreground mt-1">
-                  {#if allDepsInstalled}
-                    All required dependencies are already installed.
-                  {:else}
-                    This {selectedContentDetail.contentType} requires the following (will be auto-installed):
-                  {/if}
-                </p>
-                <ul class="text-xs mt-2 space-y-1">
-                  {#each contentStore.resolvedDependencies as resolved (resolved.content.id)}
-                    <li class="flex items-center gap-2">
-                      {#if resolved.alreadyInstalled}
-                        <CheckCircle class="h-3 w-3 text-green-500" />
-                      {:else}
-                        <span class="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
-                      {/if}
-                      <button
-                        type="button"
-                        class="underline text-primary hover:text-primary/80 transition-colors text-left flex items-center gap-1 {resolved.alreadyInstalled ? 'text-green-500/80 hover:text-green-500' : ''}"
-                        onclick={() => handleDependencyClick(resolved.content)}
-                      >
-                        {resolved.content.name}
-                        <ExternalLink class="h-2.5 w-2.5" />
-                      </button>
-                      {#if resolved.alreadyInstalled}
-                        <span class="text-green-500 text-[10px]">installed</span>
-                      {/if}
-                    </li>
-                  {/each}
-                </ul>
-              </div>
-            {:else}
-              <!-- Fallback if resolution failed - show raw IDs -->
-              {@const requiredDeps = contentStore.selectedVersion.dependencies.filter(
-                d => d.dependencyType === "required"
-              )}
-              <div class="mt-4 p-3 rounded border-2 bg-amber-500/10 border-amber-500/50">
-                <div class="flex items-center gap-2 text-sm font-medium text-amber-500">
-                  <AlertTriangle class="h-4 w-4" />
-                  Required Dependencies
-                </div>
-                <ul class="text-xs mt-2 space-y-1">
-                  {#each requiredDeps as dep (dep.id)}
-                    <li class="flex items-center gap-2">
-                      <span class="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
-                      <span class="text-muted-foreground italic">{dep.id}</span>
-                    </li>
-                  {/each}
-                </ul>
+      <div class="flex-1 overflow-hidden p-5 grid gap-4 grid-cols-1 md:grid-cols-[1.8fr_1fr] xl:grid-cols-[2fr_1fr] min-h-0">
+        <div class="space-y-4 overflow-y-auto pr-1 min-h-0">
+          {#if isLoadingDetail}
+            <div class="flex items-center gap-2 text-muted-foreground text-sm">
+              <Loader2 class="h-4 w-4 animate-spin" />
+              Loading content details...
+            </div>
+          {:else}
+            {#if detailError}
+              <div class="p-3 bg-destructive/10 border-2 border-destructive rounded text-destructive text-sm">
+                {detailError}
               </div>
             {/if}
+            {#if selectedContentDetail.gallery?.length}
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <h3 class="text-sm font-semibold">Gallery</h3>
+                  <span class="text-xs text-muted-foreground">
+                    {selectedContentDetail.gallery.length} images
+                  </span>
+                </div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                  {#each selectedContentDetail.gallery as image (image.rawUrl ?? image.url)}
+                    <div class="relative overflow-hidden rounded-lg border-2 border-border bg-muted/50 aspect-video">
+                      <img
+                        src={image.rawUrl ?? image.url}
+                        alt={image.title ?? selectedContentDetail.name}
+                        class="w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                      {#if image.title || image.description}
+                        <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent text-white text-xs p-2 space-y-1">
+                          {#if image.title}
+                            <div class="font-semibold leading-tight truncate">{image.title}</div>
+                          {/if}
+                          {#if image.description}
+                            <p class="opacity-90 line-clamp-2 leading-snug">{image.description}</p>
+                          {/if}
+                        </div>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+
+            <div class="border-2 border-border rounded-lg bg-background/70 p-4 space-y-2">
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="text-sm font-semibold">About</h3>
+                {#if selectedContentDetail.url}
+                  <a
+                    href={selectedContentDetail.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/80 px-2.5 py-1.5 rounded transition-colors"
+                  >
+                    <ExternalLink class="h-3.5 w-3.5" />
+                    View on {selectedContentDetail.platform}
+                  </a>
+                {/if}
+              </div>
+              {#if selectedContentDetail.body || selectedContentDetail.description}
+                <div class="text-sm leading-relaxed [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_img]:max-w-full [&_img]:rounded-md [&_img]:my-2 [&_h1]:text-lg [&_h2]:text-base [&_h1]:font-semibold [&_h2]:font-semibold [&_a]:text-primary [&_a]:underline">
+                  {@html renderDescription(selectedContentDetail.body || selectedContentDetail.description)}
+                </div>
+              {:else}
+                <p class="text-sm text-muted-foreground">No description available.</p>
+              {/if}
+            </div>
           {/if}
-        {/if}
+        </div>
+
+        <div class="space-y-3 overflow-y-auto pr-1 min-h-0">
+          <div class="border-2 border-border rounded-lg bg-background/70 p-4">
+            <h3 class="font-semibold mb-2 text-sm">Select Version</h3>
+            {#if contentStore.isLoadingVersions}
+              <div class="flex items-center gap-2 text-muted-foreground text-sm">
+                <Loader2 class="h-4 w-4 animate-spin" />
+                Loading versions...
+              </div>
+            {:else if contentStore.selectedContentVersions.length === 0}
+              <p class="text-sm text-muted-foreground">No compatible versions found</p>
+            {:else}
+              <div class="space-y-1">
+                {#each contentStore.selectedContentVersions.slice(0, 15) as version (version.id)}
+                  {@const isSelected = contentStore.selectedVersion?.id === version.id}
+                  {@const hasRequiredDeps = version.dependencies.some(d => d.dependencyType === "required")}
+                  <button
+                    class="w-full p-2 text-left rounded border-2 transition-colors {isSelected
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border hover:border-primary/50'}"
+                    onclick={() => handleVersionSelect(version)}
+                  >
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-2">
+                        {#if isSelected}
+                          <Check class="h-4 w-4 text-primary" />
+                        {/if}
+                        <span class="font-medium text-sm">{version.versionNumber}</span>
+                      </div>
+                      {#if hasRequiredDeps}
+                        <span class="text-xs text-amber-500 flex items-center gap-1">
+                          <AlertTriangle class="h-3 w-3" />
+                          Dependencies
+                        </span>
+                      {/if}
+                    </div>
+                    <div class="text-xs text-muted-foreground mt-0.5">
+                      {version.mcVersions.slice(0, 3).join(", ")}
+                      {#if version.mcVersions.length > 3}+{version.mcVersions.length - 3} more{/if}
+                      {#if version.releasedAt}
+                        &bull; {new Date(version.releasedAt * 1000).toLocaleDateString()}
+                      {/if}
+                    </div>
+                  </button>
+                {/each}
+              </div>
+            {/if}
+
+            {#if selectedContentDetail && contentStore.selectedVersion}
+              {@const hasRequiredDeps = contentStore.selectedVersion.dependencies.some(
+                d => d.dependencyType === "required"
+              )}
+
+              {#if hasRequiredDeps}
+                {#if contentStore.isResolvingDeps}
+                  <div class="mt-4 p-3 rounded border-2 bg-muted/50 border-border">
+                    <div class="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 class="h-4 w-4 animate-spin" />
+                      Loading dependencies...
+                    </div>
+                  </div>
+                {:else if contentStore.resolvedDependencies.length > 0}
+                  {@const allDepsInstalled = contentStore.resolvedDependencies.every(d => d.alreadyInstalled)}
+                  <div class="mt-4 p-3 rounded border-2 {allDepsInstalled
+                    ? 'bg-green-500/10 border-green-500/50'
+                    : 'bg-amber-500/10 border-amber-500/50'}">
+                    <div class="flex items-center gap-2 text-sm font-medium {allDepsInstalled
+                      ? 'text-green-500'
+                      : 'text-amber-500'}">
+                      {#if allDepsInstalled}
+                        <CheckCircle class="h-4 w-4" />
+                        Dependencies Installed
+                      {:else}
+                        <AlertTriangle class="h-4 w-4" />
+                        Required Dependencies
+                      {/if}
+                    </div>
+                    <p class="text-xs text-muted-foreground mt-1">
+                      {#if allDepsInstalled}
+                        All required dependencies are already installed.
+                      {:else}
+                        This {selectedContentDetail.contentType} requires the following (will be auto-installed):
+                      {/if}
+                    </p>
+                    <ul class="text-xs mt-2 space-y-1">
+                      {#each contentStore.resolvedDependencies as resolved (resolved.content.id)}
+                        <li class="flex items-center gap-2">
+                          {#if resolved.alreadyInstalled}
+                            <CheckCircle class="h-3 w-3 text-green-500" />
+                          {:else}
+                            <span class="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+                          {/if}
+                          <button
+                            type="button"
+                            class="underline text-primary hover:text-primary/80 transition-colors text-left flex items-center gap-1 {resolved.alreadyInstalled ? 'text-green-500/80 hover:text-green-500' : ''}"
+                            onclick={() => handleDependencyClick(resolved.content)}
+                          >
+                            {resolved.content.name}
+                            <ExternalLink class="h-2.5 w-2.5" />
+                          </button>
+                          {#if resolved.alreadyInstalled}
+                            <span class="text-green-500 text-[10px]">installed</span>
+                          {/if}
+                        </li>
+                      {/each}
+                    </ul>
+                  </div>
+                {:else}
+                  {@const requiredDeps = contentStore.selectedVersion.dependencies.filter(
+                    d => d.dependencyType === "required"
+                  )}
+                  <div class="mt-4 p-3 rounded border-2 bg-amber-500/10 border-amber-500/50">
+                    <div class="flex items-center gap-2 text-sm font-medium text-amber-500">
+                      <AlertTriangle class="h-4 w-4" />
+                      Required Dependencies
+                    </div>
+                    <ul class="text-xs mt-2 space-y-1">
+                      {#each requiredDeps as dep (dep.id)}
+                        <li class="flex items-center gap-2">
+                          <span class="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+                          <span class="text-muted-foreground italic">{dep.id}</span>
+                        </li>
+                      {/each}
+                    </ul>
+                  </div>
+                {/if}
+              {/if}
+            {/if}
+          </div>
+        </div>
       </div>
 
-      <!-- Footer -->
       <div class="p-4 border-t border-border space-y-3">
-        <!-- Success Message -->
         {#if installSuccess}
           <div class="flex items-center gap-2 p-3 bg-green-500/10 border-2 border-green-500/50 rounded text-green-500 text-sm">
             <CheckCircle class="h-4 w-4 flex-shrink-0" />
@@ -1349,7 +1423,6 @@
           </div>
         {/if}
 
-        <!-- Install Error Message -->
         {#if installError}
           <div class="p-3 bg-destructive/10 border-2 border-destructive rounded text-destructive text-sm">
             <div class="flex items-center gap-2 font-medium">
@@ -1360,7 +1433,6 @@
           </div>
         {/if}
 
-        <!-- Uninstall Error Message -->
         {#if uninstallError}
           <div class="p-3 bg-destructive/10 border-2 border-destructive rounded text-destructive text-sm">
             <div class="flex items-center gap-2 font-medium">
@@ -1371,7 +1443,6 @@
           </div>
         {/if}
 
-        <!-- Download Progress Bar -->
         {#if isInstalling && contentStore.downloadProgress}
           <div class="p-3 bg-primary/5 border-2 border-primary/30 rounded">
             <div class="flex items-center justify-between text-sm mb-2">

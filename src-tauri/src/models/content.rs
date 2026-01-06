@@ -160,6 +160,23 @@ pub struct ContentVersion {
     pub changelog: Option<String>,
 }
 
+/// Image entry for a piece of content (e.g., Modrinth gallery)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentGalleryImage {
+    /// Processed image URL
+    pub url: String,
+    /// Original image URL (if provided)
+    pub raw_url: Option<String>,
+    /// Optional title
+    pub title: Option<String>,
+    /// Optional description
+    pub description: Option<String>,
+    /// Whether the platform marks this as featured
+    #[serde(default)]
+    pub featured: bool,
+}
+
 /// Content item from any platform (mod, shader, resourcepack)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -187,6 +204,9 @@ pub struct Content {
     /// Categories/tags
     #[serde(default)]
     pub categories: Vec<String>,
+    /// Gallery images (if provided by the platform)
+    #[serde(default)]
+    pub gallery: Vec<ContentGalleryImage>,
     /// Available Minecraft versions
     #[serde(default)]
     pub mc_versions: Vec<String>,

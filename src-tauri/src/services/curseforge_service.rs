@@ -1,6 +1,6 @@
 use crate::error::AppError;
 use crate::models::{
-    Content, ContentFile, ContentPlatform, ContentSearchParams, ContentSearchResult,
+    Content, ContentFile, ContentGalleryImage, ContentPlatform, ContentSearchParams, ContentSearchResult,
     ContentType, ContentVersion, ContentDependency, DependencyType,
     LoaderType, Modpack, ModpackFile, ModpackSearchParams, ModpackSearchResult,
     ModpackSortBy, ModpackVersion,
@@ -194,6 +194,8 @@ pub struct CurseForgeMod {
     pub latest_files: Vec<CurseForgeFile>,
     #[serde(default)]
     pub latest_files_indexes: Vec<CurseForgeFileIndex>,
+    #[serde(default)]
+    pub screenshots: Vec<CurseForgeScreenshot>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -226,6 +228,22 @@ pub struct CurseForgeCategory {
     pub class_id: Option<u32>,
     #[serde(default)]
     pub parent_category_id: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CurseForgeScreenshot {
+    pub id: u64,
+    pub mod_id: u64,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub thumbnail_url: Option<String>,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CurseForgeDescriptionResponse {
+    pub data: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -511,7 +529,23 @@ pub async fn get_modpack(
         .await?;
 
     let m = response.data;
+    // Fetch full description (HTML)
+    let description_url = format!("{}/mods/{}/description", CURSEFORGE_API_BASE, mod_id);
+    let description_html: Option<String> = match client
+        .get(&description_url)
+        .header("x-api-key", api_key)
+        .send()
+        .await
+    {
+        Ok(resp) => resp
+            .json::<CurseForgeDescriptionResponse>()
+            .await
+            .ok()
+            .map(|d| d.data),
+        Err(_) => None,
+    };
     let author = m.authors.first().map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
+    let summary = m.summary.clone();
     let mc_versions = extract_mc_versions(
         &m.latest_files
             .iter()
@@ -531,8 +565,8 @@ pub async fn get_modpack(
         slug: m.slug.clone(),
         name: m.name,
         author,
-        description: m.summary,
-        body: None,
+        description: summary.clone(),
+        body: description_html.or_else(|| Some(summary)),
         icon_url: m.logo.map(|l| l.url),
         banner_url: None,
         downloads: m.download_count,
@@ -713,6 +747,7 @@ pub async fn search_content(
                 platform: ContentPlatform::CurseForge,
                 content_type: content_type.clone(),
                 categories: m.categories.into_iter().map(|c| c.name).collect(),
+                gallery: Vec::new(),
                 mc_versions,
                 loaders,
                 latest_version: None,
@@ -756,6 +791,21 @@ pub async fn get_content(
         .await?;
 
     let m = response.data;
+    // Fetch full description (HTML)
+    let description_url = format!("{}/mods/{}/description", CURSEFORGE_API_BASE, mod_id);
+    let description_html: Option<String> = match client
+        .get(&description_url)
+        .header("x-api-key", api_key)
+        .send()
+        .await
+    {
+        Ok(resp) => resp
+            .json::<CurseForgeDescriptionResponse>()
+            .await
+            .ok()
+            .map(|d| d.data),
+        Err(_) => None,
+    };
 
     // Determine content type from class ID
     let content_type = match m.class_id {
@@ -772,6 +822,7 @@ pub async fn get_content(
     };
 
     let author = m.authors.first().map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
+    let summary = m.summary.clone();
     let mc_versions = extract_mc_versions(
         &m.latest_files
             .iter()
@@ -791,13 +842,24 @@ pub async fn get_content(
         slug: m.slug.clone(),
         name: m.name,
         author,
-        description: m.summary,
-        body: None,
+        description: summary.clone(),
+        body: description_html.or_else(|| Some(summary)),
         icon_url: m.logo.map(|l| l.url),
         downloads: m.download_count,
         platform: ContentPlatform::CurseForge,
         content_type,
         categories: m.categories.into_iter().map(|c| c.name).collect(),
+        gallery: m
+            .screenshots
+            .into_iter()
+            .map(|s| ContentGalleryImage {
+                url: s.thumbnail_url.unwrap_or_else(|| s.url.clone()),
+                raw_url: Some(s.url),
+                title: s.title,
+                description: s.description,
+                featured: false,
+            })
+            .collect(),
         mc_versions,
         loaders,
         latest_version: None,
