@@ -53,7 +53,9 @@ pub struct VersionInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Arguments {
+    #[serde(default)]
     pub game: Vec<ArgumentValue>,
+    #[serde(default)]
     pub jvm: Vec<ArgumentValue>,
 }
 

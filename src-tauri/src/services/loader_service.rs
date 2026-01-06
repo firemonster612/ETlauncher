@@ -5,6 +5,7 @@ use crate::models::loader::{
     LoaderVersion, NeoForgeMavenResponse,
 };
 use crate::services::java_service;
+use serde::Deserialize;
 use std::path::Path;
 use tokio::process::Command;
 
@@ -34,6 +35,8 @@ const FABRIC_MAVEN_URL: &str = "https://maven.fabricmc.net/net/fabricmc";
 
 /// Quilt Maven base URL
 const QUILT_MAVEN_URL: &str = "https://maven.quiltmc.org/repository/release";
+const QUILT_INSTALLER_VERSION: &str = "0.12.1";
+const QUILT_INSTALLER_COORD: &str = "org/quiltmc/quilt-installer";
 
 /// Fetch available Fabric loader versions for a specific Minecraft version
 pub async fn get_fabric_versions(mc_version: &str) -> Result<Vec<LoaderVersion>, AppError> {
@@ -330,6 +333,35 @@ pub async fn get_loader_versions(
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct QuiltInstallerMeta {
+    url: String,
+    version: String,
+}
+
+/// Fetch latest Quilt installer (sorted newest first by the API)
+async fn fetch_latest_quilt_installer() -> Result<(String, String), AppError> {
+    let url = format!("{}/versions/installer", QUILT_META_URL);
+
+    let response = reqwest::get(&url)
+        .await
+        .map_err(|e| AppError::HttpError(e))?;
+
+    response.error_for_status_ref()?;
+
+    let installers: Vec<QuiltInstallerMeta> = response
+        .json()
+        .await
+        .map_err(|e| AppError::HttpError(e))?;
+
+    let latest = installers
+        .into_iter()
+        .next()
+        .ok_or_else(|| AppError::InstallationError("No Quilt installers available".to_string()))?;
+
+    Ok((latest.version, latest.url))
+}
+
 /// Download a file from URL to destination with progress callback
 async fn download_file_with_progress(
     url: &str,
@@ -339,6 +371,10 @@ async fn download_file_with_progress(
     let response = reqwest::get(url)
         .await
         .map_err(|e| AppError::HttpError(e))?;
+
+    let response = response
+        .error_for_status()
+        .map_err(|e| AppError::DownloadError(format!("Failed to download {}: {}", url, e)))?;
 
     let total_bytes = response.content_length();
 
@@ -496,6 +532,12 @@ pub async fn install_quilt(
 ) -> Result<(), AppError> {
     progress("Preparing installation...".to_string(), 0);
 
+    // Resolve to latest available loader version for this MC version
+    let resolved_loader_version = match get_quilt_versions(mc_version).await {
+        Ok(mut versions) if !versions.is_empty() => versions.remove(0).version,
+        _ => loader_version.to_string(),
+    };
+
     // Ensure game directory exists
     tokio::fs::create_dir_all(game_dir)
         .await
@@ -506,18 +548,46 @@ pub async fn install_quilt(
 
     progress("Downloading Quilt installer...".to_string(), 5);
 
-    // Quilt uses the same installer format as Fabric
-    let installer_url = format!(
-        "{}/quilt-installer/1.1.1/quilt-installer-1.1.1.jar",
-        QUILT_MAVEN_URL
-    );
+    // Try to resolve the latest installer from Quilt meta; fall back to pinned version
+    let (installer_version, installer_url) = match fetch_latest_quilt_installer().await {
+        Ok((version, url)) => (version, url),
+        Err(_) => (
+            QUILT_INSTALLER_VERSION.to_string(),
+            format!(
+                "{}/{}/{}/quilt-installer-{}.jar",
+                QUILT_MAVEN_URL, QUILT_INSTALLER_COORD, QUILT_INSTALLER_VERSION, QUILT_INSTALLER_VERSION
+            ),
+        ),
+    };
 
-    let installer_path = std::env::temp_dir().join("quilt-installer.jar");
+    let installer_path = std::env::temp_dir().join(format!("quilt-installer-{}.jar", installer_version));
+
+    // Ensure we don't reuse a bad download
+    if installer_path.exists() {
+        let _ = tokio::fs::remove_file(&installer_path).await;
+    }
 
     download_file_with_progress(&installer_url, &installer_path, |p| {
         progress("Downloading Quilt installer...".to_string(), 5 + (p / 3));
     })
     .await?;
+
+    // Validate installer archive before running it
+    let installer_path_clone = installer_path.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        use std::io::Read;
+
+        let file = std::fs::File::open(&installer_path_clone)?;
+        let mut archive = zip::ZipArchive::new(file)?;
+        if archive.len() == 0 {
+            return Err(AppError::InstallationError(
+                "Quilt installer archive is empty".to_string(),
+            ));
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::InstallationError(format!("Installer validation task failed: {}", e)))??;
 
     progress("Running Quilt installer...".to_string(), 40);
 
@@ -527,9 +597,8 @@ pub async fn install_quilt(
         .arg("install")
         .arg("client")
         .arg(mc_version)
-        .arg(loader_version)
-        .arg("--install-dir")
-        .arg(game_dir)
+        .arg(&resolved_loader_version)
+        .arg(format!("--install-dir={}", game_dir.display()))
         .arg("--no-profile")
         .output()
         .await
@@ -550,16 +619,33 @@ pub async fn install_quilt(
     progress("Verifying installation...".to_string(), 90);
 
     // Verify installation by checking for the version JSON
-    let version_id = format!("quilt-loader-{}-{}", loader_version, mc_version);
-    let version_json = game_dir
-        .join("versions")
+    let versions_dir = game_dir.join("versions");
+    let expected_id = format!("quilt-loader-{}-{}", resolved_loader_version, mc_version);
+    let mut version_id = expected_id.clone();
+    let mut version_json = versions_dir
         .join(&version_id)
         .join(format!("{}.json", version_id));
 
+    // If expected file isn't there, look for any quilt loader matching this MC version
+    if !version_json.exists() && versions_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&versions_dir) {
+            for entry in entries.flatten() {
+                if let Ok(name) = entry.file_name().into_string() {
+                    if name.starts_with("quilt-loader-") && name.ends_with(mc_version) {
+                        version_id = name.clone();
+                        version_json = versions_dir.join(&name).join(format!("{}.json", name));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     if !version_json.exists() {
-        return Err(AppError::InstallationError(
-            format!("Quilt installation verification failed - version JSON not found at {:?}", version_json),
-        ));
+        return Err(AppError::InstallationError(format!(
+            "Quilt installation verification failed - version JSON not found at {:?}",
+            version_json
+        )));
     }
 
     progress("Installation complete".to_string(), 100);

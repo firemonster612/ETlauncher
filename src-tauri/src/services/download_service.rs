@@ -111,16 +111,55 @@ pub fn load_loader_version_info(
         .join(loader_version_id)
         .join(format!("{}.json", loader_version_id));
 
-    if !version_json_path.exists() {
-        return Err(AppError::LoaderNotInstalled(format!(
-            "Loader version JSON not found: {:?}",
-            version_json_path
-        )));
-    }
+    let resolved_path = if version_json_path.exists() {
+        version_json_path
+    } else {
+        // Try to find a fallback matching this loader type and MC version (helps when installer picks a newer loader)
+        find_matching_loader_json(game_dir, loader_version_id).ok_or_else(|| {
+            AppError::LoaderNotInstalled(format!(
+                "Loader version JSON not found: {:?}",
+                version_json_path
+            ))
+        })?
+    };
 
-    let content = fs::read_to_string(&version_json_path)?;
+    let content = fs::read_to_string(&resolved_path)?;
     let info: VersionInfo = serde_json::from_str(&content)?;
     Ok(info)
+}
+
+/// Find a loader version JSON for a given loader_version_id prefix (e.g., quilt-loader-x-y or fabric-loader-x-y)
+fn find_matching_loader_json(game_dir: &std::path::Path, loader_version_id: &str) -> Option<std::path::PathBuf> {
+    let versions_dir = game_dir.join("versions");
+    if !versions_dir.exists() {
+        return None;
+    }
+
+    // Extract mc_version by taking substring after last '-' (loader_version_id format: <loader>-<loader_ver>-<mc>)
+    let mc_version = loader_version_id.rsplitn(2, '-').next()?;
+    let loader_prefix = if let Some(idx) = loader_version_id.find('-') {
+        &loader_version_id[..idx]
+    } else {
+        loader_version_id
+    };
+
+    let mut candidates = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&versions_dir) {
+        for entry in entries.flatten() {
+            if let Ok(name) = entry.file_name().into_string() {
+                if name.starts_with(loader_prefix) && name.ends_with(mc_version) {
+                    let candidate = versions_dir.join(&name).join(format!("{}.json", name));
+                    if candidate.exists() {
+                        candidates.push((name, candidate));
+                    }
+                }
+            }
+        }
+    }
+
+    // Prefer the lexicographically highest loader version (newest)
+    candidates.sort_by(|a, b| b.0.cmp(&a.0));
+    candidates.first().map(|(_, path)| path.clone())
 }
 
 /// Extract the artifact key (group:artifact:classifier) from a Maven coordinate
@@ -853,7 +892,6 @@ fn maven_name_to_url(name: &str, base_url: &str) -> Option<String> {
             .map(|segment| {
                 segment
                     .replace('%', "%25")
-                    .replace('+', "%2B")
                     .replace(' ', "%20")
             })
             .collect::<Vec<_>>()
