@@ -290,7 +290,7 @@
         <FileDown class="mr-2 h-4 w-4" />
         Import
       </Button>
-      <Button onclick={() => (showCreateModal = true)}>
+      <Button onclick={() => (showCreateModal = true)} data-tutorial="new-instance-btn">
         <Plus class="mr-2 h-4 w-4" />
         New
       </Button>
@@ -339,6 +339,7 @@
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       {#each filteredInstances as instance (instance.id)}
         {@const status = getInstanceStatus(instance.id)}
+        {@const launchStatus = launchStore.launchStates.get(instance.id)?.status}
         <div class="border-2 border-border bg-card p-4 hover:border-primary/50 transition-colors group">
           <div class="flex items-start justify-between gap-2">
             <div class="flex-1 min-w-0">
@@ -391,6 +392,7 @@
               size="sm"
               onclick={() => openSettings(instance)}
               title="Instance settings"
+              data-tutorial="instance-settings-btn"
             >
               <Settings class="h-4 w-4" />
             </Button>
@@ -407,6 +409,7 @@
               size="sm"
               onclick={() => openContentBrowser(instance)}
               title="Add mods, shaders, resource packs"
+              data-tutorial="content-browser-btn"
             >
               <PackagePlus class="h-4 w-4" />
             </Button>
@@ -438,20 +441,18 @@
           </div>
 
           <!-- Download Progress -->
-          {#if launchStore.launchStates.get(instance.id)?.status.status === "downloading"}
-            {@const progress = launchStore.launchStates.get(instance.id)?.status.progress}
-            {#if progress}
-              <div class="mt-3 pt-3 border-t border-border">
-                <DownloadProgress
-                  stage="Downloading game files"
-                  progress={progress.totalBytes > 0 ? (progress.downloadedBytes / progress.totalBytes) * 100 : 0}
-                  currentItem={progress.currentFile}
-                  totalBytes={progress.totalBytes}
-                  downloadedBytes={progress.downloadedBytes}
-                  compact
-                />
-              </div>
-            {/if}
+          {#if launchStatus?.status === "downloading"}
+            {@const progress = launchStatus.progress}
+            <div class="mt-3 pt-3 border-t border-border">
+              <DownloadProgress
+                stage="Downloading game files"
+                progress={progress.totalBytes > 0 ? (progress.downloadedBytes / progress.totalBytes) * 100 : 0}
+                currentItem={progress.currentFile}
+                totalBytes={progress.totalBytes}
+                downloadedBytes={progress.downloadedBytes}
+                compact
+              />
+            </div>
           {/if}
         </div>
       {/each}
@@ -476,42 +477,46 @@
           />
         </div>
 
-        <div>
-          <span class="text-sm text-muted-foreground block mb-1">Minecraft Version</span>
-          <Select.Root type="single" bind:value={createVersion} disabled={versionsStore.isLoading}>
-            <Select.Trigger class="w-full border-2 border-border bg-background">
-              {#if versionsStore.isLoading}
-                Loading versions...
-              {:else if createVersion}
-                {createVersion}
-              {:else}
-                Select version...
-              {/if}
-            </Select.Trigger>
-            <Select.Content class="border-2 border-border bg-card max-h-[300px]">
-              {#each versionsStore.versions as version (version.id)}
-                <Select.Item value={version.id} label={version.id}>
-                  {version.id}
-                  {#if version.type === "snapshot"}
-                    <span class="text-muted-foreground ml-1">(snapshot)</span>
-                  {:else if version.type === "old_beta"}
-                    <span class="text-muted-foreground ml-1">(beta)</span>
-                  {:else if version.type === "old_alpha"}
-                    <span class="text-muted-foreground ml-1">(alpha)</span>
-                  {/if}
-                </Select.Item>
-              {/each}
-            </Select.Content>
-          </Select.Root>
-        </div>
+        <div data-tutorial="instance-version-loader" class="space-y-4">
+          <div data-tutorial="instance-version">
+            <span class="text-sm text-muted-foreground block mb-1">Minecraft Version</span>
+            <Select.Root type="single" bind:value={createVersion} disabled={versionsStore.isLoading}>
+              <Select.Trigger class="w-full border-2 border-border bg-background">
+                {#if versionsStore.isLoading}
+                  Loading versions...
+                {:else if createVersion}
+                  {createVersion}
+                {:else}
+                  Select version...
+                {/if}
+              </Select.Trigger>
+              <Select.Content class="border-2 border-border bg-card max-h-[300px]">
+                {#each versionsStore.versions as version (version.id)}
+                  <Select.Item value={version.id} label={version.id}>
+                    {version.id}
+                    {#if version.type === "snapshot"}
+                      <span class="text-muted-foreground ml-1">(snapshot)</span>
+                    {:else if version.type === "old_beta"}
+                      <span class="text-muted-foreground ml-1">(beta)</span>
+                    {:else if version.type === "old_alpha"}
+                      <span class="text-muted-foreground ml-1">(alpha)</span>
+                    {/if}
+                  </Select.Item>
+                {/each}
+              </Select.Content>
+            </Select.Root>
+          </div>
 
-        <LoaderSelect
-          loaderType={createLoader}
-          loaderVersion={createLoaderVersion}
-          minecraftVersion={createVersion}
-          onLoaderTypeChange={(loader) => createLoader = loader}
-          onLoaderVersionChange={(version) => createLoaderVersion = version}
-        />
+          <div data-tutorial="instance-loader">
+            <LoaderSelect
+              loaderType={createLoader}
+              loaderVersion={createLoaderVersion}
+              minecraftVersion={createVersion}
+              onLoaderTypeChange={(loader) => createLoader = loader}
+              onLoaderVersionChange={(version) => createLoaderVersion = version}
+            />
+          </div>
+        </div>
       </div>
 
       <div class="flex gap-2 pt-2">
@@ -520,6 +525,7 @@
           class="flex-1"
           onclick={() => (showCreateModal = false)}
           disabled={isCreating || instancesStore.isInstallingLoader}
+          data-tutorial="create-cancel"
         >
           Cancel
         </Button>
@@ -527,6 +533,7 @@
           class="flex-1"
           onclick={handleCreate}
           disabled={!createName.trim() || isCreating || instancesStore.isInstallingLoader}
+          data-tutorial="instance-create"
         >
           {#if instancesStore.isInstallingLoader}
             Installing {createLoader}...
@@ -676,9 +683,9 @@
       {#if !importResult}
         <div class="space-y-4">
           <div>
-            <label class="text-sm text-muted-foreground block mb-1">
+            <p class="text-sm text-muted-foreground block mb-1">
               Selected File
-            </label>
+            </p>
             <p class="text-sm font-mono bg-muted p-2 break-all">
               {importFilePath}
             </p>

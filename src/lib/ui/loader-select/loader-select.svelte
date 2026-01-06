@@ -94,11 +94,14 @@
   function handleLoaderVersionChange(newValue: string) {
     onLoaderVersionChange?.(newValue);
   }
+
+  const loaderId = crypto.randomUUID();
+  const loaderVersionId = crypto.randomUUID();
 </script>
 
 <div class="space-y-3">
   <div>
-    <label class="text-sm font-medium text-foreground">
+    <label class="text-sm font-medium text-foreground" for={loaderId}>
       Mod Loader
     </label>
     <Select
@@ -107,7 +110,7 @@
       onValueChange={handleLoaderTypeChange}
       {disabled}
     >
-      <SelectTrigger>
+      <SelectTrigger id={loaderId}>
         {#if loaderType}
           {loaders.find((l) => l.value === loaderType)?.label || 'Select loader...'}
         {:else}
@@ -126,7 +129,7 @@
 
   {#if showVersionSelector()}
     <div>
-      <label class="text-sm font-medium text-foreground">
+      <label class="text-sm font-medium text-foreground" for={loaderVersionId}>
         Loader Version
       </label>
       <Select
@@ -135,7 +138,7 @@
         onValueChange={handleLoaderVersionChange}
         {disabled}
       >
-        <SelectTrigger>
+        <SelectTrigger id={loaderVersionId}>
           {#if loadingVersions}
             Loading versions...
           {:else if loaderVersion}

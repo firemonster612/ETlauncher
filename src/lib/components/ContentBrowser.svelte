@@ -137,7 +137,7 @@
   async function handleContentTypeChange(type: ContentType) {
     await contentStore.setContentType(type);
     // Clear selection when changing content type
-    selectedItems = new SvelteSet();
+    selectedItems.clear();
     if (viewMode === "browse") {
       contentStore.search();
     }
@@ -145,7 +145,7 @@
 
   function handleViewModeChange(mode: "browse" | "installed") {
     viewMode = mode;
-    selectedItems = new SvelteSet();
+    selectedItems.clear();
     bulkActionError = null;
   }
 
@@ -159,9 +159,12 @@
 
   function toggleSelectAll() {
     if (allSelected) {
-      selectedItems = new SvelteSet();
+      selectedItems.clear();
     } else {
-      selectedItems = new SvelteSet(installedItems.map((item) => item.filename));
+      selectedItems.clear();
+      for (const item of installedItems) {
+        selectedItems.add(item.filename);
+      }
     }
   }
 
@@ -176,7 +179,7 @@
       await contentService.disableContent(instanceId, filenames, contentStore.contentType);
       // Refresh scan results
       await contentStore.refreshInstalledContent();
-      selectedItems = new SvelteSet();
+      selectedItems.clear();
     } catch (e: unknown) {
       bulkActionError = e instanceof Error ? e.message : "Failed to disable content";
     } finally {
@@ -195,7 +198,7 @@
       await contentService.enableContent(instanceId, filenames, contentStore.contentType);
       // Refresh scan results
       await contentStore.refreshInstalledContent();
-      selectedItems = new SvelteSet();
+      selectedItems.clear();
     } catch (e: unknown) {
       bulkActionError = e instanceof Error ? e.message : "Failed to enable content";
     } finally {
@@ -220,7 +223,7 @@
       }
       // Refresh scan results
       await contentStore.refreshInstalledContent();
-      selectedItems = new SvelteSet();
+      selectedItems.clear();
       showRemoveConfirm = false;
     } catch (e: unknown) {
       bulkActionError = e instanceof Error ? e.message : "Failed to remove content";
@@ -467,10 +470,27 @@
     { value: "recentlyUpdated", label: "Recently Updated" },
     { value: "relevance", label: "Relevance" },
   ];
+
+  const LOAD_MORE_THRESHOLD_PX = 300;
+
+  function handleBrowseScroll(event: Event) {
+    if (viewMode !== "browse" || !contentStore.hasMore || contentStore.isSearching) return;
+
+    const target = event.currentTarget as HTMLElement;
+    const remaining = target.scrollHeight - target.scrollTop - target.clientHeight;
+    if (remaining < LOAD_MORE_THRESHOLD_PX) {
+      contentStore.loadMore();
+    }
+  }
 </script>
 
 <!-- Backdrop -->
-<div class="fixed inset-0 bg-black/50 z-50" onclick={onClose}></div>
+<button
+  type="button"
+  class="fixed inset-0 bg-black/50 z-50"
+  onclick={onClose}
+  aria-label="Close content browser"
+></button>
 
 <!-- Panel -->
 <div class="fixed inset-y-0 right-0 w-full max-w-2xl bg-card border-l-2 border-border z-50 flex flex-col">
@@ -494,7 +514,7 @@
   </div>
 
   <!-- Content Type Tabs -->
-  <div class="p-4 border-b border-border flex gap-2">
+  <div class="p-4 border-b border-border flex gap-2" data-tutorial="content-browser-types">
     {#each contentTypes as { value, label } (value)}
       <Button
         variant={contentStore.contentType === value ? "default" : "secondary"}
@@ -611,7 +631,7 @@
   {/if}
 
   <!-- Results -->
-  <div class="flex-1 overflow-y-auto p-4">
+  <div class="flex-1 overflow-y-auto p-4" onscroll={handleBrowseScroll}>
     {#if contentStore.isSearching && contentStore.items.length === 0}
       <div class="flex items-center justify-center py-12">
         <Loader2 class="h-8 w-8 animate-spin text-muted-foreground" />
@@ -835,7 +855,7 @@
         </span>
         <button
           class="text-xs text-muted-foreground hover:text-foreground"
-          onclick={() => selectedItems = new SvelteSet()}
+          onclick={() => selectedItems.clear()}
         >
           Clear selection
         </button>

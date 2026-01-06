@@ -30,14 +30,14 @@
   }
 
   // Form state - initialize from instance
-  let name = $state(instance.name);
-  let javaPath = $state(instance.javaPath || "");
-  let memoryMin = $state(instance.memoryMinMb || 512);
-  let memoryMax = $state(instance.memoryMaxMb || 4096);
-  let jvmArgs = $state(instance.jvmArgs || "");
-  let gameArgs = $state(instance.gameArgs || "");
-  let resolutionWidth = $state(instance.resolutionWidth || 0);
-  let resolutionHeight = $state(instance.resolutionHeight || 0);
+  let name = $state("");
+  let javaPath = $state("");
+  let memoryMin = $state(512);
+  let memoryMax = $state(4096);
+  let jvmArgs = $state("");
+  let gameArgs = $state("");
+  let resolutionWidth = $state(0);
+  let resolutionHeight = $state(0);
 
   let isSaving = $state(false);
   let saveError = $state<string | null>(null);
@@ -143,7 +143,7 @@
       <!-- Memory Allocation -->
       <div class="space-y-4">
         <div>
-          <label class="text-sm font-medium">Memory Allocation</label>
+          <p class="text-sm font-medium">Memory Allocation</p>
           <p class="text-xs text-muted-foreground mt-1">Adjust the RAM allocated to Minecraft</p>
         </div>
 
@@ -202,7 +202,7 @@
 
       <!-- Resolution -->
       <div class="space-y-3">
-        <label class="text-sm font-medium">Window Resolution</label>
+        <p class="text-sm font-medium">Window Resolution</p>
         <p class="text-xs text-muted-foreground">Set to 0 for default resolution</p>
         <div class="flex gap-3 items-center">
           <Input
@@ -245,6 +245,7 @@
           variant="outline"
           class="w-full"
           onclick={openUpdateDialog}
+          data-tutorial="instance-update-button"
         >
           <RefreshCw class="h-4 w-4 mr-2" />
           Check for Updates

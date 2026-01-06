@@ -49,7 +49,7 @@
 >
 	{#snippet children({ thumbItems })}
 		<SliderPrimitive.Range class="absolute h-full bg-primary" />
-		{#each thumbItems as thumb}
+		{#each thumbItems as thumb (thumb.index)}
 			<SliderPrimitive.Thumb
 				index={thumb.index}
 				class={cn(

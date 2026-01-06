@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { onDestroy } from "svelte";
   import {
     Package,
     Search,
@@ -40,6 +41,7 @@
   let loadMoreSentinel: HTMLDivElement | undefined = $state();
   let selectedCategories = $state<string[]>([]);
   let categoriesOpen = $state(false);
+  let hasUserScrolled = $state(false);
 
   // Get available categories based on platform
   let availableCategories = $derived(
@@ -58,9 +60,25 @@
     modpacksStore.search();
   });
 
-  // Set up infinite scroll observer when sentinel is available
+  // Track if the user has manually scrolled (mouse wheel or touch)
+  const markScrollListener = () => markUserScrolled();
+  onMount(() => {
+    window.addEventListener("wheel", markScrollListener, { passive: true });
+    window.addEventListener("touchmove", markScrollListener, { passive: true });
+  });
+
+  onDestroy(() => {
+    window.removeEventListener("wheel", markScrollListener);
+    window.removeEventListener("touchmove", markScrollListener);
+  });
+
+  function markUserScrolled() {
+    hasUserScrolled = true;
+  }
+
+  // Set up infinite scroll observer when sentinel is available and the user has scrolled
   $effect(() => {
-    if (!loadMoreSentinel) return;
+    if (!loadMoreSentinel || !hasUserScrolled) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -305,7 +323,7 @@
   </div>
 
   <!-- Search and Sort -->
-  <div class="flex items-center gap-4">
+  <div class="flex items-center gap-4" data-tutorial="modpack-search">
     <div class="relative flex-1 max-w-md">
       <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
       <Input
@@ -346,7 +364,7 @@
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           {#if showVersionFilter}
             <div>
-              <label class="text-sm text-muted-foreground block mb-1">Minecraft Version</label>
+              <p class="text-sm text-muted-foreground block mb-1">Minecraft Version</p>
               <Select.Root
                 type="single"
                 value={modpacksStore.mcVersion || ""}
@@ -366,7 +384,7 @@
           {/if}
           {#if showLoaderFilter}
             <div>
-              <label class="text-sm text-muted-foreground block mb-1">Mod Loader</label>
+              <p class="text-sm text-muted-foreground block mb-1">Mod Loader</p>
               <Select.Root
                 type="single"
                 value={modpacksStore.loader || "any"}
@@ -387,7 +405,7 @@
           {/if}
           {#if showCategoryFilter && availableCategories.length > 0}
             <div class="relative">
-              <label class="text-sm text-muted-foreground block mb-1">Categories</label>
+              <p class="text-sm text-muted-foreground block mb-1">Categories</p>
               <button
                 type="button"
                 class="w-full h-9 px-3 border-2 border-border bg-background text-sm text-left flex items-center justify-between"
@@ -469,10 +487,11 @@
 
     <!-- Modpack Grid -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {#each modpacksStore.modpacks as modpack (`${modpack.platform}-${modpack.id}`)}
+      {#each modpacksStore.modpacks as modpack, index (`${modpack.platform}-${modpack.id}`)}
         <button
           class="border-2 border-border bg-card p-4 hover:border-primary/50 transition-colors text-left cursor-pointer"
           onclick={() => handleModpackClick(modpack)}
+          data-tutorial={index === 0 ? "modpack-card" : undefined}
         >
           <div class="flex gap-3">
             {#if modpack.iconUrl}
@@ -611,7 +630,7 @@
           <p class="text-sm text-muted-foreground">No versions available</p>
         {:else}
           <div class="space-y-2 pb-4">
-            {#each modpacksStore.selectedModpackVersions.slice(0, 10) as version (version.id)}
+            {#each modpacksStore.selectedModpackVersions.slice(0, 10) as version, versionIndex (version.id)}
               <div class="flex items-center justify-between p-3 bg-muted/50 rounded">
                 <div>
                   <div class="font-medium">{version.name}</div>
@@ -626,6 +645,7 @@
                   size="sm"
                   onclick={() => handleInstall(version.id)}
                   disabled={modpacksStore.isInstalling}
+                  data-tutorial={versionIndex === 0 ? "modpack-install" : undefined}
                 >
                   {#if modpacksStore.isInstalling}
                     <Loader2 class="h-4 w-4 mr-1 animate-spin" />
