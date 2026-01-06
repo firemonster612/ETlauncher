@@ -123,9 +123,44 @@ pub fn load_loader_version_info(
     Ok(info)
 }
 
+/// Extract the artifact key (group:artifact:classifier) from a Maven coordinate
+/// This preserves the classifier (if present) to avoid deduplicating native variants
+/// e.g., "org.ow2.asm:asm:9.9" -> "org.ow2.asm:asm"
+/// e.g., "org.lwjgl:lwjgl:3.3.3:natives-linux" -> "org.lwjgl:lwjgl:natives-linux"
+fn get_library_artifact_key(name: &str) -> String {
+    let parts: Vec<&str> = name.split(':').collect();
+    if parts.len() >= 4 {
+        // Has classifier (group:artifact:version:classifier)
+        format!("{}:{}:{}", parts[0], parts[1], parts[3])
+    } else if parts.len() >= 2 {
+        // No classifier (group:artifact:version)
+        format!("{}:{}", parts[0], parts[1])
+    } else {
+        name.to_string()
+    }
+}
+
+/// Deduplicate libraries by artifact key (group:artifact), keeping the first occurrence
+/// This ensures loader libraries take precedence over parent libraries
+fn deduplicate_libraries(libraries: Vec<crate::models::minecraft::Library>) -> Vec<crate::models::minecraft::Library> {
+    let mut seen = std::collections::HashSet::new();
+    libraries
+        .into_iter()
+        .filter(|lib| {
+            let key = get_library_artifact_key(&lib.name);
+            seen.insert(key)
+        })
+        .collect()
+}
+
 /// Merge a loader version with its parent (vanilla) version
 /// The loader version overrides main_class and adds its libraries
 pub fn merge_version_info(loader_info: VersionInfo, parent_info: VersionInfo) -> VersionInfo {
+    // Concatenate libraries with loader first, then deduplicate by artifact key
+    // This ensures loader versions take precedence when there are conflicts
+    let all_libraries = [loader_info.libraries, parent_info.libraries].concat();
+    let deduplicated_libraries = deduplicate_libraries(all_libraries);
+
     VersionInfo {
         // Use loader's ID
         id: loader_info.id,
@@ -134,8 +169,8 @@ pub fn merge_version_info(loader_info: VersionInfo, parent_info: VersionInfo) ->
         // Merge arguments - loader args come first, then parent
         minecraft_arguments: loader_info.minecraft_arguments.or(parent_info.minecraft_arguments),
         arguments: merge_arguments(loader_info.arguments, parent_info.arguments),
-        // Loader libraries come first (they take precedence), then parent libraries
-        libraries: [loader_info.libraries, parent_info.libraries].concat(),
+        // Deduplicated libraries - loader versions take precedence
+        libraries: deduplicated_libraries,
         // Use parent's asset info (loader versions don't have these)
         asset_index: loader_info.asset_index.or(parent_info.asset_index),
         downloads: loader_info.downloads.or(parent_info.downloads),
@@ -283,6 +318,18 @@ pub async fn download_game_files_with_version(
             if let Some(ref artifact) = lib_downloads.artifact {
                 let cache_lib_path = get_libraries_dir().join(&artifact.path);
                 let game_lib_path = game_libraries_dir.join(&artifact.path);
+
+                // Check if this is a modern-style native library (name contains classifier like :natives-linux)
+                // Modern Minecraft versions have natives as separate library entries instead of classifiers
+                let is_modern_native = is_native_library(&library.name);
+                if is_modern_native {
+                    // Add to natives for extraction (use whichever path exists, or cache path)
+                    if game_lib_path.exists() {
+                        all_natives.push(game_lib_path.clone());
+                    } else {
+                        all_natives.push(cache_lib_path.clone());
+                    }
+                }
 
                 // Skip if library exists in either cache or game directory (Forge installs to game dir)
                 if file_valid(&cache_lib_path, &artifact.sha1) || game_lib_path.exists() {
@@ -613,6 +660,30 @@ fn get_natives_key(library: &Library) -> Option<String> {
     let arch = get_arch();
     let bits = if arch == "x86_64" { "64" } else { "32" };
     Some(key.replace("${arch}", bits))
+}
+
+/// Check if a library name indicates it's a native library for the current platform
+/// Modern Minecraft versions use separate library entries with names like:
+/// "org.lwjgl:lwjgl:3.3.3:natives-linux" instead of the old classifiers format
+fn is_native_library(library_name: &str) -> bool {
+    let os = get_os_name();
+    let arch = get_arch();
+
+    // Check for platform-specific native classifiers in the library name
+    match os {
+        "linux" => library_name.contains(":natives-linux"),
+        "windows" => {
+            library_name.contains(":natives-windows")
+                || (arch == "aarch64" && library_name.contains(":natives-windows-arm64"))
+                || (arch == "x86" && library_name.contains(":natives-windows-x86"))
+        }
+        "osx" => {
+            library_name.contains(":natives-macos")
+                || library_name.contains(":natives-osx")
+                || (arch == "aarch64" && library_name.contains(":natives-macos-arm64"))
+        }
+        _ => false,
+    }
 }
 
 /// Extract native libraries from a JAR file
