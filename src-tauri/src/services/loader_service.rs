@@ -93,8 +93,38 @@ pub async fn get_quilt_versions(mc_version: &str) -> Result<Vec<LoaderVersion>, 
     Ok(versions)
 }
 
+/// Check if a Minecraft version has Forge installer files available on Maven
+/// Versions before 1.5.2 don't have installer jars on the Forge Maven
+fn has_forge_installer_support(mc_version: &str) -> bool {
+    let parts: Vec<&str> = mc_version.split('.').collect();
+    if parts.len() < 2 {
+        return false;
+    }
+
+    let major: u32 = parts[0].parse().unwrap_or(0);
+    let minor: u32 = parts[1].parse().unwrap_or(0);
+    let patch: u32 = parts.get(2).and_then(|p| p.parse().ok()).unwrap_or(0);
+
+    // Only MC 1.5.2+ has Forge installers on Maven
+    if major != 1 {
+        return major > 1;
+    }
+    if minor > 5 {
+        return true;
+    }
+    if minor == 5 {
+        return patch >= 2;
+    }
+    false
+}
+
 /// Fetch available Forge versions for a specific Minecraft version
 pub async fn get_forge_versions(mc_version: &str) -> Result<Vec<LoaderVersion>, AppError> {
+    // Forge installers before MC 1.5.2 are not available on Maven
+    if !has_forge_installer_support(mc_version) {
+        return Ok(Vec::new());
+    }
+
     // Fetch promotions to identify recommended/latest versions
     let promos_response = reqwest::get(FORGE_PROMOTIONS_URL)
         .await
@@ -553,8 +583,9 @@ fn is_legacy_mc_version(mc_version: &str) -> bool {
     major == 1 && minor <= 12
 }
 
-/// Check if a Minecraft version is very old (1.7.x or earlier)
+/// Check if a Minecraft version is very old (before 1.15)
 /// Very old Forge installers don't support --installClient at all
+/// This includes 1.7.x through 1.14.x
 fn is_very_old_mc_version(mc_version: &str) -> bool {
     let parts: Vec<&str> = mc_version.split('.').collect();
     if parts.len() < 2 {
@@ -564,12 +595,12 @@ fn is_very_old_mc_version(mc_version: &str) -> bool {
     let major: u32 = parts[0].parse().unwrap_or(1);
     let minor: u32 = parts[1].parse().unwrap_or(0);
 
-    // 1.7 and earlier are very old
-    major == 1 && minor <= 7
+    // Before 1.15 don't support --installClient
+    major == 1 && minor < 15
 }
 
-/// Extract old Forge installer manually (for 1.7.x and earlier)
-/// These installers don't support headless mode, so we extract the contents directly
+/// Extract old Forge installer manually (for pre-1.15 versions)
+/// These installers don't support --installClient, so we extract the contents directly
 async fn extract_old_forge_installer(
     game_dir: &Path,
     mc_version: &str,
@@ -741,9 +772,9 @@ pub async fn install_forge(
     eprintln!("[forge] Using Java {} at {} for MC {}", required_java, java_path, mc_version);
 
     let output = if is_very_old {
-        // Very old Forge (1.7.x and earlier) - these installers don't support headless mode
-        // and always try to launch a GUI. We need to extract the installer manually.
-        eprintln!("[forge] Using manual extraction for very old Forge MC {}", mc_version);
+        // Very old Forge (pre-1.15) - these installers don't support --installClient
+        // We need to extract the installer manually.
+        eprintln!("[forge] Using manual extraction for old Forge MC {}", mc_version);
 
         extract_old_forge_installer(game_dir, mc_version, loader_version, &installer_path).await?;
 
