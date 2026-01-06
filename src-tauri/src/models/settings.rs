@@ -36,6 +36,9 @@ pub struct AppSettings {
     /// CurseForge API key for accessing CurseForge content
     #[serde(default)]
     pub curseforge_api_key: Option<String>,
+    /// Whether the first-launch setup/tutorial has been completed
+    #[serde(default)]
+    pub setup_completed: bool,
 }
 
 impl Default for AppSettings {
@@ -51,6 +54,7 @@ impl Default for AppSettings {
             show_old_versions: false,
             theme: Theme::Dark,
             curseforge_api_key: None,
+            setup_completed: false,
         }
     }
 }
@@ -69,4 +73,5 @@ pub struct UpdateSettingsRequest {
     pub show_old_versions: Option<bool>,
     pub theme: Option<Theme>,
     pub curseforge_api_key: Option<String>,
+    pub setup_completed: Option<bool>,
 }

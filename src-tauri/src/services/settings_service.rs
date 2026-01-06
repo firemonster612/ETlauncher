@@ -12,11 +12,24 @@ pub fn load_settings() -> Result<AppSettings, AppError> {
 
         // Try to parse as new camelCase format first
         if let Ok(mut settings) = serde_json::from_str::<AppSettings>(&content) {
+            let mut needs_save = false;
+
             // Fix empty instances path
             if settings.instances_path.is_empty() {
                 settings.instances_path = paths::get_instances_dir()
                     .to_string_lossy()
                     .to_string();
+                needs_save = true;
+            }
+
+            // For existing configs that lack setupCompleted, default to true
+            // (existing users should not see the tutorial)
+            if !content.contains("setupCompleted") {
+                settings.setup_completed = true;
+                needs_save = true;
+            }
+
+            if needs_save {
                 let _ = save_settings(&settings);
             }
             return Ok(settings);
@@ -108,6 +121,11 @@ fn migrate_old_settings(old: &serde_json::Value) -> AppSettings {
             .or_else(|| old.get("curseforgeApiKey"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
+        // Existing users migrating from old format should not see tutorial
+        setup_completed: old.get("setup_completed")
+            .or_else(|| old.get("setupCompleted"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
     }
 }
 
@@ -142,6 +160,7 @@ pub fn update_settings(
         show_old_versions: updates.show_old_versions.unwrap_or(current.show_old_versions),
         theme: updates.theme.unwrap_or_else(|| current.theme.clone()),
         curseforge_api_key: updates.curseforge_api_key.or_else(|| current.curseforge_api_key.clone()),
+        setup_completed: updates.setup_completed.unwrap_or(current.setup_completed),
     }
 }
 

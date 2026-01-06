@@ -21,6 +21,7 @@ export async function updateSettings(
     showSnapshots: updates.showSnapshots,
     showOldVersions: updates.showOldVersions,
     theme: updates.theme,
+    setupCompleted: updates.setupCompleted,
   };
 
   return invoke<AppSettings>("update_settings", { updates: request });

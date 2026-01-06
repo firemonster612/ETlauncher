@@ -21,6 +21,8 @@ export interface AppSettings {
   showOldVersions: boolean;
   /** UI theme */
   theme: Theme;
+  /** Whether the first-launch setup/tutorial has been completed */
+  setupCompleted: boolean;
 }
 
 /** Request to update settings (partial update) */
@@ -34,4 +36,5 @@ export interface UpdateSettingsRequest {
   showSnapshots?: boolean;
   showOldVersions?: boolean;
   theme?: Theme;
+  setupCompleted?: boolean;
 }
