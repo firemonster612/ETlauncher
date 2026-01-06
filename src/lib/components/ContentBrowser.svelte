@@ -35,6 +35,7 @@
     LoaderType,
     ContentVersion,
     DetectedMod,
+    ScanResult,
   } from "$lib/types";
 
   interface Props {
@@ -82,6 +83,10 @@
     installedItems.filter((item) => selectedItems.has(item.filename) && item.isDisabled)
   );
 
+  // Cached mod scan (used for helper detection so we don't flicker between tabs)
+  let modScanResult = $state<ScanResult | null>(null);
+  let isLoadingHelperScan = $state(false);
+
   // Check if current content type is blocked for vanilla instances
   // Mods and shaders require a mod loader; resource packs work on vanilla
   const isBlockedForVanilla = $derived(
@@ -89,10 +94,52 @@
     (contentStore.contentType === "mod" || contentStore.contentType === "shader")
   );
 
+  // Helper detection for required companion mods (Fabric API / Iris)
+  function hasHelperInstalled(terms: string[]): boolean {
+    const items = modScanResult?.items ?? [];
+    return items.some((item) => {
+      const lowerFilename = item.filename.toLowerCase();
+      const mrSlug = item.modrinthProject?.slug?.toLowerCase() ?? "";
+      const cfName = item.curseforgeProject?.name?.toLowerCase() ?? "";
+
+      return terms.some((term) =>
+        lowerFilename.includes(term) ||
+        mrSlug.includes(term) ||
+        cfName.includes(term)
+      );
+    });
+  }
+
+  const hasFabricApi = $derived(hasHelperInstalled(["fabric-api"]));
+  const hasIris = $derived(hasHelperInstalled(["iris"]));
+
+  const shouldWarnFabricApi = $derived(
+    !isLoadingHelperScan &&
+    !!modScanResult &&
+    viewMode === "browse" &&
+    contentStore.contentType === "mod" &&
+    (loaderType === "fabric" || loaderType === "quilt") &&
+    !hasFabricApi
+  );
+
+  const shouldWarnShaders = $derived(
+    !isLoadingHelperScan &&
+    !!modScanResult &&
+    viewMode === "browse" &&
+    contentStore.contentType === "shader" &&
+    !hasIris
+  );
+
   // Installation state
   let isInstalling = $state(false);
   let installSuccess = $state<string | null>(null);
   let installError = $state<string | null>(null);
+
+  // Helper auto-install state (Fabric API / Iris)
+  let isInstallingHelper = $state(false);
+  let helperInstallTarget = $state<"fabric-api" | "iris" | null>(null);
+  let helperInstallError = $state<string | null>(null);
+  let helperInstallErrorFor = $state<"fabric-api" | "iris" | null>(null);
 
   // Uninstall state
   let isUninstalling = $state(false);
@@ -107,6 +154,7 @@
   onMount(() => {
     contentStore.setInstanceContext(instanceId, mcVersion, loaderType);
     contentStore.search();
+    refreshModScan();
 
     // Listen for download progress events
     const unlistenPromise = listen<ContentDownloadProgress>(
@@ -148,6 +196,89 @@
     selectedItems.clear();
     bulkActionError = null;
   }
+
+  const helperConfigs: Record<"fabric-api" | "iris", { query: string; contentType: ContentType; slugMatches: string[] }> = {
+    "fabric-api": { query: "fabric api", contentType: "mod", slugMatches: ["fabric-api"] },
+    iris: { query: "iris shaders", contentType: "mod", slugMatches: ["iris"] },
+  };
+
+  async function refreshModScan() {
+    isLoadingHelperScan = true;
+    try {
+      modScanResult = await contentService.scanInstalledContent(instanceId, "mod");
+    } catch (e) {
+      console.error("Failed to scan mods for helper detection:", e);
+    } finally {
+      isLoadingHelperScan = false;
+    }
+  }
+
+  async function installHelper(helper: "fabric-api" | "iris") {
+    isInstallingHelper = true;
+    helperInstallTarget = helper;
+    helperInstallError = null;
+    helperInstallErrorFor = null;
+
+    try {
+      const config = helperConfigs[helper];
+
+      const searchResult = await contentService.searchContent({
+        query: config.query,
+        contentType: config.contentType,
+        mcVersion,
+        loader: loaderType === "vanilla" ? undefined : loaderType,
+        page: 0,
+        pageSize: 10,
+      });
+
+      const match = searchResult.items.find((content) => {
+        const slug = content.slug.toLowerCase();
+        const name = content.name.toLowerCase();
+        return config.slugMatches.some((term) => slug.includes(term) || name.includes(term));
+      });
+
+      if (!match) {
+        throw new Error("Could not find a compatible helper mod.");
+      }
+
+      const versions = await contentService.getContentVersions(
+        match.platform,
+        match.id,
+        mcVersion,
+        loaderType === "vanilla" ? undefined : loaderType
+      );
+
+      const version = versions[0];
+      if (!version) {
+        throw new Error("No compatible version found for this Minecraft version/loader.");
+      }
+
+      await contentService.installContentWithDependencies(
+        instanceId,
+        match.platform,
+        match,
+        version,
+        mcVersion,
+        loaderType === "vanilla" ? undefined : loaderType
+      );
+
+      await contentStore.refreshInstalledContent();
+      await refreshModScan();
+    } catch (e: unknown) {
+      helperInstallError = e instanceof Error ? e.message : "Failed to install helper mod.";
+      helperInstallErrorFor = helper;
+    } finally {
+      isInstallingHelper = false;
+      helperInstallTarget = null;
+    }
+  }
+
+  // Keep mod scan cache updated when the mods tab scans
+  $effect(() => {
+    if (contentStore.contentType === "mod" && contentStore.scanResult) {
+      modScanResult = contentStore.scanResult;
+    }
+  });
 
   function toggleItemSelection(filename: string) {
     if (selectedItems.has(filename)) {
@@ -566,6 +697,66 @@
         This is a vanilla instance. Switch to Resource Packs or add a mod loader to this instance.
       </span>
     </div>
+  {/if}
+
+  <!-- Fabric API warning -->
+  {#if shouldWarnFabricApi}
+    <div class="mx-4 mt-3 bg-amber-500/10 border-2 border-amber-500/50 p-3 text-amber-500 text-sm flex items-center gap-3">
+      <AlertTriangle class="h-4 w-4 flex-shrink-0" />
+      <div class="flex-1">
+        Fabric and Quilt mods usually need <span class="font-medium">Fabric API</span>. Install it before adding other mods.
+      </div>
+      <Button
+        size="sm"
+        variant="secondary"
+        class="text-amber-500 border-amber-500/50"
+        onclick={() => installHelper("fabric-api")}
+        disabled={isInstallingHelper}
+      >
+        {#if isInstallingHelper && helperInstallTarget === "fabric-api"}
+          <Loader2 class="h-4 w-4 mr-2 animate-spin" />
+          Installing...
+        {:else}
+          <Download class="h-4 w-4 mr-2" />
+          Install Fabric API
+        {/if}
+      </Button>
+    </div>
+    {#if helperInstallError && helperInstallErrorFor === "fabric-api"}
+      <div class="mx-4 mt-2 text-xs text-destructive">
+        {helperInstallError}
+      </div>
+    {/if}
+  {/if}
+
+  <!-- Shader loader warning -->
+  {#if shouldWarnShaders}
+    <div class="mx-4 mt-3 bg-amber-500/10 border-2 border-amber-500/50 p-3 text-amber-500 text-sm flex items-center gap-3">
+      <AlertTriangle class="h-4 w-4 flex-shrink-0" />
+      <div class="flex-1">
+        Shaders need a shader loader like <span class="font-medium">Iris</span>. Install it to enable shaderpacks.
+      </div>
+      <Button
+        size="sm"
+        variant="secondary"
+        class="text-amber-500 border-amber-500/50"
+        onclick={() => installHelper("iris")}
+        disabled={isInstallingHelper}
+      >
+        {#if isInstallingHelper && helperInstallTarget === "iris"}
+          <Loader2 class="h-4 w-4 mr-2 animate-spin" />
+          Installing...
+        {:else}
+          <Download class="h-4 w-4 mr-2" />
+          Install Iris
+        {/if}
+      </Button>
+    </div>
+    {#if helperInstallError && helperInstallErrorFor === "iris"}
+      <div class="mx-4 mt-2 text-xs text-destructive">
+        {helperInstallError}
+      </div>
+    {/if}
   {/if}
 
   {#if viewMode === "browse"}
