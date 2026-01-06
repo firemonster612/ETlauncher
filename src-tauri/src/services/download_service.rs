@@ -140,17 +140,53 @@ fn get_library_artifact_key(name: &str) -> String {
     }
 }
 
-/// Deduplicate libraries by artifact key (group:artifact), keeping the first occurrence
-/// This ensures loader libraries take precedence over parent libraries
+/// Deduplicate libraries by artifact key (group:artifact)
+/// When duplicates exist:
+/// 1. Prefer entries that apply to the current platform
+/// 2. Prefer entries with natives/classifiers over those without
+/// This ensures loader libraries take precedence, but native-providing entries aren't lost
 fn deduplicate_libraries(libraries: Vec<crate::models::minecraft::Library>) -> Vec<crate::models::minecraft::Library> {
-    let mut seen = std::collections::HashSet::new();
-    libraries
-        .into_iter()
-        .filter(|lib| {
-            let key = get_library_artifact_key(&lib.name);
-            seen.insert(key)
-        })
-        .collect()
+    use std::collections::HashMap;
+
+    let mut seen: HashMap<String, crate::models::minecraft::Library> = HashMap::new();
+
+    for lib in libraries {
+        let key = get_library_artifact_key(&lib.name);
+
+        // Check if this library applies to current platform
+        let current_applies = should_use_library(&lib);
+
+        if let Some(existing) = seen.get(&key) {
+            let existing_applies = should_use_library(existing);
+
+            // Check if libs have natives/classifiers
+            let existing_has_natives = existing.natives.is_some()
+                || existing.downloads.as_ref().map(|d| d.classifiers.is_some()).unwrap_or(false);
+            let current_has_natives = lib.natives.is_some()
+                || lib.downloads.as_ref().map(|d| d.classifiers.is_some()).unwrap_or(false);
+
+            // Decide whether to replace:
+            // 1. If current applies but existing doesn't, replace
+            // 2. If both apply (or both don't), prefer the one with natives
+            let should_replace = if current_applies && !existing_applies {
+                true
+            } else if !current_applies && existing_applies {
+                false
+            } else {
+                // Both apply or both don't - prefer natives
+                current_has_natives && !existing_has_natives
+            };
+
+            if should_replace {
+                seen.insert(key, lib);
+            }
+        } else {
+            seen.insert(key, lib);
+        }
+    }
+
+    // Preserve original order as much as possible
+    seen.into_values().collect()
 }
 
 /// Merge a loader version with its parent (vanilla) version
