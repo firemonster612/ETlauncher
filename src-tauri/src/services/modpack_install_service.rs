@@ -605,6 +605,10 @@ fn extract_overrides<R: Read + std::io::Seek>(
             if name.ends_with('/') {
                 fs::create_dir_all(&dest_path)?;
             } else {
+                // Skip if destination already exists as a directory
+                if dest_path.is_dir() {
+                    continue;
+                }
                 if let Some(parent) = dest_path.parent() {
                     fs::create_dir_all(parent)?;
                 }
@@ -1861,6 +1865,10 @@ pub async fn install_technic_modpack(
                             fs::create_dir_all(game_dir.join(&name))?;
                         } else {
                             let dest_path = game_dir.join(&name);
+                            // Skip if destination already exists as a directory
+                            if dest_path.is_dir() {
+                                continue;
+                            }
                             if let Some(parent) = dest_path.parent() {
                                 fs::create_dir_all(parent)?;
                             }
@@ -1905,6 +1913,10 @@ pub async fn install_technic_modpack(
                 fs::create_dir_all(game_dir.join(&name))?;
             } else {
                 let dest_path = game_dir.join(&name);
+                // Skip if destination already exists as a directory
+                if dest_path.is_dir() {
+                    continue;
+                }
                 if let Some(parent) = dest_path.parent() {
                     fs::create_dir_all(parent)?;
                 }
@@ -2160,6 +2172,10 @@ pub async fn install_atlauncher_modpack(
                             fs::create_dir_all(game_dir.join(&name))?;
                         } else {
                             let dest_path = game_dir.join(&name);
+                            // Skip if destination already exists as a directory
+                            if dest_path.is_dir() {
+                                continue;
+                            }
                             if let Some(parent) = dest_path.parent() {
                                 fs::create_dir_all(parent)?;
                             }

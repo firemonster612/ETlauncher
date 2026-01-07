@@ -736,16 +736,39 @@ fn extract_old_forge_installer_sync(
         let mut file = archive.by_index(i)?;
         let name = file.name().to_string();
 
+        // Skip directory entries
+        if name.ends_with('/') {
+            continue;
+        }
+
         if name == "install_profile.json" {
             let mut content = String::new();
             file.read_to_string(&mut content)?;
+            eprintln!("[forge] Found install_profile.json, length: {}", content.len());
 
             // Parse the install profile to extract version info
             if let Ok(profile) = serde_json::from_str::<serde_json::Value>(&content) {
                 // Old Forge install_profile.json has a "versionInfo" field
                 if let Some(version_info) = profile.get("versionInfo") {
+                    eprintln!("[forge] Found versionInfo in install_profile.json");
                     version_json_content = Some(serde_json::to_string_pretty(version_info)?);
+                } else {
+                    eprintln!("[forge] No versionInfo field, keys: {:?}", profile.as_object().map(|o| o.keys().collect::<Vec<_>>()));
+                    // Try alternative: some installers have version.json separately or use different structure
+                    if let Some(install) = profile.get("install") {
+                        eprintln!("[forge] Found 'install' field - this is a newer Forge installer format");
+                    }
                 }
+            } else {
+                eprintln!("[forge] Failed to parse install_profile.json as JSON");
+            }
+        } else if name == "version.json" {
+            // Some Forge installers have version.json directly
+            let mut content = String::new();
+            file.read_to_string(&mut content)?;
+            eprintln!("[forge] Found version.json directly, length: {}", content.len());
+            if version_json_content.is_none() {
+                version_json_content = Some(content);
             }
         } else if name.contains("universal") && name.ends_with(".jar") {
             // Read the universal jar
@@ -760,13 +783,25 @@ fn extract_old_forge_installer_sync(
                 libraries_dir.join(&name)
             };
 
+            // Skip directories and handle conflicts
+            if lib_path.is_dir() {
+                eprintln!("[forge] Skipping {:?} - already exists as directory", lib_path);
+                continue;
+            }
+
             if let Some(parent) = lib_path.parent() {
+                // Check if parent path conflicts with a file
+                if parent.is_file() {
+                    eprintln!("[forge] Removing file at {:?} to create directory", parent);
+                    std::fs::remove_file(parent)?;
+                }
                 std::fs::create_dir_all(parent)?;
             }
 
             let mut data = Vec::new();
             file.read_to_end(&mut data)?;
-            std::fs::write(&lib_path, &data)?;
+            std::fs::write(&lib_path, &data)
+                .map_err(|e| AppError::InstallationError(format!("Failed to write {:?}: {}", lib_path, e)))?;
         }
     }
 
@@ -780,7 +815,12 @@ fn extract_old_forge_installer_sync(
         let updated_json = serde_json::to_string_pretty(&json_value)?;
 
         let json_path = version_dir.join(format!("{}.json", version_id));
-        std::fs::write(&json_path, &updated_json)?;
+        if json_path.is_dir() {
+            eprintln!("[forge] Warning: {:?} is a directory, removing it", json_path);
+            std::fs::remove_dir_all(&json_path)?;
+        }
+        std::fs::write(&json_path, &updated_json)
+            .map_err(|e| AppError::InstallationError(format!("Failed to write {:?}: {}", json_path, e)))?;
         eprintln!("[forge] Wrote version JSON to {:?}", json_path);
     } else {
         return Err(AppError::InstallationError(
@@ -799,12 +839,22 @@ fn extract_old_forge_installer_sync(
 
         // Write with -universal suffix (what the version.json expects)
         let jar_path = forge_lib_dir.join(format!("forge-{}-{}-universal.jar", mc_version, loader_version));
-        std::fs::write(&jar_path, &jar_data)?;
+        if jar_path.is_dir() {
+            eprintln!("[forge] Warning: {:?} is a directory, removing it", jar_path);
+            std::fs::remove_dir_all(&jar_path)?;
+        }
+        std::fs::write(&jar_path, &jar_data)
+            .map_err(|e| AppError::InstallationError(format!("Failed to write {:?}: {}", jar_path, e)))?;
         eprintln!("[forge] Wrote Forge universal jar to {:?}", jar_path);
 
         // Also write without suffix as fallback (some version.json variants reference it this way)
         let jar_path_alt = forge_lib_dir.join(format!("forge-{}-{}.jar", mc_version, loader_version));
-        std::fs::write(&jar_path_alt, &jar_data)?;
+        if jar_path_alt.is_dir() {
+            eprintln!("[forge] Warning: {:?} is a directory, removing it", jar_path_alt);
+            std::fs::remove_dir_all(&jar_path_alt)?;
+        }
+        std::fs::write(&jar_path_alt, &jar_data)
+            .map_err(|e| AppError::InstallationError(format!("Failed to write {:?}: {}", jar_path_alt, e)))?;
     }
 
     eprintln!("[forge] Manual extraction complete for {} Forge {}", mc_version, loader_version);
