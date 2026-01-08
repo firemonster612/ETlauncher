@@ -1,12 +1,16 @@
 <script lang="ts">
-  import { Download, Loader2, RefreshCw } from "@lucide/svelte";
+  import { Download, Loader2, RefreshCw, FolderOpen, Copy, Upload } from "@lucide/svelte";
+  import { save } from "@tauri-apps/plugin-dialog";
   import { Button } from "$lib/ui/button";
   import { Input } from "$lib/ui/input";
   import { Slider } from "$lib/ui/slider";
   import { Textarea } from "$lib/ui/textarea";
   import * as Sheet from "$lib/ui/sheet";
   import { instancesStore } from "$lib/stores/instances.svelte";
+  import * as instanceService from "$lib/services/instance";
   import UpdateDialog from "./UpdateDialog.svelte";
+  import IconPicker from "./IconPicker.svelte";
+  import { makeIconPath, type EntityIcon } from "$lib/utils/icons";
   import type { Instance, UpdateInstanceRequest } from "$lib/types";
 
   interface Props {
@@ -31,6 +35,7 @@
 
   // Form state - initialize from instance
   let name = $state("");
+  let iconPath = $state<string | undefined>(undefined);
   let javaPath = $state("");
   let memoryMin = $state(512);
   let memoryMax = $state(4096);
@@ -45,6 +50,7 @@
   // Reset form when instance changes
   $effect(() => {
     name = instance.name;
+    iconPath = instance.iconPath;
     javaPath = instance.javaPath || "";
     memoryMin = instance.memoryMinMb || 512;
     memoryMax = instance.memoryMaxMb || 4096;
@@ -53,6 +59,10 @@
     resolutionWidth = instance.resolutionWidth || 0;
     resolutionHeight = instance.resolutionHeight || 0;
   });
+
+  function handleIconSelect(icon: EntityIcon) {
+    iconPath = makeIconPath(icon);
+  }
 
   // Ensure memoryMin <= memoryMax
   $effect(() => {
@@ -67,6 +77,7 @@
 
     const updates: UpdateInstanceRequest = {
       name: name !== instance.name ? name : undefined,
+      iconPath: iconPath !== instance.iconPath ? iconPath : undefined,
       javaPath: javaPath || undefined,
       memoryMinMb: memoryMin !== 512 ? memoryMin : undefined,
       memoryMaxMb: memoryMax !== 4096 ? memoryMax : undefined,
@@ -104,6 +115,38 @@
     if (instance.loaderType === "vanilla" || !instance.loaderVersion) return;
     await instancesStore.installLoader(instance.id, instance.loaderType, instance.loaderVersion);
   }
+
+  async function handleOpenFolder() {
+    await instanceService.openInstanceFolder(instance.id);
+  }
+
+  async function handleDuplicate() {
+    await instancesStore.duplicate(instance.id, `${instance.name} (Copy)`);
+    onClose();
+  }
+
+  let isExporting = $state(false);
+  let exportError = $state<string | null>(null);
+
+  async function handleExport() {
+    try {
+      const filePath = await save({
+        title: "Export Instance",
+        defaultPath: `${instance.name}.mrpack`,
+        filters: [{ name: "Modrinth Pack", extensions: ["mrpack"] }],
+      });
+
+      if (!filePath) return;
+
+      isExporting = true;
+      exportError = null;
+      await instanceService.exportInstance(instance.id, filePath);
+      isExporting = false;
+    } catch (e: unknown) {
+      isExporting = false;
+      exportError = e instanceof Error ? e.message : "Export failed";
+    }
+  }
 </script>
 
 
@@ -126,6 +169,13 @@
           bind:value={name}
           placeholder="My Instance"
         />
+      </div>
+
+      <!-- Instance Icon -->
+      <div class="space-y-3">
+        <p class="text-sm font-medium">Instance Icon</p>
+        <p class="text-xs text-muted-foreground">Choose an icon for this instance</p>
+        <IconPicker selected={iconPath} onSelect={handleIconSelect} />
       </div>
 
       <!-- Java Path -->
@@ -267,6 +317,35 @@
               Reinstall {instance.loaderType} {instance.loaderVersion}
             {/if}
           </Button>
+        {/if}
+      </div>
+
+      <!-- Quick Actions -->
+      <div class="border-t border-border pt-6 space-y-4">
+        <h4 class="text-sm font-medium text-muted-foreground">Quick Actions</h4>
+
+        <Button variant="outline" class="w-full" onclick={handleOpenFolder}>
+          <FolderOpen class="h-4 w-4 mr-2" />
+          Open Game Folder
+        </Button>
+
+        <Button variant="outline" class="w-full" onclick={handleDuplicate}>
+          <Copy class="h-4 w-4 mr-2" />
+          Duplicate Instance
+        </Button>
+
+        <Button variant="outline" class="w-full" onclick={handleExport} disabled={isExporting}>
+          {#if isExporting}
+            <Loader2 class="h-4 w-4 mr-2 animate-spin" />
+            Exporting...
+          {:else}
+            <Upload class="h-4 w-4 mr-2" />
+            Export as .mrpack
+          {/if}
+        </Button>
+
+        {#if exportError}
+          <p class="text-sm text-destructive">{exportError}</p>
         {/if}
       </div>
     </div>
