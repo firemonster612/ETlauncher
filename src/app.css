@@ -6,6 +6,8 @@
 
 :root {
   --titlebar-height: 2.25rem;
+  --sidebar-width: 14rem;
+  --sidebar-width-icon: 3rem;
   --radius: 0px; /* Sharp pixelated corners */
 
   /* Pixel fonts */

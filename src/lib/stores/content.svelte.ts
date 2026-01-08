@@ -29,7 +29,7 @@ function createContentStore() {
   let loader = $state<LoaderType | null>(null);
   let contentType = $state<ContentType>("mod");
   let category = $state<string | null>(null);
-  let sortBy = $state<ContentSortBy>("downloads");
+  let sortBy = $state<ContentSortBy>("relevance");
 
   // Instance context (for auto-filtering)
   let instanceId = $state<string | null>(null);
@@ -164,16 +164,22 @@ function createContentStore() {
       await this.scanInstalledContent();
     },
 
-    /** Scan installed content for the current content type */
-    async scanInstalledContent() {
+    /** Scan installed content for the current content type
+     * @param silent - If true, don't show scanning indicator (used for background refreshes)
+     */
+    async scanInstalledContent(silent = false) {
       if (!instanceId) return;
-      isScanning = true;
+      if (!silent) {
+        isScanning = true;
+      }
       try {
         scanResult = await contentService.scanInstalledContent(instanceId, contentType);
       } catch (e) {
         console.error("Failed to scan installed content:", e);
       } finally {
-        isScanning = false;
+        if (!silent) {
+          isScanning = false;
+        }
       }
     },
 
@@ -242,9 +248,9 @@ function createContentStore() {
       }
     },
 
-    /** Refresh installed content by re-scanning */
+    /** Refresh installed content by re-scanning (silent, no loading indicator) */
     async refreshInstalledContent() {
-      await this.scanInstalledContent();
+      await this.scanInstalledContent(true);
     },
 
     /** Clear the instance context */
@@ -331,8 +337,8 @@ function createContentStore() {
       contentType = type;
       // Clear scan result when switching content types
       scanResult = null;
-      // Trigger a new scan for this content type
-      await this.scanInstalledContent();
+      // Trigger a new scan for this content type (silent to avoid flickering)
+      await this.scanInstalledContent(true);
     },
 
     /** Set category filter */
@@ -350,7 +356,7 @@ function createContentStore() {
       query = "";
       platform = null;
       category = null;
-      sortBy = "downloads";
+      sortBy = "relevance";
       contentType = "mod";
       // Keep mcVersion and loader from instance context
     },
@@ -429,7 +435,7 @@ function createContentStore() {
       loader = null;
       contentType = "mod";
       category = null;
-      sortBy = "downloads";
+      sortBy = "relevance";
       instanceId = null;
       selectedContent = null;
       selectedContentVersions = [];

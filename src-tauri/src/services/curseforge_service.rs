@@ -2,12 +2,13 @@ use crate::error::AppError;
 use crate::models::{
     Content, ContentFile, ContentGalleryImage, ContentPlatform, ContentSearchParams, ContentSearchResult,
     ContentType, ContentVersion, ContentDependency, DependencyType,
-    LoaderType, Modpack, ModpackFile, ModpackSearchParams, ModpackSearchResult,
+    LoaderType, Modpack, ModpackFile, ModpackMod, ModpackSearchParams, ModpackSearchResult,
     ModpackSortBy, ModpackVersion,
 };
 use crate::models::instance::ModpackPlatform;
 use reqwest::Client;
 use serde::Deserialize;
+use std::io::Read;
 
 const CURSEFORGE_API_BASE: &str = "https://api.curseforge.com/v1";
 const MINECRAFT_GAME_ID: u32 = 432;
@@ -486,6 +487,17 @@ pub async fn search_modpacks(
                 downloads: m.download_count,
                 platform: ModpackPlatform::CurseForge,
                 categories: m.categories.into_iter().map(|c| c.name).collect(),
+                gallery: m
+                    .screenshots
+                    .into_iter()
+                    .map(|s| ContentGalleryImage {
+                        url: s.thumbnail_url.unwrap_or_else(|| s.url.clone()),
+                        raw_url: Some(s.url),
+                        title: s.title,
+                        description: s.description,
+                        featured: false,
+                    })
+                    .collect(),
                 mc_versions,
                 loaders,
                 latest_version: None,
@@ -572,6 +584,17 @@ pub async fn get_modpack(
         downloads: m.download_count,
         platform: ModpackPlatform::CurseForge,
         categories: m.categories.into_iter().map(|c| c.name).collect(),
+        gallery: m
+            .screenshots
+            .into_iter()
+            .map(|s| ContentGalleryImage {
+                url: s.thumbnail_url.unwrap_or_else(|| s.url.clone()),
+                raw_url: Some(s.url),
+                title: s.title,
+                description: s.description,
+                featured: false,
+            })
+            .collect(),
         mc_versions,
         loaders,
         latest_version: None,
@@ -630,6 +653,110 @@ pub async fn get_modpack_versions(
             }
         })
         .collect())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CurseForgeManifest {
+    #[serde(default)]
+    files: Vec<CurseForgeManifestFile>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CurseForgeManifestFile {
+    #[serde(rename = "projectID")]
+    project_id: u32,
+    #[serde(rename = "fileID")]
+    #[allow(dead_code)]
+    file_id: u32,
+}
+
+#[derive(Debug, serde::Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CurseForgeGetModsRequest {
+    mod_ids: Vec<u32>,
+}
+
+async fn get_mods_by_ids(
+    client: &Client,
+    api_key: &str,
+    mod_ids: &[u32],
+) -> Result<Vec<CurseForgeMod>, AppError> {
+    if mod_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let url = format!("{}/mods", CURSEFORGE_API_BASE);
+    let response: CurseForgeResponse<Vec<CurseForgeMod>> = client
+        .post(&url)
+        .header("x-api-key", api_key)
+        .json(&CurseForgeGetModsRequest {
+            mod_ids: mod_ids.to_vec(),
+        })
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    Ok(response.data)
+}
+
+/// Get a mod list for a CurseForge modpack version (best-effort)
+pub async fn get_modpack_mods(
+    client: &Client,
+    api_key: &str,
+    modpack_id: &str,
+    version_id: &str,
+) -> Result<Vec<ModpackMod>, AppError> {
+    let modpack_project_id: u32 = modpack_id
+        .parse()
+        .map_err(|_| AppError::ModpackNotFound(modpack_id.to_string()))?;
+    let file_id: u32 = version_id
+        .parse()
+        .map_err(|_| AppError::ContentNotFound("Invalid version id".to_string()))?;
+
+    let file_info = get_mod_file(client, api_key, modpack_project_id, file_id).await?;
+    let zip_bytes = client
+        .get(&file_info.download_url)
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?
+        .to_vec();
+
+    let cursor = std::io::Cursor::new(&zip_bytes);
+    let mut archive = zip::ZipArchive::new(cursor)?;
+
+    // manifest.json contains the mod list for CurseForge packs
+    let manifest: CurseForgeManifest = {
+        let mut manifest_file = archive.by_name("manifest.json")?;
+        let mut contents = String::new();
+        manifest_file.read_to_string(&mut contents)?;
+        serde_json::from_str(&contents)?
+    };
+
+    let mut mod_ids: Vec<u32> = manifest.files.into_iter().map(|f| f.project_id).collect();
+    mod_ids.sort();
+    mod_ids.dedup();
+
+    // CurseForge API has practical limits; chunk requests
+    let mut mods: Vec<ModpackMod> = Vec::new();
+    for chunk in mod_ids.chunks(50) {
+        let chunk_mods = get_mods_by_ids(client, api_key, chunk).await.unwrap_or_default();
+        for m in chunk_mods {
+            let author = m.authors.first().map(|a| a.name.clone());
+            mods.push(ModpackMod {
+                id: m.id.to_string(),
+                name: m.name.clone(),
+                icon_url: m.logo.as_ref().map(|l| l.url.clone()),
+                author,
+                url: Some(format!("https://www.curseforge.com/minecraft/mc-mods/{}", m.slug)),
+            });
+        }
+    }
+
+    mods.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(mods)
 }
 
 // ============================================================================

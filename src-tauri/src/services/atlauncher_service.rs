@@ -374,6 +374,7 @@ pub async fn search_modpacks(
                 downloads: 0, // Not available from CDN
                 platform: ModpackPlatform::ATLauncher,
                 categories: vec![],
+                gallery: Vec::new(),
                 mc_versions,
                 loaders,
                 latest_version: None,
@@ -444,6 +445,7 @@ pub async fn get_modpack(client: &Client, pack_name: &str) -> Result<Modpack, Ap
         downloads: 0,
         platform: ModpackPlatform::ATLauncher,
         categories: vec![],
+        gallery: Vec::new(),
         mc_versions,
         loaders,
         latest_version: None, // Would need full version details

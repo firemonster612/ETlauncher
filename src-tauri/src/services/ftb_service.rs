@@ -1,6 +1,6 @@
 use crate::error::AppError;
 use crate::models::{
-    LoaderType, Modpack, ModpackFile, ModpackSearchParams, ModpackSearchResult,
+    LoaderType, Modpack, ModpackFile, ModpackMod, ModpackSearchParams, ModpackSearchResult,
     ModpackVersion,
 };
 use crate::models::instance::ModpackPlatform;
@@ -142,6 +142,15 @@ pub struct FtbFile {
     pub file_type: String,
     #[serde(default)]
     pub updated: u64,
+    #[serde(default)]
+    pub curseforge: Option<FtbCurseForgeRef>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct FtbCurseForgeRef {
+    pub project: u64,
+    #[allow(dead_code)]
+    pub file: u64,
 }
 
 // ============================================================================
@@ -307,6 +316,7 @@ async fn get_pack_details(client: &Client, pack_id: u64) -> Result<Modpack, AppE
         downloads: pack.installs,
         platform: ModpackPlatform::FTB,
         categories: pack.tags.into_iter().map(|t| t.name).collect(),
+        gallery: Vec::new(),
         mc_versions: vec![],
         loaders: vec![LoaderType::Unknown], // FTB API doesn't include loader in pack list
         latest_version: None,
@@ -468,4 +478,49 @@ pub async fn get_version_details(
         downloads: None,
         files,
     })
+}
+
+/// Get a mod list for an FTB modpack version (best-effort)
+pub async fn get_modpack_mods(
+    client: &Client,
+    pack_id: &str,
+    version_id: &str,
+) -> Result<Vec<ModpackMod>, AppError> {
+    let pack_id_num: u64 = pack_id
+        .parse()
+        .map_err(|_| AppError::ModpackNotFound(pack_id.to_string()))?;
+    let version_id_num: u64 = version_id
+        .parse()
+        .map_err(|_| AppError::ContentNotFound("Invalid version id".to_string()))?;
+
+    let url = format!("{}/modpack/{}/{}", FTB_API_BASE, pack_id_num, version_id_num);
+    let manifest: FtbVersionManifest = client.get(&url).send().await?.error_for_status()?.json().await?;
+
+    let mut mods: Vec<ModpackMod> = manifest
+        .files
+        .into_iter()
+        .filter(|f| f.file_type == "mod")
+        .map(|f| {
+            let url = f
+                .curseforge
+                .as_ref()
+                .map(|cf| format!("https://www.curseforge.com/minecraft/mc-mods/{}", cf.project))
+                .or_else(|| if f.url.is_empty() { None } else { Some(f.url.clone()) });
+
+            ModpackMod {
+                id: f
+                    .curseforge
+                    .as_ref()
+                    .map(|cf| cf.project.to_string())
+                    .unwrap_or_else(|| f.id.to_string()),
+                name: f.name,
+                icon_url: None,
+                author: None,
+                url,
+            }
+        })
+        .collect();
+
+    mods.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(mods)
 }

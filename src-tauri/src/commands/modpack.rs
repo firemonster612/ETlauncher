@@ -1,8 +1,12 @@
 use crate::error::CommandError;
-use crate::models::{Instance, Modpack, ModpackSearchParams, ModpackSearchResult, ModpackVersion};
+use crate::models::{
+    Instance, Modpack, ModpackMod, ModpackSearchParams, ModpackSearchResult, ModpackSortBy, ModpackVersion,
+};
 use crate::models::instance::ModpackPlatform;
 use crate::services::{atlauncher_service, curseforge_service, ftb_service, modpack_install_service, modrinth_service, technic_service};
 use crate::state::AppState;
+use std::cmp::Reverse;
+use std::collections::VecDeque;
 use tauri::{AppHandle, State};
 
 /// Search for modpacks across platforms
@@ -100,13 +104,17 @@ async fn search_all_platforms(
     );
 
     // Collect successful results, log errors but don't fail
-    let mut all_modpacks = Vec::new();
+    let mut modrinth_modpacks: Vec<Modpack> = Vec::new();
+    let mut ftb_modpacks: Vec<Modpack> = Vec::new();
+    let mut atlauncher_modpacks: Vec<Modpack> = Vec::new();
+    let mut technic_modpacks: Vec<Modpack> = Vec::new();
+    let mut curseforge_modpacks: Vec<Modpack> = Vec::new();
     let mut total_count: u64 = 0;
 
     if let Ok(result) = results.0 {
         println!("[modpack_cmd] Modrinth: {} packs", result.modpacks.len());
         total_count += result.total_count;
-        all_modpacks.extend(result.modpacks);
+        modrinth_modpacks = result.modpacks;
     } else if let Err(e) = &results.0 {
         println!("[modpack_cmd] Modrinth error: {:?}", e);
     }
@@ -114,7 +122,7 @@ async fn search_all_platforms(
     if let Ok(result) = results.1 {
         println!("[modpack_cmd] FTB: {} packs", result.modpacks.len());
         total_count += result.total_count;
-        all_modpacks.extend(result.modpacks);
+        ftb_modpacks = result.modpacks;
     } else if let Err(e) = &results.1 {
         println!("[modpack_cmd] FTB error: {:?}", e);
     }
@@ -122,7 +130,7 @@ async fn search_all_platforms(
     if let Ok(result) = results.2 {
         println!("[modpack_cmd] ATLauncher: {} packs", result.modpacks.len());
         total_count += result.total_count;
-        all_modpacks.extend(result.modpacks);
+        atlauncher_modpacks = result.modpacks;
     } else if let Err(e) = &results.2 {
         println!("[modpack_cmd] ATLauncher error: {:?}", e);
     }
@@ -130,7 +138,7 @@ async fn search_all_platforms(
     if let Ok(result) = results.3 {
         println!("[modpack_cmd] Technic: {} packs", result.modpacks.len());
         total_count += result.total_count;
-        all_modpacks.extend(result.modpacks);
+        technic_modpacks = result.modpacks;
     } else if let Err(e) = &results.3 {
         println!("[modpack_cmd] Technic error: {:?}", e);
     }
@@ -138,13 +146,78 @@ async fn search_all_platforms(
     if let Ok(result) = results.4 {
         println!("[modpack_cmd] CurseForge: {} packs", result.modpacks.len());
         total_count += result.total_count;
-        all_modpacks.extend(result.modpacks);
+        curseforge_modpacks = result.modpacks;
     } else if let Err(e) = &results.4 {
         println!("[modpack_cmd] CurseForge error: {:?}", e);
     }
 
-    // Sort by downloads (descending) to show most popular first
-    all_modpacks.sort_by(|a, b| b.downloads.cmp(&a.downloads));
+    let sort_by = params.sort_by.clone().unwrap_or_default();
+    let all_modpacks: Vec<Modpack> = match sort_by {
+        ModpackSortBy::Relevance => {
+            // Best-effort "relevance" across platforms: preserve each platform's native ordering
+            // and interleave results so "All" doesn't look grouped by platform.
+            let mut modrinth = VecDeque::from(modrinth_modpacks);
+            let mut ftb = VecDeque::from(ftb_modpacks);
+            let mut atlauncher = VecDeque::from(atlauncher_modpacks);
+            let mut technic = VecDeque::from(technic_modpacks);
+            let mut curseforge = VecDeque::from(curseforge_modpacks);
+
+            let mut combined = Vec::new();
+            while !(modrinth.is_empty()
+                && ftb.is_empty()
+                && atlauncher.is_empty()
+                && technic.is_empty()
+                && curseforge.is_empty())
+            {
+                if let Some(m) = modrinth.pop_front() {
+                    combined.push(m);
+                }
+                if let Some(m) = curseforge.pop_front() {
+                    combined.push(m);
+                }
+                if let Some(m) = ftb.pop_front() {
+                    combined.push(m);
+                }
+                if let Some(m) = atlauncher.pop_front() {
+                    combined.push(m);
+                }
+                if let Some(m) = technic.pop_front() {
+                    combined.push(m);
+                }
+            }
+            combined
+        }
+        ModpackSortBy::RecentlyUpdated => {
+            let mut combined = Vec::new();
+            combined.extend(modrinth_modpacks);
+            combined.extend(ftb_modpacks);
+            combined.extend(atlauncher_modpacks);
+            combined.extend(technic_modpacks);
+            combined.extend(curseforge_modpacks);
+            combined.sort_by_key(|m| Reverse(m.updated_at.unwrap_or(0)));
+            combined
+        }
+        ModpackSortBy::Name => {
+            let mut combined = Vec::new();
+            combined.extend(modrinth_modpacks);
+            combined.extend(ftb_modpacks);
+            combined.extend(atlauncher_modpacks);
+            combined.extend(technic_modpacks);
+            combined.extend(curseforge_modpacks);
+            combined.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+            combined
+        }
+        ModpackSortBy::Downloads => {
+            let mut combined = Vec::new();
+            combined.extend(modrinth_modpacks);
+            combined.extend(ftb_modpacks);
+            combined.extend(atlauncher_modpacks);
+            combined.extend(technic_modpacks);
+            combined.extend(curseforge_modpacks);
+            combined.sort_by(|a, b| b.downloads.cmp(&a.downloads));
+            combined
+        }
+    };
 
     println!("[modpack_cmd] All platforms total: {} packs", all_modpacks.len());
 
@@ -245,6 +318,49 @@ pub async fn get_modpack_versions(
         Ok(versions) => println!("[modpack_cmd] get_modpack_versions: success, count={}", versions.len()),
         Err(e) => println!("[modpack_cmd] get_modpack_versions: error={:?}", e),
     }
+    result
+}
+
+/// Get a mod list for a given modpack version (best-effort)
+#[tauri::command]
+pub async fn get_modpack_mods(
+    state: State<'_, AppState>,
+    platform: ModpackPlatform,
+    modpack_id: String,
+    version_id: String,
+) -> Result<Vec<ModpackMod>, CommandError> {
+    println!(
+        "[modpack_cmd] get_modpack_mods: platform={:?}, modpack_id={}, version_id={}",
+        platform, modpack_id, version_id
+    );
+
+    let result = match platform {
+        ModpackPlatform::Modrinth => modrinth_service::get_modpack_mods(&state.http_client, &version_id)
+            .await
+            .map_err(CommandError::from),
+        ModpackPlatform::CurseForge => {
+            let api_key = state.get_settings().curseforge_api_key.ok_or_else(|| CommandError {
+                code: "API_KEY_REQUIRED".to_string(),
+                message: "CurseForge API key not configured".to_string(),
+            })?;
+            curseforge_service::get_modpack_mods(&state.http_client, &api_key, &modpack_id, &version_id)
+                .await
+                .map_err(CommandError::from)
+        }
+        ModpackPlatform::FTB => ftb_service::get_modpack_mods(&state.http_client, &modpack_id, &version_id)
+            .await
+            .map_err(CommandError::from),
+        ModpackPlatform::Technic => technic_service::get_modpack_mods(&state.http_client, &modpack_id, &version_id)
+            .await
+            .map_err(CommandError::from),
+        _ => Ok(vec![]),
+    };
+
+    match &result {
+        Ok(mods) => println!("[modpack_cmd] get_modpack_mods: success, count={}", mods.len()),
+        Err(e) => println!("[modpack_cmd] get_modpack_mods: error={:?}", e),
+    }
+
     result
 }
 

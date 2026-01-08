@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   Instance,
   Modpack,
+  ModpackMod,
   ModpackSearchParams,
   ModpackSearchResult,
   ModpackVersion,
@@ -29,6 +30,15 @@ export async function getModpackVersions(
   id: string
 ): Promise<ModpackVersion[]> {
   return invoke<ModpackVersion[]>("get_modpack_versions", { platform, id });
+}
+
+/** Get mod list for a specific modpack version (best-effort) */
+export async function getModpackMods(
+  platform: ModpackPlatform,
+  modpackId: string,
+  versionId: string
+): Promise<ModpackMod[]> {
+  return invoke<ModpackMod[]>("get_modpack_mods", { platform, modpackId, versionId });
 }
 
 /** Install a modpack and create a new instance */

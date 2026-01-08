@@ -25,11 +25,13 @@ function createModpacksStore() {
   let mcVersion = $state<string | null>(null);
   let loader = $state<LoaderType | null>(null);
   let category = $state<string | null>(null);
-  let sortBy = $state<ModpackSortBy>("downloads");
+  let sortBy = $state<ModpackSortBy>("relevance");
 
   // Selected modpack state
   let selectedModpack = $state<Modpack | null>(null);
   let selectedModpackVersions = $state<ModpackVersion[]>([]);
+  let isLoadingDetail = $state(false);
+  let detailError = $state<string | null>(null);
   let isLoadingVersions = $state(false);
 
   // Installation state
@@ -86,6 +88,12 @@ function createModpacksStore() {
     },
     get selectedModpackVersions() {
       return selectedModpackVersions;
+    },
+    get isLoadingDetail() {
+      return isLoadingDetail;
+    },
+    get detailError() {
+      return detailError;
     },
     get isLoadingVersions() {
       return isLoadingVersions;
@@ -202,33 +210,56 @@ function createModpacksStore() {
       mcVersion = null;
       loader = null;
       category = null;
-      sortBy = "downloads";
+      sortBy = "relevance";
     },
 
     /** Select a modpack and load its versions */
-    async selectModpack(modpack: Modpack) {
+    async selectModpack(modpack: Modpack): Promise<Modpack> {
+      const shouldLoadDetail =
+        modpack.platform === "modrinth" ||
+        modpack.platform === "curseforge" ||
+        modpack.platform === "ftb" ||
+        modpack.platform === "technic";
       selectedModpack = modpack;
       selectedModpackVersions = [];
+      detailError = null;
+      isLoadingDetail = shouldLoadDetail;
       isLoadingVersions = true;
+
+      if (shouldLoadDetail) {
+        try {
+          const detailed = await modpackService.getModpack(modpack.platform, modpack.id);
+          const mergedGallery =
+            (detailed.gallery?.length ?? 0) > 0 ? detailed.gallery : modpack.gallery;
+          selectedModpack = { ...modpack, ...detailed, gallery: mergedGallery };
+        } catch (e: any) {
+          console.error("[modpacksStore] Failed to load detailed modpack info:", e);
+          detailError = e?.message || (typeof e === "string" ? e : JSON.stringify(e));
+          selectedModpack = modpack;
+        } finally {
+          isLoadingDetail = false;
+        }
+      }
 
       try {
         console.log("[modpacksStore] Loading versions for modpack:", modpack.name, modpack.platform);
-        selectedModpackVersions = await modpackService.getModpackVersions(
-          modpack.platform,
-          modpack.id
-        );
+        selectedModpackVersions = await modpackService.getModpackVersions(modpack.platform, modpack.id);
         console.log("[modpacksStore] Loaded versions:", selectedModpackVersions.length);
       } catch (e: any) {
         console.error("[modpacksStore] Failed to load modpack versions:", e);
       } finally {
         isLoadingVersions = false;
       }
+
+      return selectedModpack ?? modpack;
     },
 
     /** Clear selected modpack */
     clearSelection() {
       selectedModpack = null;
       selectedModpackVersions = [];
+      detailError = null;
+      isLoadingDetail = false;
     },
 
     /** Clear search error */

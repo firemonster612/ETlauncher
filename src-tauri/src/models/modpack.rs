@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use crate::models::content::ContentGalleryImage;
 use crate::models::instance::{LoaderType, ModpackPlatform};
 
 /// Sort order for modpack search
@@ -144,6 +145,9 @@ pub struct Modpack {
     /// Categories/tags
     #[serde(default)]
     pub categories: Vec<String>,
+    /// Gallery images (if provided by the platform)
+    #[serde(default)]
+    pub gallery: Vec<ContentGalleryImage>,
     /// Available Minecraft versions
     #[serde(default)]
     pub mc_versions: Vec<String>,
@@ -192,6 +196,22 @@ pub struct ModpackInstallProgress {
     pub total_bytes: Option<u64>,
     /// Bytes downloaded so far
     pub downloaded_bytes: Option<u64>,
+}
+
+/// A mod entry within a modpack (best-effort)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModpackMod {
+    /// Platform-specific ID (Modrinth project ID or CurseForge mod ID)
+    pub id: String,
+    /// Display name if resolvable
+    pub name: String,
+    /// Optional icon URL
+    pub icon_url: Option<String>,
+    /// Optional author
+    pub author: Option<String>,
+    /// Optional external URL
+    pub url: Option<String>,
 }
 
 /// Request to install a modpack
