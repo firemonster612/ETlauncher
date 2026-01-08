@@ -9,6 +9,7 @@
   import * as Select from "$lib/ui/select";
   import { LoaderSelect } from "$lib/ui/loader-select";
   import { instancesStore } from "$lib/stores/instances.svelte";
+  import { settingsStore } from "$lib/stores/settings.svelte";
   import { versionsStore } from "$lib/stores/versions.svelte";
   import { launchStore } from "$lib/stores/launch.svelte";
   import { accountsStore } from "$lib/stores/accounts.svelte";
@@ -89,6 +90,7 @@
 
   onMount(() => {
     instancesStore.load();
+    settingsStore.load();
     versionsStore.load();
     accountsStore.load();
     // launchStore is initialized at app layout level

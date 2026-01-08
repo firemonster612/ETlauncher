@@ -125,9 +125,23 @@ pub async fn launch_instance(
     let natives_dir = get_instance_natives_dir_with_base(&state.settings.read().instances_path, &instance.id);
     let assets_dir = get_assets_dir();
 
-    // Memory settings
-    let min_mem = instance.memory_min_mb.unwrap_or(512);
-    let max_mem = instance.memory_max_mb.unwrap_or(2048);
+    // Memory settings: instance overrides fall back to global app settings
+    let (min_mem, max_mem) = {
+        let settings = state.settings.read();
+        let default_min = settings.memory_min_mb;
+        let default_max = settings.memory_max_mb;
+
+        let min_mem = instance.memory_min_mb.unwrap_or(default_min);
+        let mut max_mem = instance.memory_max_mb.unwrap_or(default_max);
+
+        // Defensive: keep JVM args valid even if persisted data is inconsistent.
+        if min_mem > max_mem {
+            max_mem = min_mem;
+        }
+
+        (min_mem, max_mem)
+    };
+    eprintln!("[launch] Using memory args: -Xms{}M -Xmx{}M", min_mem, max_mem);
 
     // Build replacements map
     let mut replacements: HashMap<String, String> = HashMap::new();
@@ -170,11 +184,10 @@ pub async fn launch_instance(
     replacements.insert("auth_xuid".to_string(), String::new()); // Xbox User ID - not critical for gameplay
 
     // Build JVM arguments
-    let mut jvm_args = vec![
-        format!("-Xms{}M", min_mem),
-        format!("-Xmx{}M", max_mem),
-        format!("-Djava.library.path={}", natives_dir.to_string_lossy()),
-    ];
+    let mut jvm_args = vec![format!(
+        "-Djava.library.path={}",
+        natives_dir.to_string_lossy()
+    )];
 
     // Add version-specific JVM args
     let version_jvm_args = download_service::build_jvm_arguments(&version_info, &replacements);
@@ -247,6 +260,13 @@ pub async fn launch_instance(
     if let Some(ref custom_jvm) = instance.jvm_args {
         jvm_args.extend(custom_jvm.split_whitespace().map(String::from));
     }
+
+    // Ensure our memory settings are applied (and not overridden by version/custom args).
+    jvm_args.retain(|arg| !arg.starts_with("-Xms") && !arg.starts_with("-Xmx"));
+    jvm_args.splice(
+        0..0,
+        [format!("-Xms{}M", min_mem), format!("-Xmx{}M", max_mem)],
+    );
 
     // Only add classpath if version doesn't already specify it
     if !has_classpath_in_jvm_args {

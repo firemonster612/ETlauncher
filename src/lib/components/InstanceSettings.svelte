@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Download, Loader2, RefreshCw, FolderOpen, Copy, Upload } from "@lucide/svelte";
   import { save } from "@tauri-apps/plugin-dialog";
+  import { settingsStore } from "$lib/stores/settings.svelte";
   import { Button } from "$lib/ui/button";
   import { Input } from "$lib/ui/input";
   import { Slider } from "$lib/ui/slider";
@@ -47,13 +48,16 @@
   let isSaving = $state(false);
   let saveError = $state<string | null>(null);
 
+  const globalMemoryMinMb = $derived(settingsStore.settings?.memoryMinMb ?? 512);
+  const globalMemoryMaxMb = $derived(settingsStore.settings?.memoryMaxMb ?? 4096);
+
   // Reset form when instance changes
   $effect(() => {
     name = instance.name;
     iconPath = instance.iconPath;
     javaPath = instance.javaPath || "";
-    memoryMin = instance.memoryMinMb || 512;
-    memoryMax = instance.memoryMaxMb || 4096;
+    memoryMin = instance.memoryMinMb ?? globalMemoryMinMb;
+    memoryMax = instance.memoryMaxMb ?? globalMemoryMaxMb;
     jvmArgs = instance.jvmArgs || "";
     gameArgs = instance.gameArgs || "";
     resolutionWidth = instance.resolutionWidth || 0;
@@ -79,8 +83,8 @@
       name: name !== instance.name ? name : undefined,
       iconPath: iconPath !== instance.iconPath ? iconPath : undefined,
       javaPath: javaPath || undefined,
-      memoryMinMb: memoryMin !== 512 ? memoryMin : undefined,
-      memoryMaxMb: memoryMax !== 4096 ? memoryMax : undefined,
+      memoryMinMb: memoryMin !== globalMemoryMinMb ? memoryMin : undefined,
+      memoryMaxMb: memoryMax !== globalMemoryMaxMb ? memoryMax : undefined,
       jvmArgs: jvmArgs || undefined,
       gameArgs: gameArgs || undefined,
       resolutionWidth: resolutionWidth || undefined,
