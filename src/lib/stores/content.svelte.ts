@@ -268,11 +268,15 @@ function createContentStore() {
       searchError = null;
 
       try {
+        // Only mods use the instance loader filter (Fabric/Forge/etc).
+        // CurseForge resource packs don't have modLoaderType, and shaders use different ecosystems.
+        const loaderFilter = contentType === "mod" ? loader || undefined : undefined;
+
         const params: ContentSearchParams = {
           query: query || undefined,
           platform: platform || undefined,
           mcVersion: mcVersion || undefined,
-          loader: loader || undefined,
+          loader: loaderFilter,
           contentType,
           category: category || undefined,
           sortBy,
@@ -299,11 +303,13 @@ function createContentStore() {
       isSearching = true;
 
       try {
+        const loaderFilter = contentType === "mod" ? loader || undefined : undefined;
+
         const params: ContentSearchParams = {
           query: query || undefined,
           platform: platform || undefined,
           mcVersion: mcVersion || undefined,
-          loader: loader || undefined,
+          loader: loaderFilter,
           contentType,
           category: category || undefined,
           sortBy,
