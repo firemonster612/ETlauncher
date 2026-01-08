@@ -2,12 +2,14 @@ use crate::error::AppError;
 use crate::models::{
     Content, ContentFile, ContentGalleryImage, ContentPlatform, ContentSearchParams, ContentSearchResult,
     ContentType, ContentVersion, ContentDependency, DependencyType,
-    LoaderType, Modpack, ModpackFile, ModpackSearchParams, ModpackSearchResult,
+    LoaderType, Modpack, ModpackFile, ModpackMod, ModpackSearchParams, ModpackSearchResult,
     ModpackSortBy, ModpackVersion,
 };
 use crate::models::instance::ModpackPlatform;
 use reqwest::Client;
 use serde::Deserialize;
+use std::collections::{HashMap, HashSet};
+use std::io::Read;
 
 const MODRINTH_API_BASE: &str = "https://api.modrinth.com/v2";
 const USER_AGENT: &str = "ETLauncher/1.0 (github.com/etlauncher)";
@@ -291,6 +293,7 @@ pub async fn search_modpacks(
                 downloads: hit.downloads,
                 platform: ModpackPlatform::Modrinth,
                 categories,
+                gallery: Vec::new(),
                 mc_versions: hit.versions,
                 loaders,
                 latest_version: None,
@@ -359,6 +362,18 @@ pub async fn get_modpack(client: &Client, id_or_slug: &str) -> Result<Modpack, A
         downloads: project.downloads,
         platform: ModpackPlatform::Modrinth,
         categories,
+        gallery: project
+            .gallery
+            .unwrap_or_default()
+            .into_iter()
+            .map(|image| ContentGalleryImage {
+                url: image.url,
+                raw_url: image.raw_url,
+                title: image.title,
+                description: image.description,
+                featured: image.featured.unwrap_or(false),
+            })
+            .collect(),
         mc_versions: project.game_versions,
         loaders,
         latest_version: None,
@@ -905,4 +920,139 @@ pub async fn get_versions_from_hashes(
     let result: std::collections::HashMap<String, ModrinthVersion> = response.json().await?;
 
     Ok(result)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ModrinthIndex {
+    #[serde(default)]
+    files: Vec<ModrinthIndexFile>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModrinthIndexFile {
+    path: String,
+    #[serde(default)]
+    hashes: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ModrinthProjectLite {
+    id: String,
+    slug: String,
+    title: String,
+    icon_url: Option<String>,
+}
+
+/// Batch fetch projects by ID (best-effort)
+async fn get_projects_by_ids(
+    client: &Client,
+    ids: &[String],
+) -> Result<Vec<ModrinthProjectLite>, AppError> {
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let url = format!("{}/projects", MODRINTH_API_BASE);
+    let ids_json = serde_json::to_string(ids)?;
+
+    let response = client
+        .get(&url)
+        .header("User-Agent", USER_AGENT)
+        .query(&[("ids", ids_json)])
+        .send()
+        .await?
+        .error_for_status()?;
+
+    Ok(response.json::<Vec<ModrinthProjectLite>>().await?)
+}
+
+async fn download_bytes(client: &Client, url: &str) -> Result<Vec<u8>, AppError> {
+    let resp = client
+        .get(url)
+        .header("User-Agent", USER_AGENT)
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(resp.bytes().await?.to_vec())
+}
+
+/// Get a mod list for a Modrinth modpack version (best-effort)
+pub async fn get_modpack_mods(client: &Client, version_id: &str) -> Result<Vec<ModpackMod>, AppError> {
+    let version = get_modpack_version(client, version_id).await?;
+
+    let mrpack_file = version
+        .files
+        .iter()
+        .find(|f| f.path.ends_with(".mrpack"))
+        .or_else(|| version.files.first())
+        .ok_or_else(|| AppError::ContentNotFound("No modpack file found".to_string()))?;
+
+    let mrpack_bytes = download_bytes(client, &mrpack_file.url).await?;
+    let cursor = std::io::Cursor::new(&mrpack_bytes);
+    let mut archive = zip::ZipArchive::new(cursor)?;
+
+    let index: ModrinthIndex = {
+        let mut index_file = archive.by_name("modrinth.index.json")?;
+        let mut contents = String::new();
+        index_file.read_to_string(&mut contents)?;
+        serde_json::from_str(&contents)?
+    };
+
+    // Extract sha512 hashes for mod files (mods/*)
+    let mut sha512_hashes: Vec<String> = Vec::new();
+    for f in index.files {
+        if !f.path.starts_with("mods/") {
+            continue;
+        }
+        if let Some(h) = f.hashes.get("sha512") {
+            sha512_hashes.push(h.clone());
+        }
+    }
+    sha512_hashes.sort();
+    sha512_hashes.dedup();
+
+    let versions_by_hash = get_versions_from_hashes(client, &sha512_hashes).await.unwrap_or_default();
+    let mut project_ids: Vec<String> = versions_by_hash
+        .values()
+        .map(|v| v.project_id.clone())
+        .collect();
+    project_ids.sort();
+    project_ids.dedup();
+
+    let projects = get_projects_by_ids(client, &project_ids).await.unwrap_or_default();
+    let project_map: HashMap<String, ModrinthProjectLite> = projects
+        .into_iter()
+        .map(|p| (p.id.clone(), p))
+        .collect();
+
+    // Build mod list, dedupe by project id when possible.
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut mods: Vec<ModpackMod> = Vec::new();
+
+    for v in versions_by_hash.values() {
+        if !seen.insert(v.project_id.clone()) {
+            continue;
+        }
+        if let Some(p) = project_map.get(&v.project_id) {
+            mods.push(ModpackMod {
+                id: p.id.clone(),
+                name: p.title.clone(),
+                icon_url: p.icon_url.clone(),
+                author: None,
+                url: Some(format!("https://modrinth.com/mod/{}", p.slug)),
+            });
+        } else {
+            mods.push(ModpackMod {
+                id: v.project_id.clone(),
+                name: v.project_id.clone(),
+                icon_url: None,
+                author: None,
+                url: Some(format!("https://modrinth.com/mod/{}", v.project_id)),
+            });
+        }
+    }
+
+    mods.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(mods)
 }

@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
   import { listen } from "@tauri-apps/api/event";
+  import { openUrl } from "@tauri-apps/plugin-opener";
   import { marked } from "marked";
   import {
     Package,
@@ -21,12 +22,16 @@
     SquareCheck,
     Square,
     Minus,
+    Maximize2,
   } from "@lucide/svelte";
   import { Button } from "$lib/ui/button";
   import { Input } from "$lib/ui/input";
   import * as Select from "$lib/ui/select";
+  import { Skeleton } from "$lib/ui/skeleton";
   import { contentStore } from "$lib/stores/content.svelte";
   import * as contentService from "$lib/services/content";
+  import ScreenshotLightbox from "$lib/components/ScreenshotLightbox.svelte";
+  import DescriptionModal from "$lib/components/DescriptionModal.svelte";
   import type {
     Content,
     ContentDownloadProgress,
@@ -53,6 +58,11 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
   let selectedContentDetail = $state<Content | null>(null);
   let isLoadingDetail = $state(false);
   let detailError = $state<string | null>(null);
+  let detailTab = $state<"about" | "gallery">("about");
+  let galleryLightboxIndex = $state<number | null>(null);
+  let descriptionExpanded = $state(false);
+  let currentGallery = $derived(selectedContentDetail?.gallery ?? []);
+  let detailRequestId = $state(0);
 
   // Navigation history for dependency drilling
   let contentHistory = $state<Content[]>([]);
@@ -137,6 +147,11 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
   let isInstalling = $state(false);
   let installSuccess = $state<string | null>(null);
   let installError = $state<string | null>(null);
+  let quickInstallName = $state<string | null>(null);
+  let quickInstallContentId = $state<string | null>(null);
+  let showQuickInstallProgress = $state(false);
+  let quickInstallError = $state<string | null>(null);
+  let quickInstallRequestId = $state(0);
 
   // Helper auto-install state (Fabric API / Iris)
   let isInstallingHelper = $state(false);
@@ -147,6 +162,7 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
   // Uninstall state
   let isUninstalling = $state(false);
   let uninstallError = $state<string | null>(null);
+  let quickUninstallContentId = $state<string | null>(null);
 
   // Bulk action state
   let isBulkActioning = $state(false);
@@ -189,6 +205,10 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     await contentStore.setContentType(type);
     // Clear selection when changing content type
     selectedItems.clear();
+    showQuickInstallProgress = false;
+    quickInstallName = null;
+    quickInstallContentId = null;
+    quickInstallError = null;
     if (viewMode === "browse") {
       contentStore.search();
     }
@@ -449,21 +469,50 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     }
   }
 
+  async function handleDescriptionLinkClick(e: MouseEvent) {
+    const target = e.target as HTMLElement | null;
+    const anchor = target?.closest("a") as HTMLAnchorElement | null;
+    if (!anchor) return;
+
+    const href = anchor.getAttribute("href");
+    if (!href || href.startsWith("#")) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await openUrl(href);
+    } catch (err) {
+      console.error("Failed to open URL:", href, err);
+    }
+  }
+
   async function handleContentClick(content: Content) {
     installSuccess = null;
     installError = null;
     uninstallError = null;
+    detailTab = "about";
+    galleryLightboxIndex = null;
+    descriptionExpanded = false;
+    showQuickInstallProgress = false;
+    quickInstallName = null;
+    quickInstallContentId = null;
+    quickInstallError = null;
     isLoadingDetail = true;
     detailError = null;
     contentHistory = [];
+    selectedContentDetail = content;
+    const requestId = ++detailRequestId;
 
     try {
       const detailed = await contentStore.selectContent(content);
+      if (requestId !== detailRequestId) return;
       selectedContentDetail = detailed || content;
     } catch (e) {
+      if (requestId !== detailRequestId) return;
       detailError = e instanceof Error ? e.message : "Failed to load content details";
       selectedContentDetail = content;
     } finally {
+      if (requestId !== detailRequestId) return;
       isLoadingDetail = false;
     }
   }
@@ -472,6 +521,9 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     selectedContentDetail = null;
     contentHistory = [];
     detailError = null;
+    detailTab = "about";
+    galleryLightboxIndex = null;
+    descriptionExpanded = false;
     isLoadingDetail = false;
     contentStore.clearSelection();
   }
@@ -487,15 +539,23 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     if (selectedContentDetail) {
       contentHistory = [...contentHistory, selectedContentDetail];
     }
+    detailTab = "about";
+    galleryLightboxIndex = null;
+    descriptionExpanded = false;
     isLoadingDetail = true;
     detailError = null;
+    selectedContentDetail = content;
+    const requestId = ++detailRequestId;
     try {
       const detailed = await contentStore.selectContent(content);
+      if (requestId !== detailRequestId) return;
       selectedContentDetail = detailed || content;
     } catch (e) {
+      if (requestId !== detailRequestId) return;
       detailError = e instanceof Error ? e.message : "Failed to load dependency";
       selectedContentDetail = content;
     } finally {
+      if (requestId !== detailRequestId) return;
       isLoadingDetail = false;
     }
   }
@@ -506,17 +566,43 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     const previous = contentHistory[contentHistory.length - 1];
     contentHistory = contentHistory.slice(0, -1);
 
+    detailTab = "about";
+    galleryLightboxIndex = null;
+    descriptionExpanded = false;
     isLoadingDetail = true;
     detailError = null;
+    selectedContentDetail = previous;
+    const requestId = ++detailRequestId;
     try {
       const detailed = await contentStore.selectContent(previous);
+      if (requestId !== detailRequestId) return;
       selectedContentDetail = detailed || previous;
     } catch (e) {
+      if (requestId !== detailRequestId) return;
       detailError = e instanceof Error ? e.message : "Failed to load previous content";
       selectedContentDetail = previous;
     } finally {
+      if (requestId !== detailRequestId) return;
       isLoadingDetail = false;
     }
+  }
+
+  function openGalleryLightbox(index: number) {
+    galleryLightboxIndex = index;
+  }
+
+  function closeGalleryLightbox() {
+    galleryLightboxIndex = null;
+  }
+
+  function prevGalleryLightbox() {
+    if (galleryLightboxIndex === null) return;
+    galleryLightboxIndex = Math.max(0, galleryLightboxIndex - 1);
+  }
+
+  function nextGalleryLightbox() {
+    if (galleryLightboxIndex === null) return;
+    galleryLightboxIndex = Math.min(currentGallery.length - 1, galleryLightboxIndex + 1);
   }
 
   async function handleInstall() {
@@ -526,6 +612,10 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     installSuccess = null;
     installError = null;
     contentStore.setDownloadProgress(null);
+    showQuickInstallProgress = false;
+    quickInstallName = null;
+    quickInstallContentId = null;
+    quickInstallError = null;
 
     try {
       console.log("[ContentBrowser] Installing:", selectedContentDetail.name, contentStore.selectedVersion.versionNumber);
@@ -638,6 +728,106 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     if (remaining < LOAD_MORE_THRESHOLD_PX) {
       contentStore.loadMore();
     }
+  }
+
+  async function handleQuickInstall(content: Content) {
+    if (isInstalling) return;
+    if (contentStore.isContentInstalled(content)) return;
+
+    isInstalling = true;
+    showQuickInstallProgress = true;
+    quickInstallName = content.name;
+    quickInstallContentId = content.id;
+    quickInstallError = null;
+    installSuccess = null;
+    installError = null;
+    uninstallError = null;
+    contentStore.setDownloadProgress(null);
+    const requestId = ++quickInstallRequestId;
+
+    try {
+      const shouldFilterByLoader = content.contentType === "mod";
+      const latestVersions = await contentService.getContentVersions(
+        content.platform,
+        content.id,
+        mcVersion,
+        shouldFilterByLoader && loaderType !== "vanilla" ? loaderType : undefined
+      );
+      const latest = latestVersions[0];
+      if (!latest) {
+        throw new Error("No compatible versions found");
+      }
+
+      await contentService.installContentWithDependencies(
+        instanceId,
+        content.platform,
+        content,
+        latest,
+        mcVersion,
+        loaderType === "vanilla" ? undefined : loaderType
+      );
+
+      if (requestId !== quickInstallRequestId) return;
+      await contentStore.refreshInstalledContent();
+      showQuickInstallProgress = false;
+      quickInstallName = null;
+      quickInstallContentId = null;
+      quickInstallError = null;
+    } catch (e: unknown) {
+      if (requestId !== quickInstallRequestId) return;
+      console.error("[ContentBrowser] Quick install failed:", e);
+      quickInstallError = e instanceof Error ? e.message : (typeof e === "string" ? e : JSON.stringify(e));
+    } finally {
+      if (requestId !== quickInstallRequestId) return;
+      isInstalling = false;
+      contentStore.setDownloadProgress(null);
+    }
+  }
+
+  async function handleQuickUninstall(content: Content) {
+    if (isUninstalling) return;
+    if (!contentStore.isContentInstalled(content)) return;
+
+    // Find the matching installed item from scan result to get the filename
+    const installedItem = contentStore.scanResult?.items.find((item) => {
+      if (content.platform === "modrinth") {
+        return item.modrinthProject?.projectId === content.id;
+      } else if (content.platform === "curseforge") {
+        const contentIdNum = parseInt(content.id, 10);
+        return item.curseforgeProject?.projectId === contentIdNum;
+      }
+      return false;
+    });
+
+    if (!installedItem) {
+      console.error("[ContentBrowser] Could not find installed file for:", content.name);
+      return;
+    }
+
+    isUninstalling = true;
+    quickUninstallContentId = content.id;
+
+    try {
+      await contentService.uninstallContentByFilename(
+        instanceId,
+        installedItem.filename,
+        content.contentType
+      );
+      await contentStore.refreshInstalledContent();
+    } catch (e: unknown) {
+      console.error("[ContentBrowser] Quick uninstall failed:", e);
+    } finally {
+      isUninstalling = false;
+      quickUninstallContentId = null;
+    }
+  }
+
+  function dismissQuickInstallProgress() {
+    showQuickInstallProgress = false;
+    quickInstallName = null;
+    quickInstallContentId = null;
+    quickInstallError = null;
+    contentStore.setDownloadProgress(null);
   }
 </script>
 
@@ -856,53 +1046,87 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
 
       <div class="space-y-2">
         {#each contentStore.items as content (content.id)}
-          <button
-            class="w-full border-2 border-border bg-background p-3 hover:border-primary/50 transition-colors text-left flex gap-3"
-            onclick={() => handleContentClick(content)}
-          >
-            {#if content.iconUrl}
-              <img
-                src={content.iconUrl}
-                alt={content.name}
-                class="w-12 h-12 object-cover rounded flex-shrink-0"
-              />
-            {:else}
-              <div class="w-12 h-12 bg-muted flex items-center justify-center rounded flex-shrink-0">
-                <Package class="h-6 w-6 text-muted-foreground/50" />
-              </div>
-            {/if}
-            <div class="flex-1 min-w-0">
-              <div class="flex items-start justify-between gap-2">
+          {@const isThisInstalling = isInstalling && quickInstallContentId === content.id}
+          {@const isInstalled = contentStore.isContentInstalled(content)}
+          <div class="w-full border-2 border-border bg-background p-3 hover:border-primary/50 transition-colors relative">
+            <button
+              type="button"
+              class="w-full text-left flex gap-3 min-w-0"
+              onclick={() => handleContentClick(content)}
+            >
+              {#if content.iconUrl}
+                <img
+                  src={content.iconUrl}
+                  alt={content.name}
+                  class="w-12 h-12 object-cover rounded flex-shrink-0"
+                />
+              {:else}
+                <div class="w-12 h-12 bg-muted flex items-center justify-center rounded flex-shrink-0">
+                  <Package class="h-6 w-6 text-muted-foreground/50" />
+                </div>
+              {/if}
+              <div class="flex-1 min-w-0 pr-16">
                 <div class="flex items-center gap-2 min-w-0">
                   <h3 class="font-medium truncate">{content.name}</h3>
-                  {#if contentStore.isContentInstalled(content)}
+                  {#if isInstalled}
                     <span class="text-xs bg-green-500/20 text-green-500 px-1.5 py-0.5 rounded flex items-center gap-1 flex-shrink-0">
                       <CheckCircle class="h-3 w-3" />
                       Installed
                     </span>
                   {/if}
                 </div>
-                <span
-                  class="text-xs px-1.5 py-0.5 border rounded flex-shrink-0 {getPlatformColor(content.platform)}"
-                >
-                  {content.platform}
-                </span>
+                <p class="text-xs text-muted-foreground truncate">{content.author}</p>
+                <p class="text-xs text-muted-foreground mt-1 line-clamp-1">
+                  {content.description}
+                </p>
+                <div class="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                  <span class="flex items-center gap-1">
+                    <Download class="h-3 w-3" />
+                    {formatDownloads(content.downloads)}
+                  </span>
+                  {#each content.loaders.filter(l => l !== "unknown").slice(0, 2) as loader (loader)}
+                    <span class="px-1 rounded {getLoaderColor(loader)}">{loader}</span>
+                  {/each}
+                </div>
               </div>
-              <p class="text-xs text-muted-foreground truncate">{content.author}</p>
-              <p class="text-xs text-muted-foreground mt-1 line-clamp-1">
-                {content.description}
-              </p>
-              <div class="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                <span class="flex items-center gap-1">
+            </button>
+
+            <span
+              class="absolute top-3 right-3 text-[10px] px-1 py-0.5 border rounded pointer-events-none {getPlatformColor(content.platform)}"
+            >
+              {content.platform}
+            </span>
+
+            {#if isInstalled}
+              {@const isThisUninstalling = isUninstalling && quickUninstallContentId === content.id}
+              <button
+                class="absolute bottom-2 right-2 text-[10px] px-2 py-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                onclick={(e) => { e.stopPropagation(); handleQuickUninstall(content); }}
+                disabled={isUninstalling}
+              >
+                {#if isThisUninstalling}
+                  <Loader2 class="h-3 w-3 animate-spin" />
+                  Removing...
+                {:else}
+                  <Trash2 class="h-3 w-3" />
+                  Uninstall
+                {/if}
+              </button>
+            {:else}
+              <button
+                class="absolute bottom-2 right-2 text-[10px] px-2 py-1 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                onclick={(e) => { e.stopPropagation(); handleQuickInstall(content); }}
+                disabled={isInstalling || contentStore.isScanning}
+              >
+                {#if isThisInstalling}
+                  <Loader2 class="h-3 w-3 animate-spin" />
+                {:else}
                   <Download class="h-3 w-3" />
-                  {formatDownloads(content.downloads)}
-                </span>
-                {#each content.loaders.filter(l => l !== "unknown").slice(0, 2) as loader (loader)}
-                  <span class="px-1 rounded {getLoaderColor(loader)}">{loader}</span>
-                {/each}
-              </div>
-            </div>
-          </button>
+                {/if}
+                {isThisInstalling ? "Installing..." : "Install"}
+              </button>
+            {/if}
+          </div>
         {/each}
       </div>
 
@@ -1112,6 +1336,58 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
       </div>
     </div>
   {/if}
+
+  {#if showQuickInstallProgress}
+    <div class="absolute bottom-4 left-4 right-4 z-50 pointer-events-none">
+      <div class="bg-card border-2 border-border rounded-lg shadow-lg p-4 pointer-events-auto">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="text-sm font-medium truncate">
+              {#if quickInstallName}
+                Installing {quickInstallName}
+              {:else}
+                Installing...
+              {/if}
+            </div>
+            {#if quickInstallError}
+              <div class="text-xs text-destructive mt-1">{quickInstallError}</div>
+            {:else if contentStore.downloadProgress}
+              <div class="text-xs text-muted-foreground mt-1 truncate">
+                Downloading {contentStore.downloadProgress.filename}
+              </div>
+            {:else}
+              <div class="text-xs text-muted-foreground mt-1">Preparing...</div>
+            {/if}
+          </div>
+          <Button variant="secondary" size="icon" onclick={dismissQuickInstallProgress} aria-label="Dismiss">
+            <X class="h-4 w-4" />
+          </Button>
+        </div>
+
+        {#if contentStore.downloadProgress}
+          <div class="mt-3 p-3 bg-primary/5 border-2 border-primary/30 rounded">
+            <div class="flex items-center justify-between text-sm mb-2">
+              <span class="text-muted-foreground truncate flex-1 mr-2">
+                {contentStore.downloadProgress.filename}
+              </span>
+              <span class="text-primary font-medium flex-shrink-0">
+                {contentStore.downloadProgress.progressPercent}%
+              </span>
+            </div>
+            <div class="h-2 bg-muted rounded-full overflow-hidden">
+              <div
+                class="h-full bg-primary transition-all duration-150 ease-out"
+                style="width: {contentStore.downloadProgress.progressPercent}%"
+              ></div>
+            </div>
+            <div class="text-xs text-muted-foreground mt-1">
+              {formatBytes(contentStore.downloadProgress.downloadedBytes)} / {formatBytes(contentStore.downloadProgress.totalBytes)}
+            </div>
+          </div>
+        {/if}
+      </div>
+    </div>
+  {/if}
   {/if}
 </div>
 
@@ -1214,28 +1490,61 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
 
       <div class="flex-1 overflow-hidden p-5 grid gap-4 grid-cols-1 md:grid-cols-[1.8fr_1fr] xl:grid-cols-[2fr_1fr] min-h-0">
         <div class="space-y-4 overflow-y-auto pr-1 min-h-0">
-          {#if isLoadingDetail}
-            <div class="flex items-center gap-2 text-muted-foreground text-sm">
-              <Loader2 class="h-4 w-4 animate-spin" />
-              Loading content details...
+          {#if detailError}
+            <div class="p-3 bg-destructive/10 border-2 border-destructive rounded text-destructive text-sm">
+              {detailError}
             </div>
-          {:else}
-            {#if detailError}
-              <div class="p-3 bg-destructive/10 border-2 border-destructive rounded text-destructive text-sm">
-                {detailError}
+          {/if}
+
+          <div class="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant={detailTab === "about" ? "default" : "secondary"}
+              onclick={() => (detailTab = "about")}
+              disabled={isLoadingDetail}
+            >
+              About
+            </Button>
+            <Button
+              size="sm"
+              variant={detailTab === "gallery" ? "default" : "secondary"}
+              disabled={isLoadingDetail || (selectedContentDetail.gallery?.length ?? 0) === 0}
+              onclick={() => (detailTab = "gallery")}
+            >
+              Gallery
+            </Button>
+          </div>
+
+          {#if isLoadingDetail}
+            <div class="border-2 border-border rounded-lg bg-background/70 p-4 space-y-3">
+              <div class="flex items-center justify-between gap-2">
+                <Skeleton class="h-4 w-20" />
+                <Skeleton class="h-8 w-28" />
               </div>
-            {/if}
-            {#if selectedContentDetail.gallery?.length}
+              <div class="space-y-2">
+                <Skeleton class="h-4 w-full" />
+                <Skeleton class="h-4 w-[92%]" />
+                <Skeleton class="h-4 w-[84%]" />
+                <Skeleton class="h-4 w-[88%]" />
+                <Skeleton class="h-4 w-[70%]" />
+              </div>
+            </div>
+          {:else if detailTab === "gallery"}
+            {#if (selectedContentDetail.gallery?.length ?? 0) > 0}
               <div class="space-y-2">
                 <div class="flex items-center justify-between">
                   <h3 class="text-sm font-semibold">Gallery</h3>
                   <span class="text-xs text-muted-foreground">
-                    {selectedContentDetail.gallery.length} images
+                    {selectedContentDetail.gallery?.length ?? 0} images
                   </span>
                 </div>
                 <div class="grid gap-3 sm:grid-cols-2">
-                  {#each selectedContentDetail.gallery as image (image.rawUrl ?? image.url)}
-                    <div class="relative overflow-hidden rounded-lg border-2 border-border bg-muted/50 aspect-video">
+                  {#each selectedContentDetail.gallery ?? [] as image, idx (image.rawUrl ?? image.url)}
+                    <button
+                      type="button"
+                      class="relative overflow-hidden rounded-lg border-2 border-border bg-muted/50 aspect-video text-left cursor-pointer"
+                      onclick={() => openGalleryLightbox(idx)}
+                    >
                       <img
                         src={image.rawUrl ?? image.url}
                         alt={image.title ?? selectedContentDetail.name}
@@ -1252,29 +1561,47 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
                           {/if}
                         </div>
                       {/if}
-                    </div>
+                    </button>
                   {/each}
                 </div>
               </div>
+            {:else}
+              <p class="text-sm text-muted-foreground">No gallery available.</p>
             {/if}
-
+          {:else}
             <div class="border-2 border-border rounded-lg bg-background/70 p-4 space-y-2">
               <div class="flex items-center justify-between gap-2">
                 <h3 class="text-sm font-semibold">About</h3>
-                {#if selectedContentDetail.url}
-                  <a
-                    href={selectedContentDetail.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="inline-flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/80 px-2.5 py-1.5 rounded transition-colors"
+                <div class="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onclick={() => (descriptionExpanded = true)}
+                    disabled={!selectedContentDetail.body && !selectedContentDetail.description}
                   >
-                    <ExternalLink class="h-3.5 w-3.5" />
-                    View on {selectedContentDetail.platform}
-                  </a>
-                {/if}
+                    <Maximize2 class="h-4 w-4 mr-1" />
+                    Expand
+                  </Button>
+                  {#if selectedContentDetail.url}
+                    <a
+                      href={selectedContentDetail.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="inline-flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/80 px-2.5 py-1.5 rounded transition-colors"
+                    >
+                      <ExternalLink class="h-3.5 w-3.5" />
+                      View on {selectedContentDetail.platform}
+                    </a>
+                  {/if}
+                </div>
               </div>
               {#if selectedContentDetail.body || selectedContentDetail.description}
-                <div class="text-sm leading-relaxed [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_img]:max-w-full [&_img]:rounded-md [&_img]:my-2 [&_h1]:text-lg [&_h2]:text-base [&_h1]:font-semibold [&_h2]:font-semibold [&_a]:text-primary [&_a]:underline">
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div
+                  class="text-sm leading-relaxed [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_img]:max-w-full [&_img]:rounded-md [&_img]:my-2 [&_h1]:text-lg [&_h2]:text-base [&_h1]:font-semibold [&_h2]:font-semibold [&_a]:text-primary [&_a]:underline"
+                  onclick={handleDescriptionLinkClick}
+                >
                   <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                   {@html renderDescription(selectedContentDetail.body || selectedContentDetail.description)}
                 </div>
@@ -1289,9 +1616,14 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
           <div class="border-2 border-border rounded-lg bg-background/70 p-4">
             <h3 class="font-semibold mb-2 text-sm">Select Version</h3>
             {#if contentStore.isLoadingVersions}
-              <div class="flex items-center gap-2 text-muted-foreground text-sm">
-                <Loader2 class="h-4 w-4 animate-spin" />
-                Loading versions...
+              <div class="space-y-2">
+                <div class="flex items-center gap-2 text-muted-foreground text-sm">
+                  <Loader2 class="h-4 w-4 animate-spin" />
+                  Loading versions...
+                </div>
+                <Skeleton class="h-9 w-full" />
+                <Skeleton class="h-9 w-full" />
+                <Skeleton class="h-9 w-full" />
               </div>
             {:else if contentStore.selectedContentVersions.length === 0}
               <p class="text-sm text-muted-foreground">No compatible versions found</p>
@@ -1511,3 +1843,21 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     </div>
   </div>
 {/if}
+
+<ScreenshotLightbox
+  open={galleryLightboxIndex !== null}
+  src={galleryLightboxIndex !== null ? (currentGallery[galleryLightboxIndex]?.rawUrl ?? currentGallery[galleryLightboxIndex]?.url ?? null) : null}
+  filename={galleryLightboxIndex !== null ? (currentGallery[galleryLightboxIndex]?.title ?? `Image ${galleryLightboxIndex + 1}`) : undefined}
+  canPrev={galleryLightboxIndex !== null && galleryLightboxIndex > 0}
+  canNext={galleryLightboxIndex !== null && galleryLightboxIndex < currentGallery.length - 1}
+  onClose={closeGalleryLightbox}
+  onPrev={prevGalleryLightbox}
+  onNext={nextGalleryLightbox}
+/>
+
+<DescriptionModal
+  open={descriptionExpanded && !!selectedContentDetail}
+  title={selectedContentDetail ? `${selectedContentDetail.name} — Description` : "Description"}
+  html={selectedContentDetail ? renderDescription(selectedContentDetail.body || selectedContentDetail.description) : ""}
+  onClose={() => (descriptionExpanded = false)}
+/>

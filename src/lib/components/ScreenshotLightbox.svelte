@@ -73,16 +73,17 @@
         <p class="text-muted-foreground">Unable to load image.</p>
       {/if}
 
-      <div class="absolute top-4 right-4 flex gap-2">
+      <div class="absolute top-4 right-4 flex gap-2 z-20 pointer-events-auto">
         <Button variant="secondary" size="icon" onclick={() => onClose()} aria-label="Close">
           <X class="h-5 w-5" />
         </Button>
       </div>
 
-      <div class="absolute inset-y-0 left-2 flex items-center">
+      <div class="absolute inset-y-0 left-2 flex items-center z-10 pointer-events-none">
         <Button
           variant="secondary"
           size="icon"
+          class="pointer-events-auto"
           onclick={() => onPrev?.()}
           disabled={!canPrev}
           aria-label="Previous"
@@ -90,10 +91,11 @@
           <ChevronLeft class="h-5 w-5" />
         </Button>
       </div>
-      <div class="absolute inset-y-0 right-2 flex items-center">
+      <div class="absolute inset-y-0 right-2 flex items-center z-10 pointer-events-none">
         <Button
           variant="secondary"
           size="icon"
+          class="pointer-events-auto"
           onclick={() => onNext?.()}
           disabled={!canNext}
           aria-label="Next"
@@ -103,7 +105,7 @@
       </div>
 
       {#if filename}
-        <div class="absolute bottom-4 left-0 right-0 text-center text-sm text-white/80">
+        <div class="absolute bottom-4 left-0 right-0 text-center text-sm text-white/80 pointer-events-none">
           {filename}
         </div>
       {/if}

@@ -1,7 +1,7 @@
 use crate::error::AppError;
 use crate::models::{
     LoaderType, Modpack, ModpackFile, ModpackSearchParams, ModpackSearchResult,
-    ModpackVersion,
+    ModpackMod, ModpackVersion,
 };
 use crate::models::instance::ModpackPlatform;
 use reqwest::Client;
@@ -212,6 +212,7 @@ pub async fn search_modpacks(
             downloads: 0, // Would need to fetch individual pack
             platform: ModpackPlatform::Technic,
             categories: vec![],
+            gallery: Vec::new(),
             mc_versions: vec![],
             loaders: vec![LoaderType::Unknown], // Technic search doesn't include loader info
             latest_version: None,
@@ -262,13 +263,14 @@ pub async fn get_modpack(client: &Client, slug: &str) -> Result<Modpack, AppErro
         slug: pack.slug.unwrap_or_else(|| slug.to_string()),
         name: pack.display_name.unwrap_or(pack.name),
         author: pack.user.unwrap_or_else(|| "Unknown".to_string()),
-        description: pack.description.unwrap_or_default(),
-        body: None,
+        description: pack.description.clone().unwrap_or_default(),
+        body: pack.description.clone(),
         icon_url: pack.icon.and_then(|i| i.url),
         banner_url: pack.background.and_then(|b| b.url),
         downloads: pack.downloads.unwrap_or(0),
         platform: ModpackPlatform::Technic,
         categories: vec![],
+        gallery: Vec::new(),
         mc_versions,
         loaders,
         latest_version: None,
@@ -276,6 +278,34 @@ pub async fn get_modpack(client: &Client, slug: &str) -> Result<Modpack, AppErro
         updated_at: None,
         created_at: None,
     })
+}
+
+/// Get a mod list for a Technic modpack version (Solder packs only, best-effort)
+pub async fn get_modpack_mods(
+    client: &Client,
+    slug: &str,
+    version_id: &str,
+) -> Result<Vec<ModpackMod>, AppError> {
+    let pack = get_modpack_full(client, slug).await?;
+    let Some(solder_url) = pack.solder else {
+        return Ok(vec![]);
+    };
+
+    let build = get_solder_build(client, &solder_url, slug, version_id).await?;
+    let mut mods: Vec<ModpackMod> = build
+        .mods
+        .into_iter()
+        .map(|m| ModpackMod {
+            id: m.name.clone(),
+            name: format!("{} {}", m.name, m.version),
+            icon_url: None,
+            author: None,
+            url: Some(m.url),
+        })
+        .collect();
+
+    mods.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(mods)
 }
 
 /// Get versions for a modpack

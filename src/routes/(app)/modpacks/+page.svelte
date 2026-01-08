@@ -11,8 +11,11 @@
     Filter,
     X,
     ChevronDown,
+    Maximize2,
   } from "@lucide/svelte";
+  import { marked } from "marked";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+  import { openUrl } from "@tauri-apps/plugin-opener";
   import { Button } from "$lib/ui/button";
   import { Checkbox } from "$lib/ui/checkbox";
   import { Input } from "$lib/ui/input";
@@ -20,7 +23,10 @@
   import { modpacksStore } from "$lib/stores/modpacks.svelte";
   import { versionsStore } from "$lib/stores/versions.svelte";
   import DownloadProgress from "$lib/components/DownloadProgress.svelte";
-  import type { Modpack, ModpackPlatform, ModpackSortBy, LoaderType, ModpackInstallProgress } from "$lib/types";
+  import ScreenshotLightbox from "$lib/components/ScreenshotLightbox.svelte";
+  import DescriptionModal from "$lib/components/DescriptionModal.svelte";
+  import * as modpackService from "$lib/services/modpack";
+  import type { Modpack, ModpackMod, ModpackPlatform, ModpackSortBy, LoaderType, ModpackInstallProgress } from "$lib/types";
 
   // Category options per platform
   const modrinthCategories = [
@@ -37,11 +43,19 @@
   let searchInput = $state("");
   let showFilters = $state(false);
   let selectedModpackDetail = $state<Modpack | null>(null);
+  let modpackDetailTab = $state<"about" | "gallery" | "mods">("about");
+  let modpackLightboxIndex = $state<number | null>(null);
+  let descriptionExpanded = $state(false);
+  let selectedVersionId = $state<string | null>(null);
+  let isLoadingMods = $state(false);
+  let modsError = $state<string | null>(null);
+  let modListCache = $state<Record<string, ModpackMod[]>>({});
   let installProgress = $state<ModpackInstallProgress | null>(null);
   let loadMoreSentinel: HTMLDivElement | undefined = $state();
   let selectedCategories = $state<string[]>([]);
   let categoriesOpen = $state(false);
   let hasUserScrolled = $state(false);
+  let currentModpackGallery = $derived(selectedModpackDetail?.gallery ?? []);
 
   // Get available categories based on platform
   let availableCategories = $derived(
@@ -218,15 +232,114 @@
     }
   }
 
+  function renderDescription(body?: string | null, fallback?: string): string {
+    const source = (body && body.trim()) || fallback || "";
+    if (!source) return "";
+
+    const trimmed = source.trim();
+    const looksLikeHtml = /^</.test(trimmed) && /<\/?[a-z][\s\S]*>/i.test(trimmed);
+
+    try {
+      return looksLikeHtml ? trimmed : (marked.parse(trimmed) as string);
+    } catch (e) {
+      console.error("Failed to render description", e);
+      return trimmed.replace(/\n/g, "<br/>");
+    }
+  }
+
+  async function handleDescriptionLinkClick(e: MouseEvent) {
+    const target = e.target as HTMLElement | null;
+    const anchor = target?.closest("a") as HTMLAnchorElement | null;
+    if (!anchor) return;
+
+    const href = anchor.getAttribute("href");
+    if (!href || href.startsWith("#")) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await openUrl(href);
+    } catch (err) {
+      console.error("Failed to open URL:", href, err);
+    }
+  }
+
   async function handleModpackClick(modpack: Modpack) {
+    modpackDetailTab = "about";
+    modpackLightboxIndex = null;
+    descriptionExpanded = false;
+    selectedVersionId = null;
+    isLoadingMods = false;
+    modsError = null;
+    modListCache = {};
     selectedModpackDetail = modpack;
-    await modpacksStore.selectModpack(modpack);
+    selectedModpackDetail = await modpacksStore.selectModpack(modpack);
+    selectedVersionId = modpacksStore.selectedModpackVersions[0]?.id ?? null;
   }
 
   function closeModpackDetail() {
     selectedModpackDetail = null;
+    modpackDetailTab = "about";
+    modpackLightboxIndex = null;
+    descriptionExpanded = false;
+    selectedVersionId = null;
+    isLoadingMods = false;
+    modsError = null;
+    modListCache = {};
     modpacksStore.clearSelection();
   }
+
+  function openModpackLightbox(index: number) {
+    modpackLightboxIndex = index;
+  }
+
+  function closeModpackLightbox() {
+    modpackLightboxIndex = null;
+  }
+
+  function prevModpackLightbox() {
+    if (modpackLightboxIndex === null) return;
+    modpackLightboxIndex = Math.max(0, modpackLightboxIndex - 1);
+  }
+
+  function nextModpackLightbox() {
+    if (modpackLightboxIndex === null) return;
+    modpackLightboxIndex = Math.min(currentModpackGallery.length - 1, modpackLightboxIndex + 1);
+  }
+
+  function isModListSupported(platform: ModpackPlatform): boolean {
+    return platform === "modrinth" || platform === "curseforge" || platform === "ftb" || platform === "technic";
+  }
+
+  async function loadModList() {
+    if (!selectedModpackDetail || !selectedVersionId) return;
+    if (!isModListSupported(selectedModpackDetail.platform)) return;
+    if (modListCache[selectedVersionId]) return;
+
+    isLoadingMods = true;
+    modsError = null;
+    try {
+      const mods = await modpackService.getModpackMods(
+        selectedModpackDetail.platform,
+        selectedModpackDetail.id,
+        selectedVersionId
+      );
+      modListCache = { ...modListCache, [selectedVersionId]: mods };
+    } catch (e: any) {
+      console.error("Failed to load mod list:", e);
+      modsError = e?.message || (typeof e === "string" ? e : JSON.stringify(e));
+    } finally {
+      isLoadingMods = false;
+    }
+  }
+
+  $effect(() => {
+    if (modpackDetailTab !== "mods") return;
+    // Track dependencies for re-run when selection changes
+    selectedVersionId;
+    selectedModpackDetail?.platform;
+    void loadModList();
+  });
 
   async function handleInstall(versionId: string) {
     if (!selectedModpackDetail) return;
@@ -552,7 +665,7 @@
 <!-- Modpack Detail Modal -->
  {#if selectedModpackDetail}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-    <div class="bg-card border-2 border-border max-w-2xl w-full max-h-[80vh] flex flex-col">
+    <div class="bg-card border-2 border-border max-w-5xl w-full max-h-[85vh] flex flex-col">
       <!-- Header -->
       <div class="p-6 border-b border-border flex-shrink-0">
         <div class="flex gap-4">
@@ -600,66 +713,240 @@
         </div>
       </div>
 
-      <!-- Scrollable Content (Description + Versions) -->
-      <div class="flex-1 overflow-y-auto min-h-0">
-        <!-- Description -->
-        <div class="p-6 border-b border-border">
-          <p class="text-sm">{selectedModpackDetail.description}</p>
-          {#if selectedModpackDetail.url}
-            <a
-              href={selectedModpackDetail.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="inline-flex items-center gap-1.5 text-sm bg-muted hover:bg-muted/80 px-3 py-1.5 rounded mt-3 transition-colors"
-            >
-              <ExternalLink class="h-4 w-4" />
-              View on {selectedModpackDetail.platform}
-            </a>
-          {/if}
-        </div>
+      <div class="flex-1 overflow-hidden p-5 grid gap-4 grid-cols-1 md:grid-cols-[1.8fr_1fr] xl:grid-cols-[2fr_1fr] min-h-0">
+          <div class="space-y-4 overflow-y-auto pr-1 min-h-0">
+            <div class="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant={modpackDetailTab === "about" ? "default" : "secondary"}
+                onclick={() => (modpackDetailTab = "about")}
+              >
+                About
+              </Button>
+              <Button
+                size="sm"
+                variant={modpackDetailTab === "gallery" ? "default" : "secondary"}
+                disabled={(selectedModpackDetail.gallery?.length ?? 0) === 0}
+                onclick={() => (modpackDetailTab = "gallery")}
+              >
+                Gallery
+              </Button>
+              <Button
+                size="sm"
+                variant={modpackDetailTab === "mods" ? "default" : "secondary"}
+                disabled={!selectedVersionId || !isModListSupported(selectedModpackDetail.platform)}
+                onclick={() => (modpackDetailTab = "mods")}
+              >
+                Mods
+              </Button>
+            </div>
 
-        <!-- Versions -->
-        <div class="p-6">
-          <h3 class="font-semibold mb-3">Versions</h3>
-        {#if modpacksStore.isLoadingVersions}
-          <div class="flex items-center gap-2 text-muted-foreground">
-            <Loader2 class="h-4 w-4 animate-spin" />
-            Loading versions...
-          </div>
-        {:else if modpacksStore.selectedModpackVersions.length === 0}
-          <p class="text-sm text-muted-foreground">No versions available</p>
-        {:else}
-          <div class="space-y-2 pb-4">
-            {#each modpacksStore.selectedModpackVersions.slice(0, 10) as version, versionIndex (version.id)}
-              <div class="flex items-center justify-between p-3 bg-muted/50 rounded">
-                <div>
-                  <div class="font-medium">{version.name}</div>
-                  <div class="text-xs text-muted-foreground">
-                    MC {version.mcVersion} &bull; {version.loaderType}
-                    {#if version.releasedAt}
-                      &bull; {new Date(version.releasedAt * 1000).toLocaleDateString()}
+            {#if modpackDetailTab === "mods"}
+              {#if !isModListSupported(selectedModpackDetail.platform)}
+                <p class="text-sm text-muted-foreground">Mod list is not available for this platform.</p>
+              {:else if !selectedVersionId}
+                <p class="text-sm text-muted-foreground">Select a version to view its mod list.</p>
+              {:else if isLoadingMods}
+                <div class="flex items-center gap-2 text-muted-foreground text-sm">
+                  <Loader2 class="h-4 w-4 animate-spin" />
+                  Loading mod list...
+                </div>
+              {:else if modsError}
+                <div class="p-3 bg-destructive/10 border-2 border-destructive rounded text-destructive text-sm">
+                  {modsError}
+                </div>
+              {:else if (modListCache[selectedVersionId]?.length ?? 0) === 0}
+                <p class="text-sm text-muted-foreground">No mods found for this version.</p>
+              {:else}
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-semibold">Mods</h3>
+                    <span class="text-xs text-muted-foreground">
+                      {modListCache[selectedVersionId]?.length ?? 0} mods
+                    </span>
+                  </div>
+                  <div class="border-2 border-border rounded-lg overflow-hidden">
+                    <div class="max-h-[60vh] overflow-y-auto">
+                      {#each modListCache[selectedVersionId] ?? [] as modItem (modItem.id)}
+                        <button
+                          type="button"
+                          class="w-full flex items-center gap-3 p-3 text-left hover:bg-muted/50 border-b border-border last:border-b-0"
+                          onclick={() => modItem.url && openUrl(modItem.url)}
+                          disabled={!modItem.url}
+                        >
+                          {#if modItem.iconUrl}
+                            <img
+                              src={modItem.iconUrl}
+                              alt={modItem.name}
+                              class="w-10 h-10 rounded object-cover border border-border bg-muted"
+                              loading="lazy"
+                            />
+                          {:else}
+                            <div class="w-10 h-10 rounded border border-border bg-muted flex items-center justify-center text-muted-foreground text-xs">
+                              MOD
+                            </div>
+                          {/if}
+                          <div class="min-w-0">
+                            <div class="font-medium text-sm truncate">{modItem.name}</div>
+                            {#if modItem.author}
+                              <div class="text-xs text-muted-foreground truncate">{modItem.author}</div>
+                            {/if}
+                          </div>
+                        </button>
+                      {/each}
+                    </div>
+                  </div>
+                </div>
+              {/if}
+            {:else if modpackDetailTab === "gallery"}
+              {#if (selectedModpackDetail.gallery?.length ?? 0) > 0}
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between">
+                    <h3 class="text-sm font-semibold">Gallery</h3>
+                    <span class="text-xs text-muted-foreground">
+                      {selectedModpackDetail.gallery?.length ?? 0} images
+                    </span>
+                  </div>
+                  <div class="grid gap-3 sm:grid-cols-2">
+                    {#each selectedModpackDetail.gallery ?? [] as image, idx (image.rawUrl ?? image.url)}
+                      <button
+                        type="button"
+                        class="relative overflow-hidden rounded-lg border-2 border-border bg-muted/50 aspect-video text-left cursor-pointer"
+                        onclick={() => openModpackLightbox(idx)}
+                      >
+                        <img
+                          src={image.rawUrl ?? image.url}
+                          alt={image.title ?? selectedModpackDetail.name}
+                          class="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                        {#if image.title || image.description}
+                          <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent text-white text-xs p-2 space-y-1">
+                            {#if image.title}
+                              <div class="font-semibold leading-tight truncate">{image.title}</div>
+                            {/if}
+                            {#if image.description}
+                              <p class="opacity-90 line-clamp-2 leading-snug">{image.description}</p>
+                            {/if}
+                          </div>
+                        {/if}
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {:else}
+                <p class="text-sm text-muted-foreground">No gallery available.</p>
+              {/if}
+            {:else}
+              <div class="border-2 border-border rounded-lg bg-background/70 p-4 space-y-2">
+                <div class="flex items-center justify-between gap-2">
+                  <h3 class="text-sm font-semibold">About</h3>
+                  <div class="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onclick={() => (descriptionExpanded = true)}
+                      disabled={!selectedModpackDetail.body && !selectedModpackDetail.description}
+                    >
+                      <Maximize2 class="h-4 w-4 mr-1" />
+                      Expand
+                    </Button>
+                    {#if selectedModpackDetail.url}
+                      <a
+                        href={selectedModpackDetail.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="inline-flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/80 px-2.5 py-1.5 rounded transition-colors"
+                      >
+                        <ExternalLink class="h-3.5 w-3.5" />
+                        View on {selectedModpackDetail.platform}
+                      </a>
                     {/if}
                   </div>
                 </div>
-                <Button
-                  size="sm"
-                  onclick={() => handleInstall(version.id)}
-                  disabled={modpacksStore.isInstalling}
-                  data-tutorial={versionIndex === 0 ? "modpack-install" : undefined}
-                >
-                  {#if modpacksStore.isInstalling}
-                    <Loader2 class="h-4 w-4 mr-1 animate-spin" />
-                    Installing...
-                  {:else}
-                    <Download class="h-4 w-4 mr-1" />
-                    Install
+
+                {#if modpacksStore.isLoadingDetail}
+                  <div class="flex items-center gap-2 text-muted-foreground text-sm">
+                    <Loader2 class="h-4 w-4 animate-spin" />
+                    Loading description...
+                  </div>
+                {:else}
+                  {#if modpacksStore.detailError}
+                    <div class="p-3 bg-destructive/10 border-2 border-destructive rounded text-destructive text-sm">
+                      {modpacksStore.detailError}
+                    </div>
                   {/if}
-                </Button>
+                  {#if selectedModpackDetail.body || selectedModpackDetail.description}
+                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <div
+                      class="text-sm leading-relaxed [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_img]:max-w-full [&_img]:rounded-md [&_img]:my-2 [&_h1]:text-lg [&_h2]:text-base [&_h1]:font-semibold [&_h2]:font-semibold [&_a]:text-primary [&_a]:underline"
+                      onclick={handleDescriptionLinkClick}
+                    >
+                      <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+                      {@html renderDescription(selectedModpackDetail.body, selectedModpackDetail.description)}
+                    </div>
+                  {:else}
+                    <p class="text-sm text-muted-foreground">No description available.</p>
+                  {/if}
+                {/if}
               </div>
-            {/each}
+            {/if}
           </div>
-        {/if}
-        </div>
+
+          <div class="space-y-3 overflow-y-auto pr-1 min-h-0">
+            <div class="border-2 border-border rounded-lg bg-background/70 p-4">
+              <h3 class="font-semibold mb-2 text-sm">Select Version</h3>
+              {#if modpacksStore.isLoadingVersions}
+                <div class="flex items-center gap-2 text-muted-foreground text-sm">
+                  <Loader2 class="h-4 w-4 animate-spin" />
+                  Loading versions...
+                </div>
+              {:else if modpacksStore.selectedModpackVersions.length === 0}
+                <p class="text-sm text-muted-foreground">No versions available</p>
+              {:else}
+                <div class="space-y-2 pb-1">
+                  {#each modpacksStore.selectedModpackVersions.slice(0, 15) as version, versionIndex (version.id)}
+                    {@const isSelected = selectedVersionId === version.id}
+                    <button
+                      type="button"
+                      class="w-full flex items-center justify-between gap-3 p-3 rounded border-2 transition-colors text-left {isSelected
+                        ? 'border-primary bg-primary/10'
+                        : 'border-border bg-muted/30 hover:border-primary/50'}"
+                      onclick={() => (selectedVersionId = version.id)}
+                    >
+                      <div class="min-w-0">
+                        <div class="font-medium text-sm truncate">{version.name}</div>
+                        <div class="text-xs text-muted-foreground">
+                          MC {version.mcVersion} &bull; {version.loaderType}
+                          {#if version.releasedAt}
+                            &bull; {new Date(version.releasedAt * 1000).toLocaleDateString()}
+                          {/if}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          handleInstall(version.id);
+                        }}
+                        disabled={modpacksStore.isInstalling}
+                        data-tutorial={versionIndex === 0 ? "modpack-install" : undefined}
+                      >
+                        {#if modpacksStore.isInstalling}
+                          <Loader2 class="h-4 w-4 mr-1 animate-spin" />
+                          Installing...
+                        {:else}
+                          <Download class="h-4 w-4 mr-1" />
+                          Install
+                        {/if}
+                      </Button>
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          </div>
       </div>
 
       <!-- Sticky Install Progress -->
@@ -677,3 +964,21 @@
     </div>
   </div>
 {/if}
+
+<ScreenshotLightbox
+  open={modpackLightboxIndex !== null}
+  src={modpackLightboxIndex !== null ? (currentModpackGallery[modpackLightboxIndex]?.rawUrl ?? currentModpackGallery[modpackLightboxIndex]?.url ?? null) : null}
+  filename={modpackLightboxIndex !== null ? (currentModpackGallery[modpackLightboxIndex]?.title ?? `Image ${modpackLightboxIndex + 1}`) : undefined}
+  canPrev={modpackLightboxIndex !== null && modpackLightboxIndex > 0}
+  canNext={modpackLightboxIndex !== null && modpackLightboxIndex < currentModpackGallery.length - 1}
+  onClose={closeModpackLightbox}
+  onPrev={prevModpackLightbox}
+  onNext={nextModpackLightbox}
+/>
+
+<DescriptionModal
+  open={descriptionExpanded && !!selectedModpackDetail}
+  title={selectedModpackDetail ? `${selectedModpackDetail.name} — Description` : "Description"}
+  html={selectedModpackDetail ? renderDescription(selectedModpackDetail.body, selectedModpackDetail.description) : ""}
+  onClose={() => (descriptionExpanded = false)}
+/>

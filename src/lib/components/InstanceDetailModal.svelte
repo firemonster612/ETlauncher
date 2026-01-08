@@ -431,12 +431,12 @@
   <ScreenshotLightbox
     open={lightboxIndex !== null}
     src={lightboxData}
-    filename={lightboxIndex !== null && detail ? detail.recentScreenshots[lightboxIndex]?.filename : undefined}
-    isLoading={lightboxLoading}
-    canPrev={canPrevScreenshot}
-    canNext={canNextScreenshot}
-    onClose={closeScreenshotLightbox}
-    onPrev={goPrevScreenshot}
-    onNext={goNextScreenshot}
-  />
+	    filename={lightboxIndex !== null && detail ? detail.recentScreenshots[lightboxIndex]?.filename : undefined}
+	    isLoading={lightboxLoading}
+	    canPrev={!!canPrevScreenshot}
+	    canNext={!!canNextScreenshot}
+	    onClose={closeScreenshotLightbox}
+	    onPrev={goPrevScreenshot}
+	    onNext={goNextScreenshot}
+	  />
 {/if}

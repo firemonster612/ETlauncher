@@ -1,4 +1,5 @@
 import type { LoaderType, ModpackPlatform } from "./instance";
+import type { ContentGalleryImage } from "./content";
 
 /** Sort order for modpack search */
 export type ModpackSortBy = "downloads" | "recentlyUpdated" | "name" | "relevance";
@@ -85,6 +86,8 @@ export interface Modpack {
   platform: ModpackPlatform;
   /** Categories/tags */
   categories: string[];
+  /** Gallery images */
+  gallery?: ContentGalleryImage[];
   /** Available Minecraft versions */
   mcVersions: string[];
   /** Available mod loaders */
@@ -97,6 +100,20 @@ export interface Modpack {
   updatedAt?: number;
   /** Created timestamp */
   createdAt?: number;
+}
+
+/** A mod entry within a modpack */
+export interface ModpackMod {
+  /** Platform-specific project ID */
+  id: string;
+  /** Display name */
+  name: string;
+  /** Optional icon URL */
+  iconUrl?: string;
+  /** Optional author */
+  author?: string;
+  /** Optional external URL */
+  url?: string;
 }
 
 /** Search results from a platform */
