@@ -59,6 +59,7 @@ export interface UpdateInstanceRequest {
   name?: string;
   loaderType?: LoaderType;
   loaderVersion?: string;
+  iconPath?: string;
   javaPath?: string;
   memoryMinMb?: number;
   memoryMaxMb?: number;

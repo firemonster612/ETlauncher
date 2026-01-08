@@ -39,15 +39,15 @@
     ScanResult,
   } from "$lib/types";
 
-  interface Props {
-    instanceId: string;
-    instanceName: string;
-    mcVersion: string;
-    loaderType: LoaderType;
-    onClose: () => void;
-  }
+interface Props {
+  instanceId: string;
+  instanceName: string;
+  mcVersion: string;
+  loaderType: LoaderType;
+  onClose: () => void;
+}
 
-  let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props();
+let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props();
 
   let searchInput = $state("");
   let selectedContentDetail = $state<Content | null>(null);
@@ -442,7 +442,7 @@
     if (!source) return "";
 
     try {
-      return marked.parse(source, { mangle: false, headerIds: false }) as string;
+      return marked.parse(source) as string;
     } catch (e) {
       console.error("Failed to render description", e);
       return source.replace(/\n/g, "<br/>");
@@ -646,7 +646,7 @@
   type="button"
   class="fixed inset-x-0 top-[var(--titlebar-height)] h-[calc(100vh-var(--titlebar-height))] bg-black/50 z-50"
   onclick={onClose}
-  aria-label="Close content browser"
+  aria-label={`Close content browser for ${instanceName}`}
 ></button>
 
 <!-- Panel -->
@@ -1275,6 +1275,7 @@
               </div>
               {#if selectedContentDetail.body || selectedContentDetail.description}
                 <div class="text-sm leading-relaxed [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_img]:max-w-full [&_img]:rounded-md [&_img]:my-2 [&_h1]:text-lg [&_h2]:text-base [&_h1]:font-semibold [&_h2]:font-semibold [&_a]:text-primary [&_a]:underline">
+                  <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                   {@html renderDescription(selectedContentDetail.body || selectedContentDetail.description)}
                 </div>
               {:else}

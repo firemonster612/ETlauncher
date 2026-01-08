@@ -1,9 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Layers, Plus, Search, Play, Square, Settings, Copy, Trash2, Clock, Calendar, Loader2, FolderOpen, PackagePlus, Upload, CheckCircle, AlertTriangle, FileDown } from "@lucide/svelte";
-  import { save, open } from "@tauri-apps/plugin-dialog";
+  import { Layers, Plus, Search, Loader2, CheckCircle, AlertTriangle, FileDown, Trash2 } from "@lucide/svelte";
+  import { open } from "@tauri-apps/plugin-dialog";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-  import * as instanceService from "$lib/services/instance";
   import * as modpackService from "$lib/services/modpack";
   import { Button } from "$lib/ui/button";
   import { Input } from "$lib/ui/input";
@@ -15,6 +14,8 @@
   import { accountsStore } from "$lib/stores/accounts.svelte";
   import ContentBrowser from "$lib/components/ContentBrowser.svelte";
   import InstanceSettings from "$lib/components/InstanceSettings.svelte";
+  import InstanceCard from "$lib/components/InstanceCard.svelte";
+  import InstanceDetailModal from "$lib/components/InstanceDetailModal.svelte";
   import DownloadProgress from "$lib/components/DownloadProgress.svelte";
   import type { LoaderType, Instance, ModpackInstallProgress } from "$lib/types";
 
@@ -37,6 +38,10 @@
   // Settings modal state
   let showSettings = $state(false);
   let settingsInstance = $state<Instance | null>(null);
+
+  // Detail modal state
+  let showDetailModal = $state(false);
+  let detailInstance = $state<Instance | null>(null);
 
   // Export state
   let showExportModal = $state(false);
@@ -70,6 +75,16 @@
   function closeContentBrowser() {
     showContentBrowser = false;
     contentBrowserInstance = null;
+  }
+
+  function openDetailModal(instance: Instance) {
+    detailInstance = instance;
+    showDetailModal = true;
+  }
+
+  function closeDetailModal() {
+    showDetailModal = false;
+    detailInstance = null;
   }
 
   onMount(() => {
@@ -106,15 +121,11 @@
     if (instance) {
       showCreateModal = false;
       createName = "";
-      createVersion = "1.21.4";
+      createVersion = versionsStore.latestRelease ?? "";
       createLoader = "vanilla";
       createLoaderVersion = "";
     }
     isCreating = false;
-  }
-
-  async function handleDuplicate(instanceId: string, instanceName: string) {
-    await instancesStore.duplicate(instanceId, `${instanceName} (Copy)`);
   }
 
   function confirmDelete(instanceId: string) {
@@ -130,18 +141,6 @@
     }
   }
 
-  function formatPlayTime(seconds: number): string {
-    if (seconds < 60) return "< 1 min";
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    if (hours === 0) return `${minutes}m`;
-    return `${hours}h ${minutes}m`;
-  }
-
-  function formatDate(timestamp: number): string {
-    return new Date(timestamp * 1000).toLocaleDateString();
-  }
-
   async function handleLaunch(instanceId: string) {
     // Check if user is logged in
     if (!accountsStore.activeAccount) {
@@ -154,57 +153,15 @@
     console.log("Launch result:", result);
   }
 
+  async function handleKill(instanceId: string) {
+    console.log("Killing instance:", instanceId);
+    await launchStore.kill(instanceId);
+  }
+
   function getInstanceStatus(instanceId: string): string | null {
     const state = launchStore.launchStates.get(instanceId);
     if (!state) return null;
     return state.status.status;
-  }
-
-  function getLoaderColor(loader: LoaderType): string {
-    switch (loader) {
-      case "fabric":
-        return "bg-amber-500/20 text-amber-500 border-amber-500/50";
-      case "forge":
-        return "bg-orange-500/20 text-orange-500 border-orange-500/50";
-      case "neoforge":
-        return "bg-red-500/20 text-red-500 border-red-500/50";
-      case "quilt":
-        return "bg-purple-500/20 text-purple-500 border-purple-500/50";
-      default:
-        return "bg-green-500/20 text-green-500 border-green-500/50";
-    }
-  }
-
-  async function handleOpenFolder(instanceId: string) {
-    await instanceService.openInstanceFolder(instanceId);
-  }
-
-  async function handleExport(instance: Instance) {
-    try {
-      // Open save dialog
-      const filePath = await save({
-        title: "Export Instance",
-        defaultPath: `${instance.name}.mrpack`,
-        filters: [{ name: "Modrinth Pack", extensions: ["mrpack"] }],
-      });
-
-      // User cancelled
-      if (!filePath) return;
-
-      exportInstance = instance;
-      exportResult = null;
-      showExportModal = true;
-      isExporting = true;
-
-      const resultPath = await instanceService.exportInstance(instance.id, filePath);
-      exportResult = { success: true, path: resultPath };
-    } catch (e: unknown) {
-      if (showExportModal) {
-        exportResult = { success: false, error: e instanceof Error ? e.message : "Export failed" };
-      }
-    } finally {
-      isExporting = false;
-    }
   }
 
   function closeExportModal() {
@@ -340,121 +297,17 @@
       {#each filteredInstances as instance (instance.id)}
         {@const status = getInstanceStatus(instance.id)}
         {@const launchStatus = launchStore.launchStates.get(instance.id)?.status}
-        <div class="border-2 border-border bg-card p-4 hover:border-primary/50 transition-colors group">
-          <div class="flex items-start justify-between gap-2">
-            <div class="flex-1 min-w-0">
-              <h3 class="font-bold truncate">{instance.name}</h3>
-              <div class="flex items-center gap-2 mt-1 flex-wrap">
-                <span class="text-sm text-muted-foreground">{instance.minecraftVersion}</span>
-                <span
-                  class="text-xs px-1.5 py-0.5 border rounded capitalize {getLoaderColor(
-                    instance.loaderType
-                  )}"
-                >
-                  {instance.loaderType}
-                  {#if instance.loaderVersion}
-                    <span class="opacity-75 ml-1">{instance.loaderVersion}</span>
-                  {/if}
-                </span>
-              </div>
-            </div>
-            <Button
-              variant="default"
-              size="sm"
-              class="opacity-0 group-hover:opacity-100 transition-opacity {status ? 'opacity-100' : ''}"
-              onclick={() => handleLaunch(instance.id)}
-              disabled={status !== null && status !== "stopped" && status !== "crashed"}
-            >
-              {#if status === "preparing" || status === "launching"}
-                <Loader2 class="h-4 w-4 animate-spin" />
-              {:else if status === "running"}
-                <Square class="h-4 w-4" />
-              {:else}
-                <Play class="h-4 w-4" />
-              {/if}
-            </Button>
-          </div>
-
-          <div class="flex items-center gap-4 mt-4 text-xs text-muted-foreground">
-            <span class="flex items-center gap-1">
-              <Clock class="h-3 w-3" />
-              {formatPlayTime(instance.totalPlayTime)}
-            </span>
-            <span class="flex items-center gap-1">
-              <Calendar class="h-3 w-3" />
-              {formatDate(instance.createdAt)}
-            </span>
-          </div>
-
-          <div class="flex items-center gap-1 mt-3 pt-3 border-t border-border">
-            <Button
-              variant="ghost"
-              size="sm"
-              onclick={() => openSettings(instance)}
-              title="Instance settings"
-              data-tutorial="instance-settings-btn"
-            >
-              <Settings class="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onclick={() => handleOpenFolder(instance.id)}
-              title="Open game folder"
-            >
-              <FolderOpen class="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onclick={() => openContentBrowser(instance)}
-              title="Add mods, shaders, resource packs"
-              data-tutorial="content-browser-btn"
-            >
-              <PackagePlus class="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onclick={() => handleDuplicate(instance.id, instance.name)}
-              title="Duplicate instance"
-            >
-              <Copy class="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onclick={() => handleExport(instance)}
-              title="Export as .mrpack"
-            >
-              <Upload class="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              class="text-destructive hover:text-destructive hover:bg-destructive/10"
-              onclick={() => confirmDelete(instance.id)}
-              title="Delete instance"
-            >
-              <Trash2 class="h-4 w-4" />
-            </Button>
-          </div>
-
-          <!-- Download Progress -->
-          {#if launchStatus?.status === "downloading"}
-            {@const progress = launchStatus.progress}
-            <div class="mt-3 pt-3 border-t border-border">
-              <DownloadProgress
-                stage="Downloading game files"
-                progress={progress.totalBytes > 0 ? (progress.downloadedBytes / progress.totalBytes) * 100 : 0}
-                currentItem={progress.currentFile}
-                totalBytes={progress.totalBytes}
-                downloadedBytes={progress.downloadedBytes}
-                compact
-              />
-            </div>
-          {/if}
-        </div>
+        <InstanceCard
+          {instance}
+          {status}
+          {launchStatus}
+          onLaunch={handleLaunch}
+          onKill={handleKill}
+          onOpenSettings={openSettings}
+          onOpenContentBrowser={openContentBrowser}
+          onDelete={confirmDelete}
+          onCardClick={openDetailModal}
+        />
       {/each}
     </div>
   {/if}
@@ -621,6 +474,13 @@
     onClose={closeSettings}
   />
 {/if}
+
+<!-- Instance Detail Modal -->
+<InstanceDetailModal
+  instance={detailInstance}
+  open={showDetailModal}
+  onClose={closeDetailModal}
+/>
 
 <!-- Export Modal -->
 {#if showExportModal}

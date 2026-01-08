@@ -2,6 +2,7 @@
 export * from "./account";
 export * from "./content";
 export * from "./instance";
+export * from "./instance-detail";
 export * from "./loader";
 export * from "./minecraft";
 export * from "./modpack";

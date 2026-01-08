@@ -14,3 +14,8 @@ export async function isInstanceRunning(instanceId: string): Promise<boolean> {
 export async function getRunningInstances(): Promise<string[]> {
   return invoke<string[]>("get_running_instances");
 }
+
+/** Kill a running instance */
+export async function killInstance(instanceId: string): Promise<void> {
+  return invoke<void>("kill_instance", { instanceId });
+}
