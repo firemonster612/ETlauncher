@@ -23,7 +23,7 @@ pub async fn launch_instance(
     let instance = instance_service::get_instance(&state, &instance_id).map_err(CommandError::from)?;
 
     // Launch
-    launch_service::launch_instance(&instance, &account_id, &app_handle)
+    launch_service::launch_instance(&instance, &account_id, &app_handle, None)
         .await
         .map_err(CommandError::from)
 }
@@ -39,4 +39,42 @@ pub fn is_instance_running(instance_id: String, state: State<'_, AppState>) -> b
 pub fn get_running_instances(state: State<'_, AppState>) -> Vec<String> {
     let running = state.running_instances.read();
     running.keys().cloned().collect()
+}
+
+/// Kill a running Minecraft instance
+#[tauri::command]
+pub fn kill_instance(instance_id: String, state: State<'_, AppState>) -> Result<(), CommandError> {
+    let running = state.running_instances.read();
+
+    if let Some(instance) = running.get(&instance_id) {
+        let pid = instance.pid;
+        drop(running); // Release lock before killing
+
+        // Kill the process
+        #[cfg(unix)]
+        {
+            use std::process::Command;
+            let _ = Command::new("kill")
+                .args(["-9", &pid.to_string()])
+                .output();
+        }
+
+        #[cfg(windows)]
+        {
+            use std::process::Command;
+            let _ = Command::new("taskkill")
+                .args(["/F", "/PID", &pid.to_string()])
+                .output();
+        }
+
+        // Unregister the instance
+        state.unregister_running_instance(&instance_id);
+
+        Ok(())
+    } else {
+        Err(CommandError {
+            code: "NOT_RUNNING".to_string(),
+            message: "Instance is not running".to_string(),
+        })
+    }
 }

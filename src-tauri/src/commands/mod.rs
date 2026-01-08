@@ -2,6 +2,7 @@ pub mod auth;
 pub mod account;
 pub mod content;
 pub mod instance;
+pub mod instance_detail;
 pub mod launch;
 pub mod loader;
 pub mod minecraft;

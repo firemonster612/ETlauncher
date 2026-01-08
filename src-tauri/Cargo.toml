@@ -72,3 +72,11 @@ rayon = "1.10"
 # Murmur2 hashing for CurseForge fingerprinting
 murmur2 = "0.1"
 
+# Random number generation
+rand = "0.9"
+
+# Base64 encoding
+base64 = "0.22"
+
+# NBT parsing
+quartz_nbt = { version = "0.2", features = ["serde"] }

@@ -12,11 +12,18 @@ use std::process::{Command, Stdio};
 use std::thread;
 use tauri::{AppHandle, Emitter, Manager};
 
+#[derive(Debug, Clone)]
+pub enum QuickPlayTarget {
+    World(String),
+    Server(String),
+}
+
 /// Launch a Minecraft instance
 pub async fn launch_instance(
     instance: &Instance,
     account_id: &str,
     app_handle: &AppHandle,
+    quick_play_args: Option<Vec<String>>,
 ) -> Result<u32, AppError> {
     let instance_id = instance.id.clone();
     let state: tauri::State<'_, AppState> = app_handle.state();
@@ -258,6 +265,9 @@ pub async fn launch_instance(
     if let Some(ref custom_game) = instance.game_args {
         all_game_args.extend(custom_game.split_whitespace().map(String::from));
     }
+    if let Some(extra_args) = quick_play_args {
+        all_game_args.extend(extra_args);
+    }
 
     // Combine all arguments
     let mut all_args = jvm_args;
@@ -378,6 +388,43 @@ pub async fn launch_instance(
     });
 
     Ok(pid)
+}
+
+/// Launch directly into a world or server using quick play flags (MC 1.20+)
+pub async fn launch_instance_with_quick_play(
+    instance: &Instance,
+    account_id: &str,
+    app_handle: &AppHandle,
+    target: QuickPlayTarget,
+) -> Result<u32, AppError> {
+    if !supports_quick_play(&instance.minecraft_version) {
+        return Err(AppError::InvalidInput(
+            "Quick Play requires Minecraft 1.20 or newer".to_string(),
+        ));
+    }
+
+    let quick_args = match target {
+        QuickPlayTarget::World(folder) => {
+            vec!["--quickPlaySingleplayer".to_string(), folder]
+        }
+        QuickPlayTarget::Server(address) => {
+            vec!["--quickPlayMultiplayer".to_string(), address]
+        }
+    };
+
+    launch_instance(instance, account_id, app_handle, Some(quick_args)).await
+}
+
+fn supports_quick_play(version: &str) -> bool {
+    let mut parts = version
+        .split('.')
+        .map(|part| part.chars().take_while(|c| c.is_ascii_digit()).collect::<String>())
+        .filter(|s| !s.is_empty())
+        .filter_map(|p| p.parse::<u32>().ok());
+    let major = parts.next().unwrap_or(0);
+    let minor = parts.next().unwrap_or(0);
+
+    major > 1 || (major == 1 && minor >= 20)
 }
 
 /// Emit launch status event
