@@ -349,15 +349,19 @@ pub async fn scan_content(
         });
 
         let curseforge_project = curseforge_results.get(&murmur2).map(|match_info| {
-            let name = curseforge_mod_map
-                .get(&match_info.mod_id)
+            let mod_info = curseforge_mod_map.get(&match_info.mod_id);
+            let name = mod_info
                 .map(|m| m.name.clone())
                 .unwrap_or_else(|| match_info.file_name.clone());
+            let slug = mod_info
+                .map(|m| m.slug.clone())
+                .unwrap_or_default();
             DetectedCurseForgeProject {
                 project_id: match_info.mod_id,
                 file_id: match_info.file_id,
                 name,
                 filename: match_info.file_name.clone(),
+                slug,
             }
         });
 

@@ -391,6 +391,8 @@ pub struct DetectedCurseForgeProject {
     pub name: String,
     /// Filename
     pub filename: String,
+    /// Project slug for cross-platform matching
+    pub slug: String,
 }
 
 /// A detected mod file from scanning the mods folder

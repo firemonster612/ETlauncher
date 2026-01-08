@@ -275,6 +275,8 @@ export interface DetectedCurseForgeProject {
   name: string;
   /** Filename */
   filename: string;
+  /** Project slug for cross-platform matching */
+  slug: string;
 }
 
 /** A detected mod file from scanning the mods folder */

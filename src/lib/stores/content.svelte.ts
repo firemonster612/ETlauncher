@@ -183,22 +183,48 @@ function createContentStore() {
       }
     },
 
+    /** Normalize slug for cross-platform matching */
+    normalizeSlug(slug: string): string {
+      return slug
+        .toLowerCase()
+        .replace(/-api$/g, "")
+        .replace(/_/g, "-");
+    },
+
     /** Check if content is installed in the current instance */
     isContentInstalled(content: Content): boolean {
       if (!scanResult) return false;
 
       // Check if any scanned item matches this content's Modrinth ID
       if (content.platform === "modrinth") {
-        return scanResult.items.some(
+        const directMatch = scanResult.items.some(
           (item) => item.modrinthProject?.projectId === content.id
+        );
+        if (directMatch) return true;
+
+        // Fallback: check if any CurseForge project matches by slug
+        const normalizedContentSlug = this.normalizeSlug(content.slug);
+        return scanResult.items.some(
+          (item) =>
+            item.curseforgeProject?.slug &&
+            this.normalizeSlug(item.curseforgeProject.slug) === normalizedContentSlug
         );
       }
 
       // Check if any scanned item matches this content's CurseForge ID
       if (content.platform === "curseforge") {
         const contentIdNum = parseInt(content.id, 10);
-        return scanResult.items.some(
+        const directMatch = scanResult.items.some(
           (item) => item.curseforgeProject?.projectId === contentIdNum
+        );
+        if (directMatch) return true;
+
+        // Fallback: check if any Modrinth project matches by slug
+        const normalizedContentSlug = this.normalizeSlug(content.slug);
+        return scanResult.items.some(
+          (item) =>
+            item.modrinthProject?.slug &&
+            this.normalizeSlug(item.modrinthProject.slug) === normalizedContentSlug
         );
       }
 
