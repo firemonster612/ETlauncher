@@ -1,6 +1,7 @@
 pub mod account;
 pub mod content;
 pub mod instance;
+pub mod instance_detail;
 pub mod java;
 pub mod loader;
 pub mod minecraft;
@@ -10,6 +11,7 @@ pub mod settings;
 pub use account::*;
 pub use content::*;
 pub use instance::*;
+pub use instance_detail::*;
 pub use java::*;
 pub use loader::*;
 pub use minecraft::*;

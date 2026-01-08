@@ -55,6 +55,17 @@ pub fn run() {
             commands::instance::duplicate_instance,
             commands::instance::open_instance_folder,
             commands::instance::export_instance,
+            // Instance detail commands
+            commands::instance_detail::get_instance_detail,
+            commands::instance_detail::get_instance_screenshots,
+            commands::instance_detail::get_instance_worlds,
+            commands::instance_detail::get_instance_servers,
+            commands::instance_detail::get_screenshot_data,
+            commands::instance_detail::launch_into_world,
+            commands::instance_detail::launch_into_server,
+            commands::instance_detail::open_world_folder,
+            commands::instance_detail::delete_screenshot,
+            commands::instance_detail::delete_world,
             // Minecraft commands
             commands::minecraft::fetch_version_manifest,
             commands::minecraft::get_versions,
@@ -64,6 +75,7 @@ pub fn run() {
             commands::launch::launch_instance,
             commands::launch::is_instance_running,
             commands::launch::get_running_instances,
+            commands::launch::kill_instance,
             // Loader commands
             commands::loader::get_loader_versions,
             commands::loader::install_loader,

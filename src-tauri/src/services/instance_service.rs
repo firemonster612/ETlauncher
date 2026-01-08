@@ -6,10 +6,79 @@ use crate::utils::paths::{
     get_instances_dir_with_base,
 };
 use chrono::Utc;
+use rand::Rng;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::PathBuf;
 use uuid::Uuid;
+
+/// All available entity icons for random assignment
+const ALL_ENTITY_ICONS: &[&str] = &[
+    // Hostile mobs
+    "blaze", "breeze", "creaking", "creeper", "elder_guardian", "endermite",
+    "ghast", "happy_ghast", "guardian", "hoglin", "zoglin", "illager_evoker",
+    "illager_illusioner", "illager_pillager", "illager_ravager", "illager_vex",
+    "illager_vindicator", "phantom", "piglin_brute", "shulker", "silverfish",
+    "skeleton", "skeleton_stray", "skeleton_wither", "slime", "magma_cube",
+    "spider", "cave_spider", "warden", "witch", "wither", "zombie",
+    "zombie_drowned", "zombie_husk", "zombie_villager",
+    // Passive mobs
+    "allay", "armadillo", "axolotl_blue", "axolotl_cyan", "axolotl_gold",
+    "axolotl_pink", "axolotl_wild", "bat", "camel", "cat_black", "cat_british",
+    "cat_calico", "cat_jellie", "cat_persian", "cat_ragdoll", "cat_red",
+    "cat_siamese", "cat_tabby", "cat_default", "cat_white", "chicken", "cow",
+    "mooshroom", "mooshroom_brown", "donkey", "horse_black", "horse_brown",
+    "horse_chestnut", "horse_creamy", "horse_gray", "horse_white", "mule",
+    "skeleton_horse", "zombie_horse", "llama_brown", "llama_cream", "llama_gray",
+    "llama_white", "ocelot", "panda", "parrot_blue", "parrot_red_blue",
+    "parrot_gray", "parrot_green", "parrot_yellow_blue", "pig", "rabbit_brown",
+    "rabbit_white", "rabbit_black", "rabbit_gold", "sheep_white", "sheep_black",
+    "sheep_brown", "sheep_pink", "sniffer", "strider", "villager", "wandering_trader",
+    // Neutral mobs
+    "bee", "enderman", "fox", "fox_snow", "goat", "iron_golem", "piglin",
+    "zombified_piglin", "polar_bear", "snow_golem", "wolf", "wolf_black",
+    "wolf_snowy", "wolf_spotted",
+    // Aquatic mobs
+    "dolphin", "fish_cod", "fish_salmon", "fish_pufferfish", "fish_tropical",
+    "frog_cold", "frog_temperate", "frog_warm", "squid", "glow_squid",
+    "tadpole", "turtle",
+    // Other
+    "enderdragon", "end_crystal", "armorstand",
+];
+
+/// Get a random entity icon path, prioritizing icons not already in use
+fn get_random_entity_icon(used_icons: &[String]) -> String {
+    let mut rng = rand::rng();
+
+    // Find icons that haven't been used yet
+    let unused_icons: Vec<&str> = ALL_ENTITY_ICONS
+        .iter()
+        .filter(|icon| !used_icons.contains(&format!("entity:{}", icon)))
+        .copied()
+        .collect();
+
+    // If there are unused icons, pick from those; otherwise pick from all
+    let icon = if !unused_icons.is_empty() {
+        let index = rng.random_range(0..unused_icons.len());
+        unused_icons[index]
+    } else {
+        let index = rng.random_range(0..ALL_ENTITY_ICONS.len());
+        ALL_ENTITY_ICONS[index]
+    };
+
+    format!("entity:{}", icon)
+}
+
+/// Collect all icon paths currently in use by instances
+fn get_used_icons(state: &AppState) -> Vec<String> {
+    match get_all_instances(state) {
+        Ok(instances) => instances
+            .into_iter()
+            .filter_map(|i| i.icon_path)
+            .collect(),
+        Err(_) => Vec::new(),
+    }
+}
 
 /// Get the configured instances directory from settings
 fn get_instances_base_dir(state: &AppState) -> String {
@@ -96,6 +165,9 @@ pub fn create_instance(state: &AppState, request: CreateInstanceRequest) -> Resu
         fs::create_dir_all(&subdir_path)?;
     }
 
+    // Get icons already in use to prioritize unused ones
+    let used_icons = get_used_icons(state);
+
     let instance = Instance {
         id: id.clone(),
         name: request.name,
@@ -105,7 +177,7 @@ pub fn create_instance(state: &AppState, request: CreateInstanceRequest) -> Resu
         created_at: Utc::now().timestamp(),
         last_played_at: None,
         total_play_time: 0,
-        icon_path: None,
+        icon_path: Some(get_random_entity_icon(&used_icons)),
         java_path: None,
         memory_min_mb: None,
         memory_max_mb: None,
@@ -144,6 +216,9 @@ pub fn update_instance(state: &AppState, instance_id: &str, updates: UpdateInsta
     }
     if updates.loader_version.is_some() {
         instance.loader_version = updates.loader_version;
+    }
+    if updates.icon_path.is_some() {
+        instance.icon_path = updates.icon_path;
     }
     if updates.java_path.is_some() {
         instance.java_path = updates.java_path;

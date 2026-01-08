@@ -160,6 +160,7 @@ pub struct UpdateInstanceRequest {
     pub name: Option<String>,
     pub loader_type: Option<LoaderType>,
     pub loader_version: Option<String>,
+    pub icon_path: Option<String>,
     pub java_path: Option<String>,
     pub memory_min_mb: Option<u32>,
     pub memory_max_mb: Option<u32>,

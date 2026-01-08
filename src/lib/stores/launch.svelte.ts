@@ -191,6 +191,19 @@ function createLaunchStore() {
     clearError() {
       error = null;
     },
+
+    /** Kill a running instance */
+    async kill(instanceId: string): Promise<boolean> {
+      try {
+        await launchService.killInstance(instanceId);
+        // The status will be updated via the event listener
+        return true;
+      } catch (e) {
+        console.error("Kill error:", e);
+        error = getErrorMessage(e);
+        return false;
+      }
+    },
   };
 }
 
