@@ -677,7 +677,7 @@ struct CurseForgeGetModsRequest {
     mod_ids: Vec<u32>,
 }
 
-async fn get_mods_by_ids(
+pub async fn get_mods_by_ids(
     client: &Client,
     api_key: &str,
     mod_ids: &[u32],

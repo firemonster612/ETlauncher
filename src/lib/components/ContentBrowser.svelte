@@ -70,20 +70,50 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
   // View mode: "browse" for searching online, "installed" for local files
   let viewMode = $state<"browse" | "installed">("browse");
 
+  // Search/filter for installed tab
+  let installedSearchInput = $state("");
+
   // Multi-select state for installed tab
   let selectedItems = new SvelteSet<string>();
 
   // Derived: installed items list from scan result
   const installedItems = $derived(contentStore.scanResult?.items ?? []);
 
+  const visibleInstalledItems = $derived(
+    installedSearchInput.trim()
+      ? installedItems.filter((item) => {
+          const query = installedSearchInput.trim().toLowerCase();
+          const displayName = getItemDisplayName(item).toLowerCase();
+          const filename = item.filename.toLowerCase();
+          const mrSlug = item.modrinthProject?.slug?.toLowerCase() ?? "";
+          const mrProjectId = item.modrinthProject?.projectId?.toLowerCase() ?? "";
+          const cfName = item.curseforgeProject?.name?.toLowerCase() ?? "";
+          const cfProjectId = String(item.curseforgeProject?.projectId ?? "").toLowerCase();
+
+          return (
+            displayName.includes(query) ||
+            filename.includes(query) ||
+            mrSlug.includes(query) ||
+            mrProjectId.includes(query) ||
+            cfName.includes(query) ||
+            cfProjectId.includes(query)
+          );
+        })
+      : installedItems
+  );
+
   // Derived: check if all items are selected
   const allSelected = $derived(
-    installedItems.length > 0 && selectedItems.size === installedItems.length
+    visibleInstalledItems.length > 0 &&
+      visibleInstalledItems.filter((item) => selectedItems.has(item.filename)).length ===
+        visibleInstalledItems.length
   );
 
   // Derived: check if some items are selected
   const someSelected = $derived(
-    selectedItems.size > 0 && selectedItems.size < installedItems.length
+    visibleInstalledItems.filter((item) => selectedItems.has(item.filename)).length > 0 &&
+      visibleInstalledItems.filter((item) => selectedItems.has(item.filename)).length <
+        visibleInstalledItems.length
   );
 
   // Derived: selected enabled items (for disable action)
@@ -312,13 +342,17 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
   }
 
   function toggleSelectAll() {
+    if (visibleInstalledItems.length === 0) return;
+
     if (allSelected) {
-      selectedItems.clear();
-    } else {
-      selectedItems.clear();
-      for (const item of installedItems) {
-        selectedItems.add(item.filename);
+      for (const item of visibleInstalledItems) {
+        selectedItems.delete(item.filename);
       }
+      return;
+    }
+
+    for (const item of visibleInstalledItems) {
+      selectedItems.add(item.filename);
     }
   }
 
@@ -394,8 +428,13 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     if (item.curseforgeProject?.name) {
       return item.curseforgeProject.name;
     }
-    // Fall back to filename without extension
-    return item.filename.replace(/\.(jar|zip)$/i, "");
+
+    // Fall back to filename without extension (and strip common trailing version patterns)
+    const base = item.filename.replace(/\.(jar|zip)$/i, "");
+    return base
+      .replace(/[-_]?v?\d+(?:\.\d+){1,3}([+._-].*)?$/i, "")
+      .replace(/[-_]?mc\d+(?:\.\d+){1,3}([+._-].*)?$/i, "")
+      .replace(/[-_]+$/, "");
   }
 
   function getItemVersion(item: DetectedMod): string | null {
@@ -1189,6 +1228,26 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
         </Button>
       </div>
     {:else}
+      <!-- Search -->
+      <div class="mb-3">
+        <div class="flex gap-2">
+          <div class="relative flex-1">
+            <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={installedSearchInput}
+              oninput={(e) => (installedSearchInput = e.currentTarget.value)}
+              placeholder={`Search installed ${contentStore.contentType}s...`}
+              class="pl-9"
+            />
+          </div>
+          {#if installedSearchInput.trim()}
+            <Button variant="outline" size="sm" onclick={() => (installedSearchInput = "")}>
+              Clear
+            </Button>
+          {/if}
+        </div>
+      </div>
+
       <!-- Select All Header -->
       <div class="flex items-center justify-between mb-3 pb-2 border-b border-border">
         <button
@@ -1208,16 +1267,36 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
           Select All
         </button>
         <div class="text-xs text-muted-foreground">
-          {installedItems.length} items
-          {#if installedItems.filter(i => i.isDisabled).length > 0}
-            &bull; {installedItems.filter(i => i.isDisabled).length} disabled
+          {#if installedSearchInput.trim()}
+            {visibleInstalledItems.length} of {installedItems.length} items
+          {:else}
+            {installedItems.length} items
+          {/if}
+          {#if visibleInstalledItems.filter(i => i.isDisabled).length > 0}
+            &bull; {visibleInstalledItems.filter(i => i.isDisabled).length} disabled
           {/if}
         </div>
       </div>
 
       <!-- Items List -->
       <div class="space-y-2">
-        {#each installedItems as item (item.filename)}
+        {#if visibleInstalledItems.length === 0 && installedSearchInput.trim() && !contentStore.isScanning}
+          <div class="border-2 border-dashed border-border bg-card/50 p-8 text-center">
+            <p class="text-sm text-muted-foreground">
+              No matches for "{installedSearchInput.trim()}"
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              class="mt-3"
+              onclick={() => (installedSearchInput = "")}
+            >
+              Clear search
+            </Button>
+          </div>
+        {/if}
+
+        {#each visibleInstalledItems as item (item.filename)}
           {@const isSelected = selectedItems.has(item.filename)}
           <button
             class="w-full border-2 p-3 text-left flex gap-3 transition-colors {isSelected

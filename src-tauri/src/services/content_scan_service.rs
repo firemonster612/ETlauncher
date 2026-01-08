@@ -277,6 +277,22 @@ pub async fn scan_content(
         .await
         .unwrap_or_default();
 
+    // Best-effort: fetch project titles/slugs so we can display project name (not version name)
+    let mut modrinth_project_ids: Vec<String> = modrinth_results
+        .values()
+        .map(|v| v.project_id.clone())
+        .collect();
+    modrinth_project_ids.sort();
+    modrinth_project_ids.dedup();
+
+    let modrinth_projects = modrinth_service::get_projects_by_ids(&state.http_client, &modrinth_project_ids)
+        .await
+        .unwrap_or_default();
+    let modrinth_project_map: HashMap<String, modrinth_service::ModrinthProjectLite> = modrinth_projects
+        .into_iter()
+        .map(|p| (p.id.clone(), p))
+        .collect();
+
     // Step 5: Batch lookup fingerprints via CurseForge API (if API key configured)
     // Note: CurseForge fingerprinting may only work well for mods
     let fingerprints: Vec<u32> = content_files.iter().map(|(_, _, _, fp, _)| *fp).collect();
@@ -288,6 +304,30 @@ pub async fn scan_content(
         HashMap::new()
     };
 
+    // Best-effort: fetch CurseForge mod names so we can display project name (not file/version name)
+    let curseforge_mod_map: HashMap<u64, curseforge_service::CurseForgeMod> =
+        if let Some(api_key) = &state.get_settings().curseforge_api_key {
+            let mut mod_ids: Vec<u32> = curseforge_results
+                .values()
+                .filter_map(|m| u32::try_from(m.mod_id).ok())
+                .collect();
+            mod_ids.sort();
+            mod_ids.dedup();
+
+            let mut all_mods: Vec<curseforge_service::CurseForgeMod> = Vec::new();
+            for chunk in mod_ids.chunks(50) {
+                let mut mods =
+                    curseforge_service::get_mods_by_ids(&state.http_client, api_key, chunk)
+                        .await
+                        .unwrap_or_default();
+                all_mods.append(&mut mods);
+            }
+
+            all_mods.into_iter().map(|m| (m.id, m)).collect()
+        } else {
+            HashMap::new()
+        };
+
     // Step 6: Build detected items list
     let mut items: Vec<DetectedMod> = vec![];
     let mut identified_count = 0u32;
@@ -295,20 +335,28 @@ pub async fn scan_content(
 
     for (filename, size, hash, murmur2, is_disabled) in content_files {
         let modrinth_project = modrinth_results.get(&hash).map(|version| {
+            let (slug, name) = modrinth_project_map
+                .get(&version.project_id)
+                .map(|p| (p.slug.clone(), p.title.clone()))
+                .unwrap_or_else(|| (String::new(), version.name.clone()));
             DetectedModrinthProject {
                 project_id: version.project_id.clone(),
-                slug: String::new(),
-                name: version.name.clone(),
+                slug,
+                name,
                 version_id: version.id.clone(),
                 version_number: version.version_number.clone(),
             }
         });
 
         let curseforge_project = curseforge_results.get(&murmur2).map(|match_info| {
+            let name = curseforge_mod_map
+                .get(&match_info.mod_id)
+                .map(|m| m.name.clone())
+                .unwrap_or_else(|| match_info.file_name.clone());
             DetectedCurseForgeProject {
                 project_id: match_info.mod_id,
                 file_id: match_info.file_id,
-                name: match_info.file_name.clone(),
+                name,
                 filename: match_info.file_name.clone(),
             }
         });

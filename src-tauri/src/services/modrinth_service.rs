@@ -937,15 +937,15 @@ struct ModrinthIndexFile {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct ModrinthProjectLite {
-    id: String,
-    slug: String,
-    title: String,
-    icon_url: Option<String>,
+pub struct ModrinthProjectLite {
+    pub id: String,
+    pub slug: String,
+    pub title: String,
+    pub icon_url: Option<String>,
 }
 
 /// Batch fetch projects by ID (best-effort)
-async fn get_projects_by_ids(
+pub async fn get_projects_by_ids(
     client: &Client,
     ids: &[String],
 ) -> Result<Vec<ModrinthProjectLite>, AppError> {
