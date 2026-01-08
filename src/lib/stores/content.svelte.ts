@@ -24,7 +24,7 @@ function createContentStore() {
 
   // Filter state (can be set from instance context)
   let query = $state("");
-  let platform = $state<ContentPlatform | null>(null);
+  let platform = $state<ContentPlatform>("modrinth");
   let mcVersion = $state<string | null>(null);
   let loader = $state<LoaderType | null>(null);
   let contentType = $state<ContentType>("mod");
@@ -360,7 +360,7 @@ function createContentStore() {
     },
 
     /** Set platform filter */
-    setPlatform(newPlatform: ContentPlatform | null) {
+    setPlatform(newPlatform: ContentPlatform) {
       platform = newPlatform;
     },
 
@@ -386,7 +386,7 @@ function createContentStore() {
     /** Clear all filters (except instance context) */
     clearFilters() {
       query = "";
-      platform = null;
+      platform = "modrinth";
       category = null;
       sortBy = "relevance";
       contentType = "mod";
@@ -462,7 +462,7 @@ function createContentStore() {
       totalCount = 0;
       currentPage = 0;
       query = "";
-      platform = null;
+      platform = "modrinth";
       mcVersion = null;
       loader = null;
       contentType = "mod";

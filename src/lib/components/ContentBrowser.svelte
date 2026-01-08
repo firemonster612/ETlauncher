@@ -444,8 +444,8 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     return null;
   }
 
-  function handlePlatformChange(platform: ContentPlatform | "all") {
-    contentStore.setPlatform(platform === "all" ? null : platform);
+  function handlePlatformChange(platform: ContentPlatform) {
+    contentStore.setPlatform(platform);
     contentStore.search();
   }
 
@@ -745,8 +745,7 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     { value: "resourcepack", label: "Resource Packs" },
   ];
 
-  const platforms: { value: ContentPlatform | "all"; label: string }[] = [
-    { value: "all", label: "All" },
+  const platforms: { value: ContentPlatform; label: string }[] = [
     { value: "modrinth", label: "Modrinth" },
     { value: "curseforge", label: "CurseForge" },
   ];
@@ -1021,7 +1020,7 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     <div class="flex gap-2 flex-wrap">
       {#each platforms as { value, label } (value)}
         <Button
-          variant={contentStore.platform === (value === "all" ? null : value) ? "default" : "outline"}
+          variant={contentStore.platform === value ? "default" : "outline"}
           size="sm"
           onclick={() => handlePlatformChange(value)}
         >
