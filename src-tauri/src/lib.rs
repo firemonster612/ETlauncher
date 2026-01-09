@@ -87,6 +87,8 @@ pub fn run() {
             commands::modpack::get_modpack_mods,
             commands::modpack::install_modpack,
             commands::modpack::import_modpack_file,
+            commands::modpack::cancel_modpack_install,
+            commands::modpack::get_modpack_install_status,
             // Content commands
             commands::content::search_content,
             commands::content::get_content,

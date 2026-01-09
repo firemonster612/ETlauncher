@@ -49,6 +49,7 @@ md5 = "0.7"
 
 # Async utilities
 futures = "0.3"
+tokio-util = "0.7"
 
 # ZIP extraction for natives
 zip = "2"

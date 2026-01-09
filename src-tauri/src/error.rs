@@ -85,6 +85,10 @@ pub enum AppError {
     #[error("API key required: {0}")]
     ApiKeyRequired(String),
 
+    // Cancellation
+    #[error("Operation cancelled")]
+    Cancelled,
+
     // Settings errors
     #[error("Settings error: {0}")]
     SettingsError(String),
@@ -151,6 +155,7 @@ impl From<AppError> for CommandError {
             AppError::VersionNotCompatible(_) => "VERSION_NOT_COMPATIBLE",
             AppError::DependencyError(_) => "DEPENDENCY_ERROR",
             AppError::ApiKeyRequired(_) => "API_KEY_REQUIRED",
+            AppError::Cancelled => "CANCELLED",
         };
 
         CommandError {

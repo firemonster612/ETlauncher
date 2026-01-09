@@ -16,8 +16,29 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter};
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 use zip::ZipArchive;
+
+/// Check if the operation has been cancelled
+fn check_cancelled(cancel_token: Option<&CancellationToken>) -> Result<(), AppError> {
+    if let Some(token) = cancel_token {
+        if token.is_cancelled() {
+            return Err(AppError::Cancelled);
+        }
+    }
+    Ok(())
+}
+
+/// Cleanup helper for when installation is cancelled or fails
+fn cleanup_failed_install(state: &AppState, instance_id: &str, instance_dir: &PathBuf) {
+    // Remove the instance directory
+    if instance_dir.exists() {
+        let _ = fs::remove_dir_all(instance_dir);
+    }
+    // Remove the instance from the database
+    let _ = instance_service::delete_instance(state, instance_id, true);
+}
 
 /// Progress event for modpack installation
 #[derive(Debug, Clone, Serialize)]
@@ -37,6 +58,7 @@ pub async fn install_modrinth_modpack(
     version_id: &str,
     instance_name: Option<String>,
     app_handle: Option<&AppHandle>,
+    cancel_token: Option<&CancellationToken>,
 ) -> Result<Instance, AppError> {
     println!("[modpack_install] install_modrinth_modpack: modpack_id={}, version_id={}", modpack_id, version_id);
 
@@ -156,6 +178,12 @@ pub async fn install_modrinth_modpack(
     emit_progress(app_handle, "Downloading mods", 25, None, total_files, 0);
 
     for (i, file_entry) in index.files.iter().enumerate() {
+        // Check for cancellation before each file
+        if check_cancelled(cancel_token).is_err() {
+            cleanup_failed_install(state, &instance_id, &instance_dir);
+            return Err(AppError::Cancelled);
+        }
+
         let filename = file_entry
             .path
             .split('/')
@@ -251,6 +279,7 @@ pub async fn install_curseforge_modpack(
     version_id: &str,
     instance_name: Option<String>,
     app_handle: Option<&AppHandle>,
+    cancel_token: Option<&CancellationToken>,
 ) -> Result<Instance, AppError> {
     println!("[modpack_install] install_curseforge_modpack: modpack_id={}, version_id={}", modpack_id, version_id);
 
@@ -379,6 +408,12 @@ pub async fn install_curseforge_modpack(
     fs::create_dir_all(&mods_dir)?;
 
     for (i, cf_file) in manifest.files.iter().enumerate() {
+        // Check for cancellation before each file
+        if check_cancelled(cancel_token).is_err() {
+            cleanup_failed_install(state, &instance_id, &instance_dir);
+            return Err(AppError::Cancelled);
+        }
+
         emit_progress(
             app_handle,
             "Downloading mods",
@@ -1444,6 +1479,7 @@ pub async fn install_ftb_modpack(
     version_id: &str,
     instance_name: Option<String>,
     app_handle: Option<&AppHandle>,
+    cancel_token: Option<&CancellationToken>,
 ) -> Result<Instance, AppError> {
     println!(
         "[modpack_install] install_ftb_modpack: modpack_id={}, version_id={}",
@@ -1550,6 +1586,12 @@ pub async fn install_ftb_modpack(
     emit_progress(app_handle, "Downloading files", 15, None, total_files, 0);
 
     for (i, file) in version.files.iter().enumerate() {
+        // Check for cancellation before each file
+        if check_cancelled(cancel_token).is_err() {
+            cleanup_failed_install(state, &instance_id, &instance_dir);
+            return Err(AppError::Cancelled);
+        }
+
         let filename = file.path.split('/').last().unwrap_or(&file.path);
 
         emit_progress(
@@ -1712,6 +1754,7 @@ pub async fn install_technic_modpack(
     version_id: &str,
     instance_name: Option<String>,
     app_handle: Option<&AppHandle>,
+    cancel_token: Option<&CancellationToken>,
 ) -> Result<Instance, AppError> {
     println!(
         "[modpack_install] install_technic_modpack: modpack_id={}, version_id={}",
@@ -1842,6 +1885,12 @@ pub async fn install_technic_modpack(
         fs::create_dir_all(&mods_dir)?;
 
         for (i, mod_file) in build.mods.iter().enumerate() {
+            // Check for cancellation before each file
+            if check_cancelled(cancel_token).is_err() {
+                cleanup_failed_install(state, &instance_id, &instance_dir);
+                return Err(AppError::Cancelled);
+            }
+
             emit_progress(
                 app_handle,
                 "Downloading mods",
@@ -2048,6 +2097,7 @@ pub async fn install_atlauncher_modpack(
     version_id: &str,
     instance_name: Option<String>,
     app_handle: Option<&AppHandle>,
+    cancel_token: Option<&CancellationToken>,
 ) -> Result<Instance, AppError> {
     println!(
         "[modpack_install] install_atlauncher_modpack: modpack_id={}, version_id={}",
@@ -2202,6 +2252,12 @@ pub async fn install_atlauncher_modpack(
     emit_progress(app_handle, "Downloading mods", 25, None, total_mods, 0);
 
     for (i, mod_entry) in mods_to_download.iter().enumerate() {
+        // Check for cancellation before each file
+        if check_cancelled(cancel_token).is_err() {
+            cleanup_failed_install(state, &instance_id, &instance_dir);
+            return Err(AppError::Cancelled);
+        }
+
         emit_progress(
             app_handle,
             "Downloading mods",

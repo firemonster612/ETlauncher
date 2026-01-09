@@ -66,3 +66,15 @@ export async function importModpackFile(
     instanceName,
   });
 }
+
+/** Cancel the current modpack installation */
+export async function cancelModpackInstall(): Promise<void> {
+  return invoke("cancel_modpack_install");
+}
+
+/** Get current modpack install status */
+export async function getModpackInstallStatus(): Promise<{
+  modpackName: string;
+} | null> {
+  return invoke("get_modpack_install_status");
+}

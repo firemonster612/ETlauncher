@@ -12,21 +12,23 @@
     X,
     ChevronDown,
     Maximize2,
+    StopCircle,
   } from "@lucide/svelte";
   import { marked } from "marked";
-  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-  import { openUrl } from "@tauri-apps/plugin-opener";
+    import { openUrl } from "@tauri-apps/plugin-opener";
+  import { ask } from "@tauri-apps/plugin-dialog";
   import { Button } from "$lib/ui/button";
   import { Checkbox } from "$lib/ui/checkbox";
   import { Input } from "$lib/ui/input";
   import * as Select from "$lib/ui/select";
   import { modpacksStore } from "$lib/stores/modpacks.svelte";
+  import { modpackInstallStore } from "$lib/stores/modpackInstall.svelte";
   import { versionsStore } from "$lib/stores/versions.svelte";
   import DownloadProgress from "$lib/components/DownloadProgress.svelte";
   import ScreenshotLightbox from "$lib/components/ScreenshotLightbox.svelte";
   import DescriptionModal from "$lib/components/DescriptionModal.svelte";
   import * as modpackService from "$lib/services/modpack";
-  import type { Modpack, ModpackMod, ModpackPlatform, ModpackSortBy, LoaderType, ModpackInstallProgress } from "$lib/types";
+  import type { Modpack, ModpackMod, ModpackPlatform, ModpackSortBy, LoaderType } from "$lib/types";
 
   // Category options per platform
   const modrinthCategories = [
@@ -50,8 +52,7 @@
   let isLoadingMods = $state(false);
   let modsError = $state<string | null>(null);
   let modListCache = $state<Record<string, ModpackMod[]>>({});
-  let installProgress = $state<ModpackInstallProgress | null>(null);
-  let loadMoreSentinel: HTMLDivElement | undefined = $state();
+    let loadMoreSentinel: HTMLDivElement | undefined = $state();
   let selectedCategories = $state<string[]>([]);
   let categoriesOpen = $state(false);
   let hasUserScrolled = $state(false);
@@ -351,34 +352,39 @@
       versionId,
     });
 
-    installProgress = null;
-    let unlisten: UnlistenFn | undefined;
+    // The global modpackInstallStore will handle progress events
+    // We just need to call the install function
+    const instance = await modpacksStore.installModpack(
+      selectedModpackDetail.platform,
+      selectedModpackDetail.id,
+      versionId,
+      selectedModpackDetail.name
+    );
 
-    try {
-      // Set up progress listener before starting install
-      unlisten = await listen<ModpackInstallProgress>("modpack_install_progress", (event) => {
-        installProgress = event.payload;
-      });
+    if (instance) {
+      console.log("[modpacks] Install successful, closing modal");
+      closeModpackDetail();
+      alert(`Successfully installed ${selectedModpackDetail.name}!`);
+    } else if (modpacksStore.installError && !modpacksStore.installError.includes("CANCELLED")) {
+      console.error("[modpacks] Install failed:", modpacksStore.installError);
+      alert(`Failed to install: ${modpacksStore.installError}`);
+    }
+    // If cancelled, the global store handles the UI feedback
+  }
 
-      const instance = await modpacksStore.installModpack(
-        selectedModpackDetail.platform,
-        selectedModpackDetail.id,
-        versionId,
-        selectedModpackDetail.name
-      );
+  async function handleCancelInstall() {
+    if (!modpackInstallStore.modpackName || modpackInstallStore.isCancelling) return;
 
-      if (instance) {
-        console.log("[modpacks] Install successful, closing modal");
-        closeModpackDetail();
-        // TODO: Navigate to instances page or show success toast
-        alert(`Successfully installed ${selectedModpackDetail.name}!`);
-      } else {
-        console.error("[modpacks] Install failed:", modpacksStore.installError);
-        alert(`Failed to install: ${modpacksStore.installError}`);
+    const confirmed = await ask(
+      `This will stop the download and remove any partially installed files.`,
+      {
+        title: `Cancel installation of "${modpackInstallStore.modpackName}"?`,
+        kind: "warning",
       }
-    } finally {
-      unlisten?.();
-      installProgress = null;
+    );
+
+    if (confirmed) {
+      modpackInstallStore.cancel();
     }
   }
 
@@ -930,10 +936,10 @@
                           e.stopPropagation();
                           handleInstall(version.id);
                         }}
-                        disabled={modpacksStore.isInstalling}
+                        disabled={modpackInstallStore.isInstalling}
                         data-tutorial={versionIndex === 0 ? "modpack-install" : undefined}
                       >
-                        {#if modpacksStore.isInstalling}
+                        {#if modpackInstallStore.isInstalling}
                           <Loader2 class="h-4 w-4 mr-1 animate-spin" />
                           Installing...
                         {:else}
@@ -950,15 +956,35 @@
       </div>
 
       <!-- Sticky Install Progress -->
-      {#if modpacksStore.isInstalling && installProgress}
+      {#if modpackInstallStore.isInstalling}
         <div class="border-t border-border p-4 bg-card flex-shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
-          <DownloadProgress
-            stage={installProgress.stage}
-            progress={installProgress.progress}
-            currentItem={installProgress.currentItem}
-            totalItems={installProgress.totalItems}
-            completedItems={installProgress.completedItems}
-          />
+          <div class="flex items-center gap-3">
+            <div class="flex-1">
+              {#if modpackInstallStore.progress}
+                <DownloadProgress
+                  stage={modpackInstallStore.progress.stage}
+                  progress={modpackInstallStore.progress.progress}
+                  currentItem={modpackInstallStore.progress.currentItem}
+                  totalItems={modpackInstallStore.progress.totalItems}
+                  completedItems={modpackInstallStore.progress.completedItems}
+                />
+              {:else}
+                <div class="flex items-center gap-2 text-sm">
+                  <Loader2 class="h-4 w-4 animate-spin text-primary flex-shrink-0" />
+                  <span class="font-medium">Starting installation...</span>
+                </div>
+              {/if}
+            </div>
+            <Button
+              variant="destructive"
+              size="sm"
+              onclick={handleCancelInstall}
+              disabled={modpackInstallStore.isCancelling}
+            >
+              <StopCircle class="h-4 w-4 mr-1" />
+              Cancel
+            </Button>
+          </div>
         </div>
       {/if}
     </div>

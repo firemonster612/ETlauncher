@@ -5,9 +5,17 @@ use crate::models::{
 use crate::models::instance::ModpackPlatform;
 use crate::services::{atlauncher_service, curseforge_service, ftb_service, modpack_install_service, modrinth_service, technic_service};
 use crate::state::AppState;
+use serde::Serialize;
 use std::cmp::Reverse;
 use std::collections::VecDeque;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
+
+/// Info sent when a modpack install starts
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModpackInstallStarted {
+    pub modpack_name: String,
+}
 
 /// Search for modpacks across platforms
 #[tauri::command]
@@ -376,6 +384,26 @@ pub async fn install_modpack(
 ) -> Result<Instance, CommandError> {
     println!("[modpack_cmd] install_modpack: platform={:?}, modpack_id={}, version_id={}, instance_name={:?}",
         platform, modpack_id, version_id, instance_name);
+
+    // Check if already installing
+    if state.is_modpack_installing() {
+        return Err(CommandError {
+            code: "ALREADY_INSTALLING".to_string(),
+            message: "A modpack installation is already in progress".to_string(),
+        });
+    }
+
+    // Get display name for the modpack
+    let modpack_name = instance_name.clone().unwrap_or_else(|| format!("{:?} modpack", platform));
+
+    // Register install state and get cancellation token
+    let cancel_token = state.start_modpack_install(modpack_name.clone());
+
+    // Emit started event
+    let _ = app_handle.emit("modpack_install_started", ModpackInstallStarted {
+        modpack_name: modpack_name.clone(),
+    });
+
     let result = match platform {
         ModpackPlatform::Modrinth => {
             modpack_install_service::install_modrinth_modpack(
@@ -384,9 +412,9 @@ pub async fn install_modpack(
                 &version_id,
                 instance_name,
                 Some(&app_handle),
+                Some(&cancel_token),
             )
             .await
-            .map_err(CommandError::from)
         }
         ModpackPlatform::CurseForge => {
             modpack_install_service::install_curseforge_modpack(
@@ -395,9 +423,9 @@ pub async fn install_modpack(
                 &version_id,
                 instance_name,
                 Some(&app_handle),
+                Some(&cancel_token),
             )
             .await
-            .map_err(CommandError::from)
         }
         ModpackPlatform::FTB => {
             modpack_install_service::install_ftb_modpack(
@@ -406,9 +434,9 @@ pub async fn install_modpack(
                 &version_id,
                 instance_name,
                 Some(&app_handle),
+                Some(&cancel_token),
             )
             .await
-            .map_err(CommandError::from)
         }
         ModpackPlatform::Technic => {
             modpack_install_service::install_technic_modpack(
@@ -417,9 +445,9 @@ pub async fn install_modpack(
                 &version_id,
                 instance_name,
                 Some(&app_handle),
+                Some(&cancel_token),
             )
             .await
-            .map_err(CommandError::from)
         }
         ModpackPlatform::ATLauncher => {
             modpack_install_service::install_atlauncher_modpack(
@@ -428,16 +456,63 @@ pub async fn install_modpack(
                 &version_id,
                 instance_name,
                 Some(&app_handle),
+                Some(&cancel_token),
             )
             .await
-            .map_err(CommandError::from)
         }
     };
-    match &result {
-        Ok(instance) => println!("[modpack_cmd] install_modpack: success, instance_id={}", instance.id),
-        Err(e) => println!("[modpack_cmd] install_modpack: error={:?}", e),
+
+    // Clear install state
+    state.clear_modpack_install();
+
+    match result {
+        Ok(instance) => {
+            println!("[modpack_cmd] install_modpack: success, instance_id={}", instance.id);
+            let _ = app_handle.emit("modpack_install_complete", &instance);
+            Ok(instance)
+        }
+        Err(crate::error::AppError::Cancelled) => {
+            println!("[modpack_cmd] install_modpack: cancelled");
+            let _ = app_handle.emit("modpack_install_cancelled", ());
+            Err(CommandError {
+                code: "CANCELLED".to_string(),
+                message: "Installation cancelled".to_string(),
+            })
+        }
+        Err(e) => {
+            println!("[modpack_cmd] install_modpack: error={:?}", e);
+            let _ = app_handle.emit("modpack_install_error", e.to_string());
+            Err(CommandError::from(e))
+        }
     }
-    result
+}
+
+/// Cancel the current modpack installation
+#[tauri::command]
+pub async fn cancel_modpack_install(
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    println!("[modpack_cmd] cancel_modpack_install");
+
+    if let Some(token) = state.get_modpack_cancel_token() {
+        token.cancel();
+        Ok(())
+    } else {
+        Err(CommandError {
+            code: "NO_INSTALL".to_string(),
+            message: "No modpack installation in progress".to_string(),
+        })
+    }
+}
+
+/// Get current modpack install status
+#[tauri::command]
+pub fn get_modpack_install_status(
+    state: State<'_, AppState>,
+) -> Option<ModpackInstallStarted> {
+    state.get_modpack_install().map(|name| ModpackInstallStarted {
+        modpack_name: name,
+    })
 }
 
 /// Import an instance from a local .mrpack file
