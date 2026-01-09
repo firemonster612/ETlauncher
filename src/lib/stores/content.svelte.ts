@@ -20,7 +20,7 @@ function createContentStore() {
   let searchError = $state<string | null>(null);
   let totalCount = $state(0);
   let currentPage = $state(0);
-  let pageSize = $state(20);
+  const pageSize = $state(20);
 
   // Filter state (can be set from instance context)
   let query = $state("");
@@ -313,8 +313,8 @@ function createContentStore() {
         const result = await contentService.searchContent(params);
         items = result.items;
         totalCount = result.totalCount;
-      } catch (e: any) {
-        searchError = e?.message || (typeof e === "string" ? e : JSON.stringify(e));
+      } catch (e: unknown) {
+        searchError = e instanceof Error ? e.message : (typeof e === "string" ? e : JSON.stringify(e));
         console.error("Failed to search content:", e);
       } finally {
         isSearching = false;
@@ -346,8 +346,8 @@ function createContentStore() {
         const result = await contentService.searchContent(params);
         items = [...items, ...result.items];
         totalCount = result.totalCount;
-      } catch (e: any) {
-        searchError = e?.message || (typeof e === "string" ? e : JSON.stringify(e));
+      } catch (e: unknown) {
+        searchError = e instanceof Error ? e.message : (typeof e === "string" ? e : JSON.stringify(e));
         console.error("Failed to load more content:", e);
       } finally {
         isSearching = false;
@@ -427,7 +427,7 @@ function createContentStore() {
             selectedContent.platform
           );
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         console.error("Failed to load content versions:", e);
       } finally {
         isLoadingVersions = false;

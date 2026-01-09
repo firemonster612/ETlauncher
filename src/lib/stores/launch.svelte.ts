@@ -1,6 +1,7 @@
 import type { LaunchStatus, GameLogLine } from "$lib/types";
 import * as launchService from "$lib/services/launch";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { SvelteMap } from "svelte/reactivity";
 
 /** Extract error message from various error types */
 function getErrorMessage(e: unknown): string {
@@ -28,7 +29,7 @@ let logIdCounter = 0;
 
 /** Create the launch store */
 function createLaunchStore() {
-  let launchStates = $state<Map<string, LaunchState>>(new Map());
+  let launchStates: Map<string, LaunchState> = new SvelteMap();
   let gameLogs = $state<(GameLogLine & { id: number })[]>([]);
   let error = $state<string | null>(null);
 
@@ -98,7 +99,7 @@ function createLaunchStore() {
         instanceId,
         status: { status: "preparing", message: "Starting..." },
       });
-      launchStates = new Map(launchStates);
+      launchStates = new SvelteMap(launchStates);
 
       try {
         const pid = await launchService.launchInstance(instanceId, accountId);
@@ -107,7 +108,7 @@ function createLaunchStore() {
         console.error("Launch error:", e);
         error = getErrorMessage(e);
         launchStates.delete(instanceId);
-        launchStates = new Map(launchStates);
+        launchStates = new SvelteMap(launchStates);
         return null;
       }
     },
@@ -131,7 +132,7 @@ function createLaunchStore() {
             // Remove from active states after a delay
             setTimeout(() => {
               launchStates.delete(instance_id);
-              launchStates = new Map(launchStates);
+              launchStates = new SvelteMap(launchStates);
             }, 5000);
           }
 
@@ -139,7 +140,7 @@ function createLaunchStore() {
             instanceId: instance_id,
             status,
           });
-          launchStates = new Map(launchStates);
+          launchStates = new SvelteMap(launchStates);
         }
       );
 
@@ -157,7 +158,7 @@ function createLaunchStore() {
             status: { status: "running", pid: 0 },
           });
         }
-        launchStates = new Map(launchStates);
+        launchStates = new SvelteMap(launchStates);
       } catch (e) {
         console.error("Failed to get running instances:", e);
       }

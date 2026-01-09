@@ -1,13 +1,6 @@
 import type { AppSettings } from "$lib/types";
 import * as settingsService from "$lib/services/settings";
 
-/** Settings store state */
-interface SettingsState {
-  settings: AppSettings | null;
-  isLoading: boolean;
-  error: string | null;
-}
-
 /** Create the settings store */
 function createSettingsStore() {
   let settings = $state<AppSettings | null>(null);

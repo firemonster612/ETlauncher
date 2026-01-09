@@ -1,4 +1,4 @@
-import type { Instance, CreateInstanceRequest, UpdateInstanceRequest } from "$lib/types";
+import type { Instance, CreateInstanceRequest, UpdateInstanceRequest, LoaderType } from "$lib/types";
 import type { LoaderInstallProgress } from "$lib/types/loader";
 import * as instanceService from "$lib/services/instance";
 import * as loaderService from "$lib/services/loader";
@@ -49,8 +49,8 @@ function createInstancesStore() {
 
       try {
         instances = await instanceService.getInstances();
-      } catch (e: any) {
-        error = e?.message || (typeof e === 'string' ? e : JSON.stringify(e));
+      } catch (e: unknown) {
+        error = e instanceof Error ? e.message : (typeof e === 'string' ? e : JSON.stringify(e));
         console.error("Failed to load instances:", e);
       } finally {
         isLoading = false;
@@ -76,8 +76,8 @@ function createInstancesStore() {
         }
 
         return instance;
-      } catch (e: any) {
-        error = e?.message || (typeof e === 'string' ? e : JSON.stringify(e));
+      } catch (e: unknown) {
+        error = e instanceof Error ? e.message : (typeof e === 'string' ? e : JSON.stringify(e));
         console.error("Failed to create instance:", e);
         return null;
       }
@@ -86,7 +86,7 @@ function createInstancesStore() {
     /** Install a mod loader to an instance */
     async installLoader(
       instanceId: string,
-      loaderType: string,
+      loaderType: LoaderType,
       loaderVersion: string
     ): Promise<boolean> {
       isInstallingLoader = true;
@@ -96,16 +96,16 @@ function createInstancesStore() {
       try {
         await loaderService.installLoader(
           instanceId,
-          loaderType as any,
+          loaderType,
           loaderVersion,
           (progress) => {
             loaderInstallProgress = progress;
           }
         );
         return true;
-      } catch (e: any) {
+      } catch (e: unknown) {
         // Tauri errors are objects with message property
-        loaderInstallError = e?.message || (typeof e === 'string' ? e : JSON.stringify(e));
+        loaderInstallError = e instanceof Error ? e.message : (typeof e === 'string' ? e : JSON.stringify(e));
         console.error("Failed to install loader:", e);
         return false;
       } finally {
@@ -126,8 +126,8 @@ function createInstancesStore() {
         const updated = await instanceService.updateInstance(instanceId, updates);
         instances = instances.map((i) => (i.id === instanceId ? updated : i));
         return updated;
-      } catch (e: any) {
-        error = e?.message || (typeof e === 'string' ? e : JSON.stringify(e));
+      } catch (e: unknown) {
+        error = e instanceof Error ? e.message : (typeof e === 'string' ? e : JSON.stringify(e));
         console.error("Failed to update instance:", e);
         return null;
       }
@@ -144,8 +144,8 @@ function createInstancesStore() {
           selectedInstanceId = null;
         }
         return true;
-      } catch (e: any) {
-        error = e?.message || (typeof e === 'string' ? e : JSON.stringify(e));
+      } catch (e: unknown) {
+        error = e instanceof Error ? e.message : (typeof e === 'string' ? e : JSON.stringify(e));
         console.error("Failed to delete instance:", e);
         return false;
       }
@@ -159,8 +159,8 @@ function createInstancesStore() {
         const duplicate = await instanceService.duplicateInstance(instanceId, newName);
         instances = [duplicate, ...instances];
         return duplicate;
-      } catch (e: any) {
-        error = e?.message || (typeof e === 'string' ? e : JSON.stringify(e));
+      } catch (e: unknown) {
+        error = e instanceof Error ? e.message : (typeof e === 'string' ? e : JSON.stringify(e));
         console.error("Failed to duplicate instance:", e);
         return null;
       }

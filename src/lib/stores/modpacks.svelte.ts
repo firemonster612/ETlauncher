@@ -17,7 +17,7 @@ function createModpacksStore() {
   let searchError = $state<string | null>(null);
   let totalCount = $state(0);
   let currentPage = $state(0);
-  let pageSize = $state(20);
+  const pageSize = $state(20);
 
   // Filter state
   let query = $state("");
@@ -133,9 +133,9 @@ function createModpacksStore() {
         console.log("[modpacksStore] Search result:", { count: result.modpacks.length, total: result.totalCount });
         modpacks = result.modpacks;
         totalCount = result.totalCount;
-      } catch (e: any) {
+      } catch (e: unknown) {
         console.error("[modpacksStore] Search failed:", e);
-        searchError = e?.message || (typeof e === "string" ? e : JSON.stringify(e));
+        searchError = e instanceof Error ? e.message : (typeof e === "string" ? e : JSON.stringify(e));
       } finally {
         isSearching = false;
       }
@@ -165,9 +165,9 @@ function createModpacksStore() {
         console.log("[modpacksStore] Loaded more:", result.modpacks.length);
         modpacks = [...modpacks, ...result.modpacks];
         totalCount = result.totalCount;
-      } catch (e: any) {
+      } catch (e: unknown) {
         console.error("[modpacksStore] Load more failed:", e);
-        searchError = e?.message || (typeof e === "string" ? e : JSON.stringify(e));
+        searchError = e instanceof Error ? e.message : (typeof e === "string" ? e : JSON.stringify(e));
       } finally {
         isSearching = false;
       }
@@ -232,9 +232,9 @@ function createModpacksStore() {
           const mergedGallery =
             (detailed.gallery?.length ?? 0) > 0 ? detailed.gallery : modpack.gallery;
           selectedModpack = { ...modpack, ...detailed, gallery: mergedGallery };
-        } catch (e: any) {
+        } catch (e: unknown) {
           console.error("[modpacksStore] Failed to load detailed modpack info:", e);
-          detailError = e?.message || (typeof e === "string" ? e : JSON.stringify(e));
+          detailError = e instanceof Error ? e.message : (typeof e === "string" ? e : JSON.stringify(e));
           selectedModpack = modpack;
         } finally {
           isLoadingDetail = false;
@@ -245,7 +245,7 @@ function createModpacksStore() {
         console.log("[modpacksStore] Loading versions for modpack:", modpack.name, modpack.platform);
         selectedModpackVersions = await modpackService.getModpackVersions(modpack.platform, modpack.id);
         console.log("[modpacksStore] Loaded versions:", selectedModpackVersions.length);
-      } catch (e: any) {
+      } catch (e: unknown) {
         console.error("[modpacksStore] Failed to load modpack versions:", e);
       } finally {
         isLoadingVersions = false;
@@ -299,9 +299,9 @@ function createModpacksStore() {
 
         console.log("[modpacksStore] Modpack installed successfully, created instance:", instance.id);
         return instance;
-      } catch (e: any) {
+      } catch (e: unknown) {
         console.error("[modpacksStore] Install failed:", e);
-        installError = e?.message || (typeof e === "string" ? e : JSON.stringify(e));
+        installError = e instanceof Error ? e.message : (typeof e === "string" ? e : JSON.stringify(e));
         return null;
       } finally {
         isInstalling = false;

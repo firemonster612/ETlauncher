@@ -13,7 +13,6 @@ export default [
       'src-tauri/target/',
       '*.config.js',
       '*.config.ts',
-      '**/*.svelte.ts',
     ],
   },
   js.configs.recommended,
@@ -27,6 +26,12 @@ export default [
       },
       ecmaVersion: 2022,
       sourceType: 'module',
+    },
+  },
+  {
+    files: ['**/*.svelte.ts'],
+    languageOptions: {
+      parser: tseslint.parser,
     },
   },
   {

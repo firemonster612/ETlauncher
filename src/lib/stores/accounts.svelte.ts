@@ -1,4 +1,4 @@
-import type { MinecraftAccount, DeviceCodeResponse, AuthPollStatus } from "$lib/types";
+import type { MinecraftAccount, DeviceCodeResponse } from "$lib/types";
 import * as accountService from "$lib/services/account";
 import * as authService from "$lib/services/auth";
 
@@ -19,13 +19,6 @@ function getErrorMessage(e: unknown): string {
     }
   }
   return "An unknown error occurred";
-}
-
-/** Auth state for device code flow */
-interface AuthState {
-  isAuthenticating: boolean;
-  deviceCode: DeviceCodeResponse | null;
-  error: string | null;
 }
 
 /** Create the accounts store */
