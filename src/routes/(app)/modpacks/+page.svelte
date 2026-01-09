@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { onDestroy } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import {
     Package,
     Search,

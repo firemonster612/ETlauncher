@@ -683,7 +683,7 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
       installSuccess = null;
     } catch (e: unknown) {
       console.error("[ContentBrowser] Installation failed:", e);
-      installError = e instanceof Error ? e.message : (typeof e === "string" ? e : JSON.stringify(e));
+      installError = e instanceof Error ? e.message : String(e);
     } finally {
       isInstalling = false;
       contentStore.setDownloadProgress(null);
@@ -733,7 +733,7 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
       closeContentDetail();
     } catch (e: unknown) {
       console.error("[ContentBrowser] Uninstall failed:", e);
-      uninstallError = e instanceof Error ? e.message : (typeof e === "string" ? e : JSON.stringify(e));
+      uninstallError = e instanceof Error ? e.message : String(e);
     } finally {
       isUninstalling = false;
     }
@@ -814,7 +814,7 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     } catch (e: unknown) {
       if (requestId !== quickInstallRequestId) return;
       console.error("[ContentBrowser] Quick install failed:", e);
-      quickInstallError = e instanceof Error ? e.message : (typeof e === "string" ? e : JSON.stringify(e));
+      quickInstallError = e instanceof Error ? e.message : String(e);
     } finally {
       if (requestId !== quickInstallRequestId) return;
       isInstalling = false;
@@ -832,6 +832,7 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
         return item.modrinthProject?.projectId === content.id;
       } else if (content.platform === "curseforge") {
         const contentIdNum = parseInt(content.id, 10);
+        if (isNaN(contentIdNum)) return false;
         return item.curseforgeProject?.projectId === contentIdNum;
       }
       return false;

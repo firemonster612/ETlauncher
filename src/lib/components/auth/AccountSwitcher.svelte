@@ -119,6 +119,13 @@
               src={getAvatarUrl(account.username)}
               alt={account.username}
               class="w-6 h-6 rounded pixelated"
+              onerror={(e) => {
+                e.currentTarget.style.display = 'none';
+                const fallback = document.createElement('div');
+                fallback.className = 'w-6 h-6 rounded bg-primary/20 flex items-center justify-center text-xs font-bold';
+                fallback.textContent = account.username.charAt(0).toUpperCase();
+                e.currentTarget.parentElement?.insertBefore(fallback, e.currentTarget);
+              }}
             />
             <span class="text-sm truncate">{account.username}</span>
           </button>

@@ -114,7 +114,7 @@
         </p>
       </div>
 
-      <div class="border-t border-border pt-4 px-6 flex-col sm:flex-row gap-2">
+      <div class="border-t border-border pt-4 px-6 flex flex-col sm:flex-row gap-2">
         <Button variant="ghost" onclick={handleSkip} class="w-full sm:w-auto">
           Skip for now
         </Button>

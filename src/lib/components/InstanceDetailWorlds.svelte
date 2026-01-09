@@ -93,7 +93,8 @@
 
   function formatDate(ms: number | null): string {
     if (!ms) return "Unknown";
-    return new Date(ms).toLocaleString();
+    const date = new Date(ms);
+    return isNaN(date.getTime()) ? "Unknown" : date.toLocaleString();
   }
 
   function formatSize(size: number): string {
