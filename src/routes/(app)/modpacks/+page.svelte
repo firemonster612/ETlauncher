@@ -13,6 +13,7 @@
     ChevronDown,
     Maximize2,
     StopCircle,
+    Check,
   } from "@lucide/svelte";
   import { marked } from "marked";
     import { openUrl } from "@tauri-apps/plugin-opener";
@@ -670,8 +671,8 @@
 
 <!-- Modpack Detail Modal -->
  {#if selectedModpackDetail}
-  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-    <div class="bg-card border-2 border-border max-w-5xl w-full max-h-[85vh] flex flex-col">
+  <div class="fixed inset-x-0 top-[var(--titlebar-height)] h-[calc(100vh-var(--titlebar-height))] bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-card border-2 border-border max-w-6xl w-full max-h-[90vh] flex flex-col rounded-lg shadow-2xl">
       <!-- Header -->
       <div class="p-6 border-b border-border flex-shrink-0">
         <div class="flex gap-4">
@@ -719,7 +720,7 @@
         </div>
       </div>
 
-      <div class="flex-1 overflow-hidden p-5 grid gap-4 grid-cols-1 md:grid-cols-[1.8fr_1fr] xl:grid-cols-[2fr_1fr] min-h-0">
+      <div class="flex-1 overflow-hidden p-5 grid gap-4 grid-cols-1 md:grid-cols-[2.5fr_1fr] xl:grid-cols-[3fr_1fr] min-h-0">
           <div class="space-y-4 overflow-y-auto pr-1 min-h-0">
             <div class="flex items-center gap-2">
               <Button
@@ -901,7 +902,7 @@
           </div>
 
           <div class="space-y-3 overflow-y-auto pr-1 min-h-0">
-            <div class="border-2 border-border rounded-lg bg-background/70 p-4">
+            <div class="border-2 border-border rounded-lg bg-background/70 p-3">
               <h3 class="font-semibold mb-2 text-sm">Select Version</h3>
               {#if modpacksStore.isLoadingVersions}
                 <div class="flex items-center gap-2 text-muted-foreground text-sm">
@@ -911,42 +912,29 @@
               {:else if modpacksStore.selectedModpackVersions.length === 0}
                 <p class="text-sm text-muted-foreground">No versions available</p>
               {:else}
-                <div class="space-y-2 pb-1">
+                <div class="space-y-1">
                   {#each modpacksStore.selectedModpackVersions.slice(0, 15) as version, versionIndex (version.id)}
                     {@const isSelected = selectedVersionId === version.id}
                     <button
                       type="button"
-                      class="w-full flex items-center justify-between gap-3 p-3 rounded border-2 transition-colors text-left {isSelected
+                      class="w-full p-2 rounded border-2 transition-colors text-left {isSelected
                         ? 'border-primary bg-primary/10'
-                        : 'border-border bg-muted/30 hover:border-primary/50'}"
+                        : 'border-border hover:border-primary/50'}"
                       onclick={() => (selectedVersionId = version.id)}
+                      data-tutorial={versionIndex === 0 ? "modpack-install" : undefined}
                     >
-                      <div class="min-w-0">
-                        <div class="font-medium text-sm truncate">{version.name}</div>
-                        <div class="text-xs text-muted-foreground">
-                          MC {version.mcVersion} &bull; {version.loaderType}
-                          {#if version.releasedAt}
-                            &bull; {new Date(version.releasedAt * 1000).toLocaleDateString()}
-                          {/if}
-                        </div>
-                      </div>
-                      <Button
-                        size="sm"
-                        onclick={(e) => {
-                          e.stopPropagation();
-                          handleInstall(version.id);
-                        }}
-                        disabled={modpackInstallStore.isInstalling}
-                        data-tutorial={versionIndex === 0 ? "modpack-install" : undefined}
-                      >
-                        {#if modpackInstallStore.isInstalling}
-                          <Loader2 class="h-4 w-4 mr-1 animate-spin" />
-                          Installing...
-                        {:else}
-                          <Download class="h-4 w-4 mr-1" />
-                          Install
+                      <div class="flex items-center gap-2">
+                        {#if isSelected}
+                          <Check class="h-4 w-4 text-primary" />
                         {/if}
-                      </Button>
+                        <span class="font-medium text-sm">{version.name}</span>
+                      </div>
+                      <div class="text-xs text-muted-foreground mt-0.5">
+                        MC {version.mcVersion} &bull; {version.loaderType}
+                        {#if version.releasedAt}
+                          &bull; {new Date(version.releasedAt * 1000).toLocaleDateString()}
+                        {/if}
+                      </div>
                     </button>
                   {/each}
                 </div>
@@ -954,6 +942,22 @@
             </div>
           </div>
       </div>
+
+      <!-- Footer with Install/Cancel buttons -->
+      {#if !modpackInstallStore.isInstalling}
+        <div class="border-t border-border p-4 bg-card flex-shrink-0 flex justify-end gap-3">
+          <Button variant="outline" onclick={closeModpackDetail}>
+            Cancel
+          </Button>
+          <Button
+            disabled={!selectedVersionId || modpackInstallStore.isInstalling}
+            onclick={() => selectedVersionId && handleInstall(selectedVersionId)}
+          >
+            <Download class="h-4 w-4 mr-2" />
+            Install
+          </Button>
+        </div>
+      {/if}
 
       <!-- Sticky Install Progress -->
       {#if modpackInstallStore.isInstalling}

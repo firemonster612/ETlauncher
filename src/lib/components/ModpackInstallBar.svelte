@@ -23,7 +23,7 @@
 
 {#if modpackInstallStore.isInstalling}
   <div
-    class="fixed bottom-0 left-0 right-0 md:left-[var(--sidebar-width)] z-40 bg-card border-t-2 border-border p-4 shadow-lg"
+    class="fixed bottom-0 left-0 right-0 z-40 bg-card border-t-2 border-border p-4 shadow-lg"
   >
     <div class="flex items-center gap-4 max-w-4xl mx-auto">
       <!-- Progress info -->

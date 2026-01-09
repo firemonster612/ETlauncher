@@ -878,7 +878,7 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
 ></button>
 
 <!-- Panel -->
-<div class="fixed inset-x-0 top-[var(--titlebar-height)] h-[calc(100vh-var(--titlebar-height))] md:left-[var(--sidebar-width)] md:w-[calc(100vw-var(--sidebar-width))] w-full max-w-none bg-card border-l-2 border-border z-50 flex flex-col shadow-2xl overflow-hidden">
+<div class="fixed inset-x-0 top-[var(--titlebar-height)] h-[calc(100vh-var(--titlebar-height))] w-full max-w-none bg-card border-l-2 border-border z-50 flex flex-col shadow-2xl overflow-hidden">
   <!-- Close Button -->
   <button
     class="absolute top-2 right-2 text-muted-foreground hover:text-foreground p-2 z-10"
@@ -886,19 +886,6 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
   >
     <X class="h-5 w-5" />
   </button>
-
-  <!-- Content Type Tabs -->
-  <div class="px-4 pt-2 pb-2 border-b border-border flex gap-2" data-tutorial="content-browser-types">
-    {#each contentTypes as { value, label } (value)}
-      <Button
-        variant={contentStore.contentType === value ? "default" : "secondary"}
-        size="sm"
-        onclick={() => handleContentTypeChange(value)}
-      >
-        {label}
-      </Button>
-    {/each}
-  </div>
 
   <!-- Browse / Installed Tabs -->
   <div class="px-4 pt-2 flex gap-1 border-b border-border">
@@ -1043,6 +1030,18 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
           </Select.Content>
         </Select.Root>
       </div>
+    </div>
+    <!-- Content Type Buttons -->
+    <div class="flex gap-2" data-tutorial="content-browser-types">
+      {#each contentTypes as { value, label } (value)}
+        <Button
+          variant={contentStore.contentType === value ? "default" : "secondary"}
+          size="sm"
+          onclick={() => handleContentTypeChange(value)}
+        >
+          {label}
+        </Button>
+      {/each}
     </div>
   </div>
 
@@ -1566,7 +1565,7 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
         </div>
       </div>
 
-      <div class="flex-1 overflow-hidden p-5 grid gap-4 grid-cols-1 md:grid-cols-[1.8fr_1fr] xl:grid-cols-[2fr_1fr] min-h-0">
+      <div class="flex-1 overflow-hidden p-5 grid gap-4 grid-cols-1 md:grid-cols-[2.5fr_1fr] xl:grid-cols-[3fr_1fr] min-h-0">
         <div class="space-y-4 overflow-y-auto pr-1 min-h-0">
           {#if detailError}
             <div class="p-3 bg-destructive/10 border-2 border-destructive rounded text-destructive text-sm">
@@ -1691,7 +1690,7 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
         </div>
 
         <div class="space-y-3 overflow-y-auto pr-1 min-h-0">
-          <div class="border-2 border-border rounded-lg bg-background/70 p-4">
+          <div class="border-2 border-border rounded-lg bg-background/70 p-3 max-w-sm">
             <h3 class="font-semibold mb-2 text-sm">Select Version</h3>
             {#if contentStore.isLoadingVersions}
               <div class="space-y-2">
@@ -1709,26 +1708,17 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
               <div class="space-y-1">
                 {#each contentStore.selectedContentVersions.slice(0, 15) as version (version.id)}
                   {@const isSelected = contentStore.selectedVersion?.id === version.id}
-                  {@const hasRequiredDeps = version.dependencies.some(d => d.dependencyType === "required")}
                   <button
                     class="w-full p-2 text-left rounded border-2 transition-colors {isSelected
                       ? 'border-primary bg-primary/10'
                       : 'border-border hover:border-primary/50'}"
                     onclick={() => handleVersionSelect(version)}
                   >
-                    <div class="flex items-center justify-between">
-                      <div class="flex items-center gap-2">
-                        {#if isSelected}
-                          <Check class="h-4 w-4 text-primary" />
-                        {/if}
-                        <span class="font-medium text-sm">{version.versionNumber}</span>
-                      </div>
-                      {#if hasRequiredDeps}
-                        <span class="text-xs text-amber-500 flex items-center gap-1">
-                          <AlertTriangle class="h-3 w-3" />
-                          Dependencies
-                        </span>
+                    <div class="flex items-center gap-2">
+                      {#if isSelected}
+                        <Check class="h-4 w-4 text-primary" />
                       {/if}
+                      <span class="font-medium text-sm">{version.versionNumber}</span>
                     </div>
                     <div class="text-xs text-muted-foreground mt-0.5">
                       {version.mcVersions.slice(0, 3).join(", ")}

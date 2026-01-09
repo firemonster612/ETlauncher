@@ -221,7 +221,7 @@
 
   <!-- Full-page panel (matches ContentBrowser sizing) -->
   <div
-    class="fixed inset-x-0 top-[var(--titlebar-height)] h-[calc(100vh-var(--titlebar-height))] md:left-[var(--sidebar-width)] md:w-[calc(100vw-var(--sidebar-width))] w-full max-w-none bg-card border-l-2 border-border z-50 flex flex-col shadow-2xl overflow-hidden"
+    class="fixed inset-x-0 top-[var(--titlebar-height)] h-[calc(100vh-var(--titlebar-height))] w-full max-w-none bg-card border-l-2 border-border z-50 flex flex-col shadow-2xl overflow-hidden"
   >
     <div class="flex items-center justify-between px-6 py-4 border-b border-border">
       <div class="flex items-center gap-3">
