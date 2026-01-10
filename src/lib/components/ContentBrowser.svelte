@@ -30,6 +30,7 @@
   import { Skeleton } from "$lib/ui/skeleton";
   import { contentStore } from "$lib/stores/content.svelte";
   import * as contentService from "$lib/services/content";
+  import { getErrorMessage } from "$lib/utils/error";
   import ScreenshotLightbox from "$lib/components/ScreenshotLightbox.svelte";
   import DescriptionModal from "$lib/components/DescriptionModal.svelte";
   import type {
@@ -226,16 +227,17 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     // Listen for queue status changes
     const unlistenQueueStatusPromise = listen<{ queueId: string; contentId: string; status: QueueItemStatus; error?: string }>(
       "content_queue_status",
-      (event) => {
+      async (event) => {
+        // Refresh installed content BEFORE updating status when download completes
+        // This ensures the "installed" badge shows immediately instead of a gap
+        if (event.payload.status === "completed") {
+          await contentStore.refreshInstalledContent();
+        }
         contentStore.updateQueueItemStatus(
           event.payload.queueId,
           event.payload.status,
           event.payload.error
         );
-        // Refresh installed content when a download completes
-        if (event.payload.status === "completed") {
-          contentStore.refreshInstalledContent();
-        }
       }
     );
 
@@ -733,12 +735,24 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     const platform = selectedContentDetail.platform;
 
     // Find the matching installed item from scan result to get the filename
+    // This must use the same matching logic as isContentInstalled (including slug fallback)
+    const normalizedContentSlug = contentStore.normalizeSlug(selectedContentDetail.slug);
     let installedItem = contentStore.scanResult?.items.find((item) => {
       if (platform === "modrinth") {
-        return item.modrinthProject?.projectId === contentId;
+        // Direct match by Modrinth project ID
+        if (item.modrinthProject?.projectId === contentId) return true;
+        // Fallback: match by CurseForge slug
+        if (item.curseforgeProject?.slug && 
+            contentStore.normalizeSlug(item.curseforgeProject.slug) === normalizedContentSlug) return true;
+        return false;
       } else if (platform === "curseforge") {
+        // Direct match by CurseForge project ID
         const contentIdNum = parseInt(contentId, 10);
-        return item.curseforgeProject?.projectId === contentIdNum;
+        if (!isNaN(contentIdNum) && item.curseforgeProject?.projectId === contentIdNum) return true;
+        // Fallback: match by Modrinth slug
+        if (item.modrinthProject?.slug && 
+            contentStore.normalizeSlug(item.modrinthProject.slug) === normalizedContentSlug) return true;
+        return false;
       }
       return false;
     });
@@ -828,7 +842,7 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     } catch (e: unknown) {
       console.error("[ContentBrowser] Quick install failed:", e);
       // Show error inline for this content
-      quickInstallError = e instanceof Error ? e.message : String(e);
+      quickInstallError = getErrorMessage(e);
       quickInstallContentId = content.id;
     }
   }
@@ -838,13 +852,24 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     if (!contentStore.isContentInstalled(content)) return;
 
     // Find the matching installed item from scan result to get the filename
+    // This must use the same matching logic as isContentInstalled (including slug fallback)
+    const normalizedContentSlug = contentStore.normalizeSlug(content.slug);
     const installedItem = contentStore.scanResult?.items.find((item) => {
       if (content.platform === "modrinth") {
-        return item.modrinthProject?.projectId === content.id;
+        // Direct match by Modrinth project ID
+        if (item.modrinthProject?.projectId === content.id) return true;
+        // Fallback: match by CurseForge slug
+        if (item.curseforgeProject?.slug && 
+            contentStore.normalizeSlug(item.curseforgeProject.slug) === normalizedContentSlug) return true;
+        return false;
       } else if (content.platform === "curseforge") {
+        // Direct match by CurseForge project ID
         const contentIdNum = parseInt(content.id, 10);
-        if (isNaN(contentIdNum)) return false;
-        return item.curseforgeProject?.projectId === contentIdNum;
+        if (!isNaN(contentIdNum) && item.curseforgeProject?.projectId === contentIdNum) return true;
+        // Fallback: match by Modrinth slug
+        if (item.modrinthProject?.slug && 
+            contentStore.normalizeSlug(item.modrinthProject.slug) === normalizedContentSlug) return true;
+        return false;
       }
       return false;
     });

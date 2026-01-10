@@ -210,6 +210,7 @@ function createContentStore() {
       downloadQueue = [...downloadQueue, queueItem];
 
       // Send to backend
+      // Only pass loader filter for mods - shaders/resourcepacks don't use mod loaders
       await contentService.queueContentInstall({
         queueId,
         instanceId,
@@ -221,7 +222,7 @@ function createContentStore() {
         versionId: version.id,
         versionName: version.versionNumber,
         mcVersion,
-        loader: loader || undefined,
+        loader: content.contentType === "mod" ? (loader || undefined) : undefined,
       });
 
       return queueId;

@@ -2,22 +2,7 @@ import type { LaunchStatus, GameLogLine } from "$lib/types";
 import * as launchService from "$lib/services/launch";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { SvelteMap } from "svelte/reactivity";
-
-/** Extract error message from various error types */
-function getErrorMessage(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (typeof e === "string") return e;
-  if (e && typeof e === "object") {
-    if ("message" in e && typeof e.message === "string") return e.message;
-    if ("error" in e && typeof e.error === "string") return e.error;
-    try {
-      return JSON.stringify(e);
-    } catch {
-      return "An unknown error occurred";
-    }
-  }
-  return "An unknown error occurred";
-}
+import { getErrorMessage } from "$lib/utils/error";
 
 interface LaunchState {
   instanceId: string;

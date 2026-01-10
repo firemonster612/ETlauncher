@@ -1,5 +1,6 @@
 import type { VersionEntry, VersionManifest } from "$lib/types";
 import * as minecraftService from "$lib/services/minecraft";
+import { getErrorMessage } from "$lib/utils/error";
 
 /** Create the versions store */
 function createVersionsStore() {
@@ -51,7 +52,7 @@ function createVersionsStore() {
         // Fetch filtered versions
         versions = await minecraftService.getVersions(showSnapshots, showOldVersions);
       } catch (e) {
-        error = e instanceof Error ? e.message : String(e);
+        error = getErrorMessage(e);
         console.error("Failed to load versions:", e);
       } finally {
         isLoading = false;
@@ -68,7 +69,7 @@ function createVersionsStore() {
         try {
           versions = await minecraftService.getVersions(showSnapshots, showOldVersions);
         } catch (e) {
-          error = e instanceof Error ? e.message : String(e);
+          error = getErrorMessage(e);
         }
       }
     },

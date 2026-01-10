@@ -1,11 +1,13 @@
 use crate::error::AppError;
 use crate::models::content::{
-    ContentDownloadProgressWithId, ContentPlatform, ContentType, QueueInstallRequest,
-    QueueItemStatus, QueueStatusEvent, QueuedContentInstall,
+    ContentDownloadProgressWithId, ContentPlatform, ContentSource, ContentType, InstalledContent,
+    InstalledContentManifest, QueueInstallRequest, QueueItemStatus, QueueStatusEvent,
+    QueuedContentInstall, MANIFEST_VERSION,
 };
 use crate::models::AppSettings;
 use crate::services::{curseforge_service, modrinth_service};
 use crate::state::AppState;
+use crate::utils::paths::get_instance_dir_with_base;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
@@ -287,8 +289,8 @@ async fn process_download(
     std::fs::create_dir_all(&content_dir)?;
     let file_path = content_dir.join(&file.filename);
 
-    // Download with progress
-    download_file_with_queue_progress(
+    // Download with progress and get computed hashes
+    let download_result = download_file_with_queue_progress(
         &ctx.http_client,
         &file.url,
         &file_path,
@@ -303,8 +305,8 @@ async fn process_download(
     )
     .await?;
 
-    // Save to manifest
-    let installed = crate::models::content::InstalledContent {
+    // Save to manifest with computed hashes
+    let installed = InstalledContent {
         name: item.content_name.clone(),
         slug: item.content_slug.clone(),
         modrinth_id: if item.platform == ContentPlatform::Modrinth {
@@ -324,25 +326,47 @@ async fn process_download(
         content_type: item.content_type.clone(),
         installed_at: chrono::Utc::now().timestamp(),
         is_dependency: false,
-        source: crate::models::content::ContentSource::UserAdded,
-        sha512_hash: None,
-        murmur2_fingerprint: None,
+        source: ContentSource::UserAdded,
+        sha512_hash: Some(download_result.sha512_hash),
+        murmur2_fingerprint: Some(download_result.murmur2_fingerprint),
     };
 
-    // Read the manifest, add the content, save it
-    let manifest_path = game_dir.join("etlauncher-content.json");
-    let mut manifest = if manifest_path.exists() {
+    // Save to the correct manifest file (etlauncher_manifest.json in instance directory)
+    let instance_dir = get_instance_dir_with_base(&ctx.settings.instances_path, &item.instance_id);
+    let manifest_path = instance_dir.join("etlauncher_manifest.json");
+    let mut manifest: InstalledContentManifest = if manifest_path.exists() {
         let content = std::fs::read_to_string(&manifest_path)?;
-        serde_json::from_str(&content).unwrap_or_default()
+        serde_json::from_str(&content).unwrap_or_else(|_| InstalledContentManifest {
+            manifest_version: MANIFEST_VERSION,
+            mods: Vec::new(),
+            shaders: Vec::new(),
+            resource_packs: Vec::new(),
+            last_synced_at: None,
+        })
     } else {
-        crate::models::content::InstalledContentManifest::default()
+        InstalledContentManifest {
+            manifest_version: MANIFEST_VERSION,
+            mods: Vec::new(),
+            shaders: Vec::new(),
+            resource_packs: Vec::new(),
+            last_synced_at: None,
+        }
     };
 
-    // Add to appropriate list
+    // Remove existing entry with same filename (if updating) and add the new content
     match item.content_type {
-        ContentType::Mod => manifest.mods.push(installed),
-        ContentType::Shader => manifest.shaders.push(installed),
-        ContentType::ResourcePack => manifest.resource_packs.push(installed),
+        ContentType::Mod => {
+            manifest.mods.retain(|c| c.filename != installed.filename);
+            manifest.mods.push(installed);
+        }
+        ContentType::Shader => {
+            manifest.shaders.retain(|c| c.filename != installed.filename);
+            manifest.shaders.push(installed);
+        }
+        ContentType::ResourcePack => {
+            manifest.resource_packs.retain(|c| c.filename != installed.filename);
+            manifest.resource_packs.push(installed);
+        }
     }
 
     // Save manifest
@@ -363,7 +387,13 @@ async fn process_download(
     Ok(())
 }
 
-/// Download a file with queue-aware progress
+/// Result of downloading a file with computed hashes
+struct QueueDownloadResult {
+    sha512_hash: String,
+    murmur2_fingerprint: u32,
+}
+
+/// Download a file with queue-aware progress, returning computed hashes
 async fn download_file_with_queue_progress(
     client: &reqwest::Client,
     url: &str,
@@ -376,7 +406,7 @@ async fn download_file_with_queue_progress(
     queue_id: &str,
     content_id: &str,
     cancel_token: &CancellationToken,
-) -> Result<(), AppError> {
+) -> Result<QueueDownloadResult, AppError> {
     use futures::StreamExt;
     use sha1::{Digest as Sha1Digest, Sha1};
     use sha2::{Digest as Sha2Digest, Sha512};
@@ -466,9 +496,26 @@ async fn download_file_with_queue_progress(
         }
     }
 
+    // Compute SHA512 hash for Modrinth compatibility
+    let mut sha512_hasher = Sha512::new();
+    Sha2Digest::update(&mut sha512_hasher, &all_bytes);
+    let sha512_hash = format!("{:x}", Sha2Digest::finalize(sha512_hasher));
+
+    // Compute Murmur2 fingerprint for CurseForge compatibility
+    // Strip whitespace (tab, lf, cr, space) before hashing as required by CurseForge
+    let filtered: Vec<u8> = all_bytes
+        .iter()
+        .copied()
+        .filter(|&b| b != 9 && b != 10 && b != 13 && b != 32)
+        .collect();
+    let murmur2_fingerprint = murmur2::murmur2(&filtered, 1);
+
     // Write to file
     let mut file = std::fs::File::create(path)?;
     file.write_all(&all_bytes)?;
 
-    Ok(())
+    Ok(QueueDownloadResult {
+        sha512_hash,
+        murmur2_fingerprint,
+    })
 }

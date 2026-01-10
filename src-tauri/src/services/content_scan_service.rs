@@ -1,9 +1,9 @@
 use crate::error::AppError;
 use crate::models::{
     CachedFileHash, ContentType, DetectedCurseForgeProject, DetectedMod, DetectedModrinthProject,
-    ScanCache, ScanResult,
+    InstalledContent, ScanCache, ScanResult,
 };
-use crate::services::{curseforge_service, modrinth_service};
+use crate::services::{curseforge_service, manifest_service, modrinth_service};
 use crate::state::AppState;
 use crate::utils::hash::hash_files_parallel;
 use crate::utils::paths::get_instance_game_dir_with_base;
@@ -328,12 +328,29 @@ pub async fn scan_content(
             HashMap::new()
         };
 
-    // Step 6: Build detected items list
+    // Step 6: Load manifest for fallback identification
+    // This allows us to identify content that was installed via the launcher
+    // but couldn't be matched via API lookups (e.g., CurseForge-exclusive content)
+    let manifest = manifest_service::load_manifest(state, instance_id).ok();
+    let manifest_content: HashMap<String, &InstalledContent> = manifest
+        .as_ref()
+        .map(|m| {
+            let list: &[InstalledContent] = match content_type {
+                ContentType::Mod => &m.mods,
+                ContentType::Shader => &m.shaders,
+                ContentType::ResourcePack => &m.resource_packs,
+            };
+            list.iter().map(|c| (c.filename.clone(), c)).collect()
+        })
+        .unwrap_or_default();
+
+    // Step 7: Build detected items list
     let mut items: Vec<DetectedMod> = vec![];
     let mut identified_count = 0u32;
     let mut unidentified_count = 0u32;
 
     for (filename, size, hash, murmur2, is_disabled) in content_files {
+        // Try API-based identification first
         let modrinth_project = modrinth_results.get(&hash).map(|version| {
             let (slug, name) = modrinth_project_map
                 .get(&version.project_id)
@@ -348,7 +365,7 @@ pub async fn scan_content(
             }
         });
 
-        let curseforge_project = curseforge_results.get(&murmur2).map(|match_info| {
+        let mut curseforge_project = curseforge_results.get(&murmur2).map(|match_info| {
             let mod_info = curseforge_mod_map.get(&match_info.mod_id);
             let name = mod_info
                 .map(|m| m.name.clone())
@@ -364,6 +381,23 @@ pub async fn scan_content(
                 slug,
             }
         });
+
+        // Fallback to manifest-based identification for CurseForge content
+        // This handles cases where CurseForge fingerprint API doesn't return matches
+        if curseforge_project.is_none() && modrinth_project.is_none() {
+            if let Some(manifest_entry) = manifest_content.get(&filename) {
+                // Use manifest data to create project info
+                if let Some(cf_id) = manifest_entry.curseforge_id {
+                    curseforge_project = Some(DetectedCurseForgeProject {
+                        project_id: cf_id as u64,
+                        file_id: 0, // We don't store file_id in manifest
+                        name: manifest_entry.name.clone(),
+                        filename: manifest_entry.filename.clone(),
+                        slug: manifest_entry.slug.clone(),
+                    });
+                }
+            }
+        }
 
         let is_identified = modrinth_project.is_some() || curseforge_project.is_some();
 

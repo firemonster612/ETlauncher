@@ -1037,6 +1037,17 @@ pub async fn get_content_versions(
             // Get sha1 hash
             let hash = f.hashes.iter().find(|h| h.algo == 1).map(|h| h.value.clone());
 
+            // Build download URL - CurseForge sometimes doesn't provide it for third-party distribution
+            let download_url = f.download_url.unwrap_or_else(|| {
+                // Fallback to edge CDN URL
+                format!(
+                    "https://edge.forgecdn.net/files/{}/{}/{}",
+                    f.id / 1000,
+                    f.id % 1000,
+                    urlencoding::encode(&f.file_name)
+                )
+            });
+
             ContentVersion {
                 id: f.id.to_string(),
                 project_id: mod_id.to_string(),
@@ -1047,7 +1058,7 @@ pub async fn get_content_versions(
                 released_at: parse_date(&f.file_date),
                 downloads: Some(f.download_count),
                 files: vec![ContentFile {
-                    url: f.download_url.unwrap_or_default(),
+                    url: download_url,
                     hash,
                     hash_algorithm: Some("sha1".to_string()),
                     size: f.file_length,
@@ -1102,6 +1113,17 @@ pub async fn get_version(
     let loaders = extract_loaders(&f.game_versions, &[]);
     let hash = f.hashes.iter().find(|h| h.algo == 1).map(|h| h.value.clone());
 
+    // Build download URL - CurseForge sometimes doesn't provide it for third-party distribution
+    let download_url = f.download_url.unwrap_or_else(|| {
+        // Fallback to edge CDN URL
+        format!(
+            "https://edge.forgecdn.net/files/{}/{}/{}",
+            f.id / 1000,
+            f.id % 1000,
+            urlencoding::encode(&f.file_name)
+        )
+    });
+
     Ok(ContentVersion {
         id: f.id.to_string(),
         project_id: mod_id.to_string(),
@@ -1112,7 +1134,7 @@ pub async fn get_version(
         released_at: parse_date(&f.file_date),
         downloads: Some(f.download_count),
         files: vec![ContentFile {
-            url: f.download_url.unwrap_or_default(),
+            url: download_url,
             hash,
             hash_algorithm: Some("sha1".to_string()),
             size: f.file_length,

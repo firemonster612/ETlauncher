@@ -1,5 +1,6 @@
 import type { AppSettings } from "$lib/types";
 import * as settingsService from "$lib/services/settings";
+import { getErrorMessage } from "$lib/utils/error";
 
 /** Create the settings store */
 function createSettingsStore() {
@@ -27,7 +28,7 @@ function createSettingsStore() {
       try {
         settings = await settingsService.getSettings();
       } catch (e) {
-        error = e instanceof Error ? e.message : String(e);
+        error = getErrorMessage(e);
         console.error("Failed to load settings:", e);
       } finally {
         isLoading = false;
@@ -42,7 +43,7 @@ function createSettingsStore() {
       try {
         settings = await settingsService.updateSettings(updates);
       } catch (e) {
-        error = e instanceof Error ? e.message : String(e);
+        error = getErrorMessage(e);
         console.error("Failed to update settings:", e);
         throw e;
       } finally {
@@ -58,7 +59,7 @@ function createSettingsStore() {
       try {
         settings = await settingsService.resetSettings();
       } catch (e) {
-        error = e instanceof Error ? e.message : String(e);
+        error = getErrorMessage(e);
         console.error("Failed to reset settings:", e);
         throw e;
       } finally {
