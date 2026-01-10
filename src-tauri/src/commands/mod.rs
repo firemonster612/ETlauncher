@@ -7,5 +7,6 @@ pub mod launch;
 pub mod loader;
 pub mod minecraft;
 pub mod modpack;
+pub mod optifine;
 pub mod settings;
 pub mod update;

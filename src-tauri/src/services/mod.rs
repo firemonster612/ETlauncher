@@ -20,3 +20,4 @@ pub mod manifest_service;
 pub mod update_service;
 pub mod update_execution_service;
 pub mod instance_detail_service;
+pub mod optifine_service;

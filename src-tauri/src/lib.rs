@@ -116,6 +116,10 @@ pub fn run() {
             commands::update::execute_modpack_update,
             commands::update::check_instance_updates,
             commands::update::execute_instance_update,
+            // OptiFine commands
+            commands::optifine::check_optifine_available,
+            commands::optifine::install_optifine,
+            commands::optifine::get_optifine_version,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

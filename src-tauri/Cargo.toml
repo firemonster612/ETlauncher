@@ -81,3 +81,6 @@ base64 = "0.22"
 
 # NBT parsing
 quartz_nbt = { version = "0.2", features = ["serde"] }
+
+# Regex for HTML parsing
+regex = "1"
