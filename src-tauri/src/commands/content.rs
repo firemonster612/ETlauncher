@@ -3,7 +3,8 @@ use crate::models::{
     Content, ContentPlatform, ContentSearchParams, ContentSearchResult, ContentType,
     ContentVersion, InstalledContent, LoaderType, ResolvedDependency, ScanResult,
 };
-use crate::services::{content_install_service, content_scan_service, curseforge_service, instance_service, modrinth_service};
+use crate::models::content::QueueInstallRequest;
+use crate::services::{content_install_service, content_queue_service, content_scan_service, curseforge_service, instance_service, modrinth_service};
 use crate::state::AppState;
 use tauri::{AppHandle, State};
 
@@ -290,4 +291,41 @@ pub fn enable_content(
 ) -> Result<(), CommandError> {
     content_scan_service::enable_content(&state, &instance_id, &filenames, &content_type)
         .map_err(CommandError::from)
+}
+
+/// Queue content for parallel installation
+#[tauri::command]
+pub async fn queue_content_install(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    request: QueueInstallRequest,
+) -> Result<(), CommandError> {
+    // Validate vanilla restrictions
+    validate_vanilla_restrictions(&state, &request.instance_id, &request.content_type)?;
+
+    content_queue_service::queue_content_install(&state, app_handle, request)
+        .await
+        .map_err(CommandError::from)
+}
+
+/// Cancel a queued content download
+#[tauri::command]
+pub async fn cancel_content_queue_item(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    queue_id: String,
+) -> Result<(), CommandError> {
+    content_queue_service::cancel_queue_item(&state, app_handle, queue_id)
+        .await
+        .map_err(CommandError::from)
+}
+
+/// Try to process pending queue items (called when a slot becomes available)
+#[tauri::command]
+pub async fn try_process_content_queue(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+) -> Result<(), CommandError> {
+    content_queue_service::try_process_queue(&state, app_handle).await;
+    Ok(())
 }

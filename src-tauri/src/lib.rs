@@ -101,6 +101,9 @@ pub fn run() {
             commands::content::uninstall_content_by_filename,
             commands::content::disable_content,
             commands::content::enable_content,
+            commands::content::queue_content_install,
+            commands::content::cancel_content_queue_item,
+            commands::content::try_process_content_queue,
             // Update commands
             commands::update::check_modpack_update,
             commands::update::check_content_updates,

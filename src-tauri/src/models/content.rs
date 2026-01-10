@@ -351,6 +351,77 @@ pub struct ContentDownloadProgress {
     pub progress_percent: u8,
 }
 
+/// Progress with queue identification for parallel downloads
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentDownloadProgressWithId {
+    /// Queue entry ID
+    pub queue_id: String,
+    /// Content ID for matching
+    pub content_id: String,
+    /// Filename being downloaded
+    pub filename: String,
+    /// Bytes downloaded so far
+    pub downloaded_bytes: u64,
+    /// Total file size in bytes
+    pub total_bytes: u64,
+    /// Progress percentage (0-100)
+    pub progress_percent: u8,
+}
+
+/// Status of a queued content download
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum QueueItemStatus {
+    Pending,
+    Downloading,
+    Completed,
+    Failed,
+}
+
+/// Request to queue a content installation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueInstallRequest {
+    pub queue_id: String,
+    pub instance_id: String,
+    pub platform: ContentPlatform,
+    pub content_id: String,
+    pub content_name: String,
+    pub content_slug: String,
+    pub content_type: ContentType,
+    pub version_id: String,
+    pub version_name: String,
+    pub mc_version: String,
+    pub loader: Option<LoaderType>,
+}
+
+/// Queue status change event payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueStatusEvent {
+    pub queue_id: String,
+    pub content_id: String,
+    pub status: QueueItemStatus,
+    pub error: Option<String>,
+}
+
+/// Internal queued item for processing
+#[derive(Debug, Clone)]
+pub struct QueuedContentInstall {
+    pub queue_id: String,
+    pub instance_id: String,
+    pub platform: ContentPlatform,
+    pub content_id: String,
+    pub content_name: String,
+    pub content_slug: String,
+    pub content_type: ContentType,
+    pub version_id: String,
+    pub version_name: String,
+    pub mc_version: String,
+    pub loader: Option<LoaderType>,
+}
+
 /// Resolved dependency with install info
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -1,8 +1,11 @@
 use parking_lot::RwLock;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::models::{AppSettings, VersionManifest};
+use crate::models::content::QueuedContentInstall;
 
 /// Global application state managed by Tauri
 pub struct AppState {
@@ -16,6 +19,12 @@ pub struct AppState {
     pub http_client: reqwest::Client,
     /// Active modpack installation (only one at a time)
     pub modpack_install: RwLock<Option<ModpackInstallState>>,
+    /// Content download queue for parallel downloads
+    pub content_download_queue: Arc<Mutex<VecDeque<QueuedContentInstall>>>,
+    /// Currently active content downloads (queue IDs)
+    pub active_content_downloads: Arc<Mutex<HashSet<String>>>,
+    /// Cancellation tokens for active downloads (queue_id -> token)
+    pub content_download_tokens: Arc<Mutex<HashMap<String, CancellationToken>>>,
 }
 
 /// Cached version manifest with fetch timestamp
@@ -51,6 +60,9 @@ impl AppState {
             running_instances: RwLock::new(HashMap::new()),
             http_client,
             modpack_install: RwLock::new(None),
+            content_download_queue: Arc::new(Mutex::new(VecDeque::new())),
+            active_content_downloads: Arc::new(Mutex::new(HashSet::new())),
+            content_download_tokens: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 

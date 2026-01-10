@@ -35,12 +35,14 @@
   import type {
     Content,
     ContentDownloadProgress,
+    ContentDownloadProgressWithId,
     ContentType,
     ContentSortBy,
     ContentPlatform,
     LoaderType,
     ContentVersion,
     DetectedMod,
+    QueueItemStatus,
     ScanResult,
   } from "$lib/types";
 
@@ -205,17 +207,51 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     contentStore.search();
     refreshModScan();
 
-    // Listen for download progress events
-    const unlistenPromise = listen<ContentDownloadProgress>(
+    // Listen for download progress events (with queue ID)
+    const unlistenProgressPromise = listen<ContentDownloadProgressWithId>(
       "content_download_progress",
       (event) => {
+        // Update queue item progress
+        contentStore.updateQueueItemProgress(event.payload.queueId, {
+          filename: event.payload.filename,
+          downloadedBytes: event.payload.downloadedBytes,
+          totalBytes: event.payload.totalBytes,
+          progressPercent: event.payload.progressPercent,
+        });
+        // Also update legacy single progress for backwards compat
         contentStore.setDownloadProgress(event.payload);
       }
     );
 
+    // Listen for queue status changes
+    const unlistenQueueStatusPromise = listen<{ queueId: string; contentId: string; status: QueueItemStatus; error?: string }>(
+      "content_queue_status",
+      (event) => {
+        contentStore.updateQueueItemStatus(
+          event.payload.queueId,
+          event.payload.status,
+          event.payload.error
+        );
+        // Refresh installed content when a download completes
+        if (event.payload.status === "completed") {
+          contentStore.refreshInstalledContent();
+        }
+      }
+    );
+
+    // Listen for slot available events to trigger queue processing
+    const unlistenSlotAvailablePromise = listen(
+      "content_queue_slot_available",
+      () => {
+        contentService.tryProcessContentQueue();
+      }
+    );
+
     return () => {
-      // Clean up event listener
-      unlistenPromise.then((unlisten) => unlisten());
+      // Clean up event listeners
+      unlistenProgressPromise.then((unlisten) => unlisten());
+      unlistenQueueStatusPromise.then((unlisten) => unlisten());
+      unlistenSlotAvailablePromise.then((unlisten) => unlisten());
       contentStore.reset();
     };
   });
@@ -769,21 +805,12 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
   }
 
   async function handleQuickInstall(content: Content) {
-    if (isInstalling) return;
+    // Don't install if already installed or queued
     if (contentStore.isContentInstalled(content)) return;
-
-    isInstalling = true;
-    showQuickInstallProgress = true;
-    quickInstallName = content.name;
-    quickInstallContentId = content.id;
-    quickInstallError = null;
-    installSuccess = null;
-    installError = null;
-    uninstallError = null;
-    contentStore.setDownloadProgress(null);
-    const requestId = ++quickInstallRequestId;
+    if (contentStore.isContentQueued(content.id)) return;
 
     try {
+      // Fetch the latest compatible version
       const shouldFilterByLoader = content.contentType === "mod";
       const latestVersions = await contentService.getContentVersions(
         content.platform,
@@ -796,29 +823,13 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
         throw new Error("No compatible versions found");
       }
 
-      await contentService.installContentWithDependencies(
-        instanceId,
-        content.platform,
-        content,
-        latest,
-        mcVersion,
-        loaderType === "vanilla" ? undefined : loaderType
-      );
-
-      if (requestId !== quickInstallRequestId) return;
-      await contentStore.refreshInstalledContent();
-      showQuickInstallProgress = false;
-      quickInstallName = null;
-      quickInstallContentId = null;
-      quickInstallError = null;
+      // Queue the install (non-blocking)
+      await contentStore.queueInstall(content, latest);
     } catch (e: unknown) {
-      if (requestId !== quickInstallRequestId) return;
       console.error("[ContentBrowser] Quick install failed:", e);
+      // Show error inline for this content
       quickInstallError = e instanceof Error ? e.message : String(e);
-    } finally {
-      if (requestId !== quickInstallRequestId) return;
-      isInstalling = false;
-      contentStore.setDownloadProgress(null);
+      quickInstallContentId = content.id;
     }
   }
 
@@ -1086,6 +1097,8 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
         {#each contentStore.items as content (content.id)}
           {@const isThisInstalling = isInstalling && quickInstallContentId === content.id}
           {@const isInstalled = contentStore.isContentInstalled(content)}
+          {@const isQueued = contentStore.isContentQueued(content.id)}
+          {@const isDownloading = contentStore.isContentDownloading(content.id)}
           <div class="w-full border-2 border-border bg-background p-3 hover:border-primary/50 transition-colors relative">
             <button
               type="button"
@@ -1110,6 +1123,16 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
                     <span class="text-xs bg-green-500/20 text-green-500 px-1.5 py-0.5 rounded flex items-center gap-1 flex-shrink-0">
                       <CheckCircle class="h-3 w-3" />
                       Installed
+                    </span>
+                  {:else if isDownloading}
+                    <span class="text-xs bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded flex items-center gap-1 flex-shrink-0">
+                      <Loader2 class="h-3 w-3 animate-spin" />
+                      Installing
+                    </span>
+                  {:else if isQueued}
+                    <span class="text-xs bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded flex items-center gap-1 flex-shrink-0">
+                      <Loader2 class="h-3 w-3 animate-spin" />
+                      Pending
                     </span>
                   {/if}
                 </div>
@@ -1150,18 +1173,14 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
                   Uninstall
                 {/if}
               </button>
-            {:else}
+            {:else if !isQueued}
               <button
                 class="absolute bottom-2 right-2 text-[10px] px-2 py-1 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                 onclick={(e) => { e.stopPropagation(); handleQuickInstall(content); }}
-                disabled={isInstalling || contentStore.isScanning}
+                disabled={contentStore.isScanning}
               >
-                {#if isThisInstalling}
-                  <Loader2 class="h-3 w-3 animate-spin" />
-                {:else}
-                  <Download class="h-3 w-3" />
-                {/if}
-                {isThisInstalling ? "Installing..." : "Install"}
+                <Download class="h-3 w-3" />
+                Install
               </button>
             {/if}
           </div>
@@ -1557,6 +1576,16 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
                   <CheckCircle class="h-3 w-3" />
                   Already Installed
                 </span>
+              {:else if contentStore.isContentDownloading(selectedContentDetail.id)}
+                <span class="text-xs bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded flex items-center gap-1">
+                  <Loader2 class="h-3 w-3 animate-spin" />
+                  Installing
+                </span>
+              {:else if contentStore.isContentQueued(selectedContentDetail.id)}
+                <span class="text-xs bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded flex items-center gap-1">
+                  <Loader2 class="h-3 w-3 animate-spin" />
+                  Pending
+                </span>
               {/if}
             </div>
             <p class="text-sm text-muted-foreground line-clamp-3">
@@ -1885,6 +1914,24 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
                 <Trash2 class="h-4 w-4 mr-2" />
                 Uninstall
               {/if}
+            </Button>
+          {:else if contentStore.isContentDownloading(selectedContentDetail.id)}
+            <Button
+              class="flex-1"
+              variant="secondary"
+              disabled
+            >
+              <Loader2 class="h-4 w-4 animate-spin mr-2" />
+              Installing...
+            </Button>
+          {:else if contentStore.isContentQueued(selectedContentDetail.id)}
+            <Button
+              class="flex-1"
+              variant="secondary"
+              disabled
+            >
+              <Loader2 class="h-4 w-4 animate-spin mr-2" />
+              Pending...
             </Button>
           {:else}
             <Button

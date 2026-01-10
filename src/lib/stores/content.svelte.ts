@@ -1,12 +1,15 @@
 import type {
   Content,
   ContentDownloadProgress,
+  ContentDownloadProgressWithId,
   ContentSearchParams,
   ContentVersion,
   ContentPlatform,
   ContentSortBy,
   ContentType,
   LoaderType,
+  QueuedDownload,
+  QueueItemStatus,
   ResolvedDependency,
   ScanResult,
 } from "$lib/types";
@@ -48,8 +51,11 @@ function createContentStore() {
   let isInstalling = $state(false);
   let installError = $state<string | null>(null);
 
-  // Download progress state
+  // Download progress state (legacy single download)
   let downloadProgress = $state<ContentDownloadProgress | null>(null);
+
+  // Download queue for parallel downloads
+  let downloadQueue = $state<QueuedDownload[]>([]);
 
   // Resolved dependencies state
   let resolvedDependencies = $state<ResolvedDependency[]>([]);
@@ -137,9 +143,14 @@ function createContentStore() {
       return installError;
     },
 
-    // Download progress getter
+    // Download progress getter (legacy)
     get downloadProgress() {
       return downloadProgress;
+    },
+
+    // Download queue getter
+    get downloadQueue() {
+      return downloadQueue;
     },
 
     // Resolved dependencies getters
@@ -150,9 +161,97 @@ function createContentStore() {
       return isResolvingDeps;
     },
 
-    /** Set download progress (called from event listener) */
+    /** Set download progress (called from event listener) - legacy */
     setDownloadProgress(progress: ContentDownloadProgress | null) {
       downloadProgress = progress;
+    },
+
+    /** Check if a content item is in the download queue (pending or downloading) */
+    isContentQueued(contentId: string): boolean {
+      return downloadQueue.some(
+        (item) =>
+          item.content.id === contentId &&
+          (item.status === "pending" || item.status === "downloading")
+      );
+    },
+
+    /** Check if a content item is currently downloading */
+    isContentDownloading(contentId: string): boolean {
+      return downloadQueue.some(
+        (item) => item.content.id === contentId && item.status === "downloading"
+      );
+    },
+
+    /** Get download progress for a specific content */
+    getContentProgress(contentId: string): ContentDownloadProgress | null {
+      const item = downloadQueue.find(
+        (item) => item.content.id === contentId && item.status === "downloading"
+      );
+      return item?.progress ?? null;
+    },
+
+    /** Add item to download queue */
+    async queueInstall(content: Content, version: ContentVersion): Promise<string> {
+      if (!instanceId || !mcVersion) {
+        throw new Error("Instance context not set");
+      }
+
+      const queueId = crypto.randomUUID();
+
+      // Add to local queue immediately (optimistic update)
+      const queueItem: QueuedDownload = {
+        queueId,
+        content,
+        version,
+        instanceId,
+        status: "pending",
+        queuedAt: Date.now(),
+      };
+      downloadQueue = [...downloadQueue, queueItem];
+
+      // Send to backend
+      await contentService.queueContentInstall({
+        queueId,
+        instanceId,
+        platform: content.platform,
+        contentId: content.id,
+        contentName: content.name,
+        contentSlug: content.slug,
+        contentType: content.contentType,
+        versionId: version.id,
+        versionName: version.versionNumber,
+        mcVersion,
+        loader: loader || undefined,
+      });
+
+      return queueId;
+    },
+
+    /** Cancel a queued download */
+    async cancelQueueItem(queueId: string): Promise<void> {
+      await contentService.cancelContentQueueItem(queueId);
+      downloadQueue = downloadQueue.filter((item) => item.queueId !== queueId);
+    },
+
+    /** Update queue item status (called from event listener) */
+    updateQueueItemStatus(queueId: string, status: QueueItemStatus, error?: string) {
+      downloadQueue = downloadQueue.map((item) =>
+        item.queueId === queueId ? { ...item, status, error } : item
+      );
+
+      // Remove completed/failed items after delay
+      if (status === "completed" || status === "failed") {
+        setTimeout(() => {
+          downloadQueue = downloadQueue.filter((item) => item.queueId !== queueId);
+        }, status === "completed" ? 1000 : 5000);
+      }
+    },
+
+    /** Update download progress for a queue item */
+    updateQueueItemProgress(queueId: string, progress: ContentDownloadProgress) {
+      downloadQueue = downloadQueue.map((item) =>
+        item.queueId === queueId ? { ...item, progress } : item
+      );
     },
 
     /** Set the instance context (auto-filters by MC version and loader) */
@@ -478,6 +577,7 @@ function createContentStore() {
       isInstalling = false;
       installError = null;
       downloadProgress = null;
+      downloadQueue = [];
       resolvedDependencies = [];
       isResolvingDeps = false;
     },

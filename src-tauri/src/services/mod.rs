@@ -13,6 +13,7 @@ pub mod technic_service;
 pub mod atlauncher_service;
 pub mod settings_service;
 pub mod content_install_service;
+pub mod content_queue_service;
 pub mod content_scan_service;
 pub mod modpack_install_service;
 pub mod manifest_service;

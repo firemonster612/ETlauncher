@@ -241,6 +241,52 @@ export interface ContentDownloadProgress {
   progressPercent: number;
 }
 
+/** Progress with queue identification for parallel downloads */
+export interface ContentDownloadProgressWithId extends ContentDownloadProgress {
+  /** Queue entry ID */
+  queueId: string;
+  /** Content ID for matching */
+  contentId: string;
+}
+
+/** Status of a queued content download */
+export type QueueItemStatus = "pending" | "downloading" | "completed" | "failed";
+
+/** A single item in the download queue */
+export interface QueuedDownload {
+  /** Unique queue entry ID */
+  queueId: string;
+  /** Content being downloaded */
+  content: Content;
+  /** Version to install */
+  version: ContentVersion;
+  /** Instance ID installing to */
+  instanceId: string;
+  /** Current status */
+  status: QueueItemStatus;
+  /** Download progress (when downloading) */
+  progress?: ContentDownloadProgress;
+  /** Error message (when failed) */
+  error?: string;
+  /** Timestamp when queued */
+  queuedAt: number;
+}
+
+/** Request to queue a content installation */
+export interface QueueInstallRequest {
+  queueId: string;
+  instanceId: string;
+  platform: ContentPlatform;
+  contentId: string;
+  contentName: string;
+  contentSlug: string;
+  contentType: ContentType;
+  versionId: string;
+  versionName: string;
+  mcVersion: string;
+  loader?: LoaderType;
+}
+
 /** Resolved dependency with install info */
 export interface ResolvedDependency {
   /** The content item */

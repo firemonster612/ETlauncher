@@ -8,6 +8,7 @@ import type {
   ContentVersion,
   InstalledContent,
   LoaderType,
+  QueueInstallRequest,
   ResolvedDependency,
   ScanResult,
 } from "$lib/types";
@@ -155,4 +156,21 @@ export async function enableContent(
     filenames,
     contentType,
   });
+}
+
+/** Queue content for parallel installation */
+export async function queueContentInstall(
+  request: QueueInstallRequest
+): Promise<void> {
+  return invoke<void>("queue_content_install", { request });
+}
+
+/** Cancel a queued content download */
+export async function cancelContentQueueItem(queueId: string): Promise<void> {
+  return invoke<void>("cancel_content_queue_item", { queueId });
+}
+
+/** Try to process pending queue items (called when a slot becomes available) */
+export async function tryProcessContentQueue(): Promise<void> {
+  return invoke<void>("try_process_content_queue");
 }
