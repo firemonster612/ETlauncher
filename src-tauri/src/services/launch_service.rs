@@ -30,7 +30,9 @@ pub async fn launch_instance(
 
     // Check if already running
     if state.is_instance_running(&instance_id) {
-        return Err(AppError::LaunchError("Instance is already running".to_string()));
+        return Err(AppError::LaunchError(
+            "Instance is already running".to_string(),
+        ));
     }
 
     // Emit preparing status
@@ -74,8 +76,8 @@ pub async fn launch_instance(
         &instance.loader_type,
         instance.loader_version.as_deref(),
         &game_dir,
-    ).await?;
-
+    )
+    .await?;
 
     // Emit downloading status
     emit_launch_status(
@@ -92,7 +94,8 @@ pub async fn launch_instance(
         &instance.minecraft_version,
         &version_info,
         Some(app_handle),
-    ).await?;
+    )
+    .await?;
 
     // Get Java path - use instance override or auto-manage based on MC version
     let java_path = if let Some(ref path) = instance.java_path {
@@ -114,7 +117,11 @@ pub async fn launch_instance(
     emit_launch_status(app_handle, &instance_id, LaunchStatus::Launching);
 
     // Build classpath (pass game_dir for Forge libraries)
-    let classpath = download_service::get_classpath(&version_info, &instance.minecraft_version, Some(&game_dir));
+    let classpath = download_service::get_classpath(
+        &version_info,
+        &instance.minecraft_version,
+        Some(&game_dir),
+    );
     let classpath_str = classpath
         .iter()
         .map(|p| p.to_string_lossy().to_string())
@@ -122,7 +129,8 @@ pub async fn launch_instance(
         .join(classpath_separator());
 
     // Get more paths
-    let natives_dir = get_instance_natives_dir_with_base(&state.settings.read().instances_path, &instance.id);
+    let natives_dir =
+        get_instance_natives_dir_with_base(&state.settings.read().instances_path, &instance.id);
     let assets_dir = get_assets_dir();
 
     // Memory settings: instance overrides fall back to global app settings
@@ -141,24 +149,32 @@ pub async fn launch_instance(
 
         (min_mem, max_mem)
     };
-    eprintln!("[launch] Using memory args: -Xms{}M -Xmx{}M", min_mem, max_mem);
+    eprintln!(
+        "[launch] Using memory args: -Xms{}M -Xmx{}M",
+        min_mem, max_mem
+    );
 
     // Build replacements map
     let mut replacements: HashMap<String, String> = HashMap::new();
     replacements.insert("auth_player_name".to_string(), account.username.clone());
-    replacements.insert("version_name".to_string(), instance.minecraft_version.clone());
-    replacements.insert("game_directory".to_string(), game_dir.to_string_lossy().to_string());
+    replacements.insert(
+        "version_name".to_string(),
+        instance.minecraft_version.clone(),
+    );
+    replacements.insert(
+        "game_directory".to_string(),
+        game_dir.to_string_lossy().to_string(),
+    );
     replacements.insert(
         "assets_root".to_string(),
         assets_dir.to_string_lossy().to_string(),
     );
-    let asset_index_id = version_info.asset_index.as_ref()
+    let asset_index_id = version_info
+        .asset_index
+        .as_ref()
         .map(|ai| ai.id.clone())
         .unwrap_or_else(|| instance.minecraft_version.clone());
-    replacements.insert(
-        "assets_index_name".to_string(),
-        asset_index_id,
-    );
+    replacements.insert("assets_index_name".to_string(), asset_index_id);
     replacements.insert("auth_uuid".to_string(), account.uuid.replace('-', ""));
     replacements.insert("auth_access_token".to_string(), access_token);
     replacements.insert("user_type".to_string(), "msa".to_string());
@@ -178,9 +194,15 @@ pub async fn launch_instance(
     replacements.insert("launcher_name".to_string(), "ETLauncher".to_string());
     replacements.insert("launcher_version".to_string(), "0.1.0".to_string());
     replacements.insert("classpath".to_string(), classpath_str.clone());
-    replacements.insert("classpath_separator".to_string(), classpath_separator().to_string());
+    replacements.insert(
+        "classpath_separator".to_string(),
+        classpath_separator().to_string(),
+    );
     // Xbox/Microsoft auth placeholders (some version JSONs use these)
-    replacements.insert("clientid".to_string(), "c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb".to_string());
+    replacements.insert(
+        "clientid".to_string(),
+        "c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb".to_string(),
+    );
     replacements.insert("auth_xuid".to_string(), String::new()); // Xbox User ID - not critical for gameplay
 
     // Build JVM arguments
@@ -193,14 +215,17 @@ pub async fn launch_instance(
     let version_jvm_args = download_service::build_jvm_arguments(&version_info, &replacements);
 
     // Check if version JVM args already include -cp (Forge/NeoForge do this)
-    let has_classpath_in_jvm_args = version_jvm_args.iter().any(|arg| arg == "-cp" || arg == "-classpath");
+    let has_classpath_in_jvm_args = version_jvm_args
+        .iter()
+        .any(|arg| arg == "-cp" || arg == "-classpath");
 
     // For NeoForge/Forge with BootstrapLauncher, we need to add legacyClassPath
     // The BootstrapLauncher reads libraries from this property, not from -cp
     if version_info.main_class == "cpw.mods.bootstraplauncher.BootstrapLauncher" {
         // Extract artifact prefixes from module path jars to avoid version conflicts
         // e.g., "asm-9.8.jar" -> "asm-" so we exclude "asm-9.3.jar" too
-        let mut module_path_prefixes: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut module_path_prefixes: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
         let mut next_is_module_path = false;
         for arg in &version_jvm_args {
             if next_is_module_path {
@@ -210,9 +235,13 @@ pub async fn launch_instance(
                         let name = filename.to_string_lossy();
                         // Extract artifact prefix: "artifact-version.jar" -> "artifact-"
                         // Look for pattern: name followed by dash and digit
-                        if let Some(idx) = name.find(|c: char| c == '-').and_then(|dash_idx| {
+                        if let Some(idx) = name.find('-').and_then(|dash_idx| {
                             name[dash_idx + 1..].chars().next().and_then(|c| {
-                                if c.is_ascii_digit() { Some(dash_idx + 1) } else { None }
+                                if c.is_ascii_digit() {
+                                    Some(dash_idx + 1)
+                                } else {
+                                    None
+                                }
                             })
                         }) {
                             module_path_prefixes.insert(name[..idx].to_string());
@@ -237,7 +266,9 @@ pub async fn launch_instance(
                 if let Some(filename) = p.file_name() {
                     let name = filename.to_string_lossy();
                     // Check if this jar's artifact prefix matches any module path prefix
-                    !module_path_prefixes.iter().any(|prefix| name.starts_with(prefix))
+                    !module_path_prefixes
+                        .iter()
+                        .any(|prefix| name.starts_with(prefix))
                 } else {
                     true
                 }
@@ -329,7 +360,12 @@ pub async fn launch_instance(
         thread::spawn(move || {
             let reader = BufReader::new(stdout);
             for line in reader.lines().map_while(Result::ok) {
-                emit_game_log(&app_handle_stdout, &instance_id_stdout, &line, LogLevel::Info);
+                emit_game_log(
+                    &app_handle_stdout,
+                    &instance_id_stdout,
+                    &line,
+                    LogLevel::Info,
+                );
             }
         });
     }
@@ -438,7 +474,11 @@ pub async fn launch_instance_with_quick_play(
 fn supports_quick_play(version: &str) -> bool {
     let mut parts = version
         .split('.')
-        .map(|part| part.chars().take_while(|c| c.is_ascii_digit()).collect::<String>())
+        .map(|part| {
+            part.chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect::<String>()
+        })
         .filter(|s| !s.is_empty())
         .filter_map(|p| p.parse::<u32>().ok());
     let major = parts.next().unwrap_or(0);

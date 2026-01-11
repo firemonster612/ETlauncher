@@ -1,80 +1,75 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from '@tauri-apps/api/core';
 import type {
-  Instance,
-  Modpack,
-  ModpackMod,
-  ModpackSearchParams,
-  ModpackSearchResult,
-  ModpackVersion,
-  ModpackPlatform,
-} from "$lib/types";
+	Instance,
+	Modpack,
+	ModpackMod,
+	ModpackSearchParams,
+	ModpackSearchResult,
+	ModpackVersion,
+	ModpackPlatform,
+} from '$lib/types';
 
 /** Search for modpacks across platforms */
-export async function searchModpacks(
-  params: ModpackSearchParams
-): Promise<ModpackSearchResult> {
-  return invoke<ModpackSearchResult>("search_modpacks", { params });
+export async function searchModpacks(params: ModpackSearchParams): Promise<ModpackSearchResult> {
+	return invoke<ModpackSearchResult>('search_modpacks', { params });
 }
 
 /** Get a modpack by ID */
-export async function getModpack(
-  platform: ModpackPlatform,
-  id: string
-): Promise<Modpack> {
-  return invoke<Modpack>("get_modpack", { platform, id });
+export async function getModpack(platform: ModpackPlatform, id: string): Promise<Modpack> {
+	return invoke<Modpack>('get_modpack', { platform, id });
 }
 
 /** Get versions for a modpack */
 export async function getModpackVersions(
-  platform: ModpackPlatform,
-  id: string
+	platform: ModpackPlatform,
+	id: string
 ): Promise<ModpackVersion[]> {
-  return invoke<ModpackVersion[]>("get_modpack_versions", { platform, id });
+	return invoke<ModpackVersion[]>('get_modpack_versions', { platform, id });
 }
 
 /** Get mod list for a specific modpack version (best-effort) */
 export async function getModpackMods(
-  platform: ModpackPlatform,
-  modpackId: string,
-  versionId: string
+	platform: ModpackPlatform,
+	modpackId: string,
+	versionId: string
 ): Promise<ModpackMod[]> {
-  return invoke<ModpackMod[]>("get_modpack_mods", { platform, modpackId, versionId });
+	return invoke<ModpackMod[]>('get_modpack_mods', { platform, modpackId, versionId });
 }
 
 /** Install a modpack and create a new instance */
 export async function installModpack(
-  platform: ModpackPlatform,
-  modpackId: string,
-  versionId: string,
-  instanceName?: string
+	platform: ModpackPlatform,
+	modpackId: string,
+	versionId: string,
+	instanceName?: string
 ): Promise<Instance> {
-  return invoke<Instance>("install_modpack", {
-    platform,
-    modpackId,
-    versionId,
-    instanceName,
-  });
+	return invoke<Instance>('install_modpack', {
+		platform,
+		modpackId,
+		versionId,
+		instanceName,
+	});
 }
 
 /** Import an instance from a local .mrpack file */
 export async function importModpackFile(
-  filePath: string,
-  instanceName?: string
+	filePath: string,
+	instanceName?: string
 ): Promise<Instance> {
-  return invoke<Instance>("import_modpack_file", {
-    filePath,
-    instanceName,
-  });
+	return invoke<Instance>('import_modpack_file', {
+		filePath,
+		instanceName,
+	});
 }
 
 /** Cancel the current modpack installation */
 export async function cancelModpackInstall(): Promise<void> {
-  return invoke("cancel_modpack_install");
+	return invoke('cancel_modpack_install');
 }
 
 /** Get current modpack install status */
 export async function getModpackInstallStatus(): Promise<{
-  modpackName: string;
+	modpackName: string;
 } | null> {
-  return invoke("get_modpack_install_status");
+	return invoke('get_modpack_install_status');
 }

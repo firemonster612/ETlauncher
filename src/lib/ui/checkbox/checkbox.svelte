@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { Checkbox as CheckboxPrimitive } from "bits-ui";
-	import CheckIcon from "@lucide/svelte/icons/check";
-	import { cn, type WithoutChildrenOrChild } from "$lib/utils.js";
+	import { Checkbox as CheckboxPrimitive } from 'bits-ui';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import { cn, type WithoutChildrenOrChild } from '$lib/utils.js';
 
 	let {
 		ref = $bindable(null),
@@ -13,8 +13,8 @@
 		checked?: boolean;
 	} = $props();
 
-	function handleCheckedChange(v: boolean | "indeterminate") {
-		if (v === "indeterminate") return;
+	function handleCheckedChange(v: boolean | 'indeterminate') {
+		if (v === 'indeterminate') return;
 		checked = v;
 		onCheckedChange?.(v);
 	}
@@ -25,11 +25,11 @@
 	{checked}
 	onCheckedChange={handleCheckedChange}
 	class={cn(
-		"peer flex size-5 shrink-0 items-center justify-center rounded-sm border-2 border-solid border-muted-foreground bg-background transition-colors outline-none",
-		"hover:border-foreground",
-		"focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-ring/50",
-		"data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground",
-		"disabled:cursor-not-allowed disabled:opacity-50",
+		'peer border-muted-foreground bg-background flex size-5 shrink-0 items-center justify-center rounded-sm border-2 border-solid transition-colors outline-none',
+		'hover:border-foreground',
+		'focus-visible:border-primary focus-visible:ring-ring/50 focus-visible:ring-[3px]',
+		'data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground',
+		'disabled:cursor-not-allowed disabled:opacity-50',
 		className
 	)}
 	{...restProps}

@@ -4,12 +4,11 @@
 
 use crate::error::AppError;
 use crate::models::content::{
-    ContentPlatform, ContentSource, ContentType, ContentUpdateInfo, ContentUpdateStatus,
-    InstalledContent, InstanceUpdateCheck, ModpackInstanceUpdateCheck, ModpackUpdateInfo,
-    ModpackVersionOption, UpdateCheckResult,
+    ContentPlatform, ContentSource, ContentUpdateInfo, ContentUpdateStatus, InstalledContent,
+    InstanceUpdateCheck, ModpackInstanceUpdateCheck, ModpackUpdateInfo, ModpackVersionOption,
+    UpdateCheckResult,
 };
-use crate::models::instance::{Instance, LoaderType, ModpackPlatform};
-use crate::models::loader::LoaderVersion;
+use crate::models::instance::{LoaderType, ModpackPlatform};
 use crate::services::{
     atlauncher_service, curseforge_service, download_service, ftb_service, instance_service,
     loader_service, manifest_service, modrinth_service, technic_service,
@@ -167,7 +166,10 @@ pub async fn check_content_updates(
 
     // Check for modpack update if this is a modpack instance
     if instance.modpack_platform.is_some() {
-        result.modpack_update = check_modpack_update(state, instance_id).await.ok().flatten();
+        result.modpack_update = check_modpack_update(state, instance_id)
+            .await
+            .ok()
+            .flatten();
     }
 
     Ok(result)
@@ -216,39 +218,26 @@ pub async fn check_version_migration(
 
     // Check each mod for compatibility with target version
     for content in &manifest.mods {
-        let update_info = check_single_content_update(
-            state,
-            content,
-            target_mc_version,
-            Some(target_loader),
-        )
-        .await;
+        let update_info =
+            check_single_content_update(state, content, target_mc_version, Some(target_loader))
+                .await;
 
         categorize_update_info(&mut result, update_info);
     }
 
     // Check shaders
     for content in &manifest.shaders {
-        let update_info = check_single_content_update(
-            state,
-            content,
-            target_mc_version,
-            Some(target_loader),
-        )
-        .await;
+        let update_info =
+            check_single_content_update(state, content, target_mc_version, Some(target_loader))
+                .await;
 
         categorize_update_info(&mut result, update_info);
     }
 
     // Check resource packs
     for content in &manifest.resource_packs {
-        let update_info = check_single_content_update(
-            state,
-            content,
-            target_mc_version,
-            None,
-        )
-        .await;
+        let update_info =
+            check_single_content_update(state, content, target_mc_version, None).await;
 
         categorize_update_info(&mut result, update_info);
     }
@@ -477,7 +466,8 @@ pub async fn check_modpack_instance_updates(
         }
         ModpackPlatform::FTB => {
             let modpack = ftb_service::get_modpack(&state.http_client, modpack_id).await?;
-            let versions = ftb_service::get_modpack_versions(&state.http_client, modpack_id).await?;
+            let versions =
+                ftb_service::get_modpack_versions(&state.http_client, modpack_id).await?;
             (modpack.name, versions)
         }
         ModpackPlatform::Technic => {
@@ -580,24 +570,21 @@ pub async fn check_instance_updates(
     let has_mc_update = is_version_newer(&instance.minecraft_version, &latest_mc_version);
 
     // Get target loader version for the new MC version
-    let target_loader_version =
-        if instance.loader_type != LoaderType::Vanilla && has_mc_update {
-            let loader_versions = loader_service::get_loader_versions(
-                instance.loader_type.clone(),
-                &latest_mc_version,
-            )
-            .await
-            .unwrap_or_default();
+    let target_loader_version = if instance.loader_type != LoaderType::Vanilla && has_mc_update {
+        let loader_versions =
+            loader_service::get_loader_versions(instance.loader_type.clone(), &latest_mc_version)
+                .await
+                .unwrap_or_default();
 
-            // Get latest stable, or latest if no stable available
-            loader_versions
-                .iter()
-                .find(|v| v.stable)
-                .or_else(|| loader_versions.first())
-                .map(|v| v.version.clone())
-        } else {
-            instance.loader_version.clone()
-        };
+        // Get latest stable, or latest if no stable available
+        loader_versions
+            .iter()
+            .find(|v| v.stable)
+            .or_else(|| loader_versions.first())
+            .map(|v| v.version.clone())
+    } else {
+        instance.loader_version.clone()
+    };
 
     // If no MC update available, return early with minimal result
     if !has_mc_update {

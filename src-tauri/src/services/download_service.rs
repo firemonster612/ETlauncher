@@ -11,13 +11,13 @@ use crate::utils::paths::{
 };
 use crate::utils::platform::{get_arch, get_os_name};
 use futures::stream::{self, StreamExt};
-use tauri::Manager;
 use sha1::{Digest, Sha1};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use tauri::Manager;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
 use zip::ZipArchive;
@@ -129,14 +129,17 @@ pub fn load_loader_version_info(
 }
 
 /// Find a loader version JSON for a given loader_version_id prefix (e.g., quilt-loader-x-y or fabric-loader-x-y)
-fn find_matching_loader_json(game_dir: &std::path::Path, loader_version_id: &str) -> Option<std::path::PathBuf> {
+fn find_matching_loader_json(
+    game_dir: &std::path::Path,
+    loader_version_id: &str,
+) -> Option<std::path::PathBuf> {
     let versions_dir = game_dir.join("versions");
     if !versions_dir.exists() {
         return None;
     }
 
     // Extract mc_version by taking substring after last '-' (loader_version_id format: <loader>-<loader_ver>-<mc>)
-    let mc_version = loader_version_id.rsplitn(2, '-').next()?;
+    let mc_version = loader_version_id.rsplit('-').next()?;
     let loader_prefix = if let Some(idx) = loader_version_id.find('-') {
         &loader_version_id[..idx]
     } else {
@@ -183,8 +186,11 @@ fn get_library_artifact_key(name: &str) -> String {
 /// When duplicates exist:
 /// 1. Prefer entries that apply to the current platform
 /// 2. Prefer entries with natives/classifiers over those without
+///
 /// This ensures loader libraries take precedence, but native-providing entries aren't lost
-fn deduplicate_libraries(libraries: Vec<crate::models::minecraft::Library>) -> Vec<crate::models::minecraft::Library> {
+fn deduplicate_libraries(
+    libraries: Vec<crate::models::minecraft::Library>,
+) -> Vec<crate::models::minecraft::Library> {
     use std::collections::HashMap;
 
     let mut seen: HashMap<String, crate::models::minecraft::Library> = HashMap::new();
@@ -200,9 +206,17 @@ fn deduplicate_libraries(libraries: Vec<crate::models::minecraft::Library>) -> V
 
             // Check if libs have natives/classifiers
             let existing_has_natives = existing.natives.is_some()
-                || existing.downloads.as_ref().map(|d| d.classifiers.is_some()).unwrap_or(false);
+                || existing
+                    .downloads
+                    .as_ref()
+                    .map(|d| d.classifiers.is_some())
+                    .unwrap_or(false);
             let current_has_natives = lib.natives.is_some()
-                || lib.downloads.as_ref().map(|d| d.classifiers.is_some()).unwrap_or(false);
+                || lib
+                    .downloads
+                    .as_ref()
+                    .map(|d| d.classifiers.is_some())
+                    .unwrap_or(false);
 
             // Decide whether to replace:
             // 1. If current applies but existing doesn't, replace
@@ -242,7 +256,9 @@ pub fn merge_version_info(loader_info: VersionInfo, parent_info: VersionInfo) ->
         // Use loader's main class (this is the key part!)
         main_class: loader_info.main_class,
         // Merge arguments - loader args come first, then parent
-        minecraft_arguments: loader_info.minecraft_arguments.or(parent_info.minecraft_arguments),
+        minecraft_arguments: loader_info
+            .minecraft_arguments
+            .or(parent_info.minecraft_arguments),
         arguments: merge_arguments(loader_info.arguments, parent_info.arguments),
         // Deduplicated libraries - loader versions take precedence
         libraries: deduplicated_libraries,
@@ -288,9 +304,8 @@ pub async fn get_version_info_with_loader(
     }
 
     // Get loader version string
-    let loader_ver = loader_version.ok_or_else(|| {
-        AppError::LoaderNotInstalled("Loader version not specified".to_string())
-    })?;
+    let loader_ver = loader_version
+        .ok_or_else(|| AppError::LoaderNotInstalled("Loader version not specified".to_string()))?;
 
     // Get the loader version ID
     let loader_version_id = get_loader_version_id(loader_type, loader_ver, mc_version)
@@ -324,10 +339,15 @@ pub async fn download_game_files_with_version(
     // Get instances base directory from settings
     let instances_base_dir = app_handle
         .and_then(|handle| {
-            handle.try_state::<crate::state::AppState>()
+            handle
+                .try_state::<crate::state::AppState>()
                 .map(|state| state.settings.read().instances_path.clone())
         })
-        .unwrap_or_else(|| crate::utils::paths::get_instances_dir().to_string_lossy().to_string());
+        .unwrap_or_else(|| {
+            crate::utils::paths::get_instances_dir()
+                .to_string_lossy()
+                .to_string()
+        });
 
     let instance_dir = get_instance_dir_with_base(&instances_base_dir, instance_id);
     let game_dir = instance_dir.join(".minecraft");
@@ -415,9 +435,18 @@ pub async fn download_game_files_with_version(
                 let url = if artifact.url.is_empty() {
                     // Try Minecraft libraries, NeoForge Maven, Forge Maven, then Maven Central
                     maven_name_to_url(&library.name, "https://libraries.minecraft.net/")
-                        .or_else(|| maven_name_to_url(&library.name, "https://maven.neoforged.net/releases/"))
-                        .or_else(|| maven_name_to_url(&library.name, "https://maven.minecraftforge.net/"))
-                        .or_else(|| maven_name_to_url(&library.name, "https://repo1.maven.org/maven2"))
+                        .or_else(|| {
+                            maven_name_to_url(
+                                &library.name,
+                                "https://maven.neoforged.net/releases/",
+                            )
+                        })
+                        .or_else(|| {
+                            maven_name_to_url(&library.name, "https://maven.minecraftforge.net/")
+                        })
+                        .or_else(|| {
+                            maven_name_to_url(&library.name, "https://repo1.maven.org/maven2")
+                        })
                         .unwrap_or_default()
                 } else {
                     artifact.url.clone()
@@ -444,7 +473,9 @@ pub async fn download_game_files_with_version(
                 // Check both cache and game directory (Forge extracts to game dir)
                 if !cache_lib_path.exists() && !game_lib_path.exists() {
                     // For old Forge, try -universal suffix if regular name fails
-                    let lib_name_with_universal = if library.name.contains("minecraftforge:forge:") && !library.name.contains(":universal") {
+                    let lib_name_with_universal = if library.name.contains("minecraftforge:forge:")
+                        && !library.name.contains(":universal")
+                    {
                         format!("{}:universal", library.name)
                     } else {
                         library.name.clone()
@@ -452,7 +483,8 @@ pub async fn download_game_files_with_version(
 
                     // Also check for universal variant in game dir
                     let universal_path = maven_name_to_path(&lib_name_with_universal);
-                    let universal_exists = universal_path.as_ref()
+                    let universal_exists = universal_path
+                        .as_ref()
                         .map(|p| game_libraries_dir.join(p).exists())
                         .unwrap_or(false);
 
@@ -461,7 +493,9 @@ pub async fn download_game_files_with_version(
                         if let Some(url) = maven_name_to_url(&lib_name_with_universal, base_url) {
                             let target_path = if lib_name_with_universal != library.name {
                                 // Use universal path if we modified the name
-                                universal_path.map(|p| get_libraries_dir().join(p)).unwrap_or(cache_lib_path)
+                                universal_path
+                                    .map(|p| get_libraries_dir().join(p))
+                                    .unwrap_or(cache_lib_path)
                             } else {
                                 cache_lib_path
                             };
@@ -483,8 +517,12 @@ pub async fn download_game_files_with_version(
                 if !lib_path.exists() {
                     // Try Minecraft libraries first (for old MC libs), then Forge, then Maven Central
                     let url = maven_name_to_url(&library.name, "https://libraries.minecraft.net/")
-                        .or_else(|| maven_name_to_url(&library.name, "https://maven.minecraftforge.net/"))
-                        .or_else(|| maven_name_to_url(&library.name, "https://repo1.maven.org/maven2"));
+                        .or_else(|| {
+                            maven_name_to_url(&library.name, "https://maven.minecraftforge.net/")
+                        })
+                        .or_else(|| {
+                            maven_name_to_url(&library.name, "https://repo1.maven.org/maven2")
+                        });
 
                     if let Some(url) = url {
                         downloads.push(DownloadTask {
@@ -502,7 +540,7 @@ pub async fn download_game_files_with_version(
 
     // 3. Assets
     let asset_index = fetch_asset_index(version_info).await?;
-    for (_name, asset) in &asset_index.objects {
+    for asset in asset_index.objects.values() {
         let hash_prefix = &asset.hash[..2];
         let asset_path = get_assets_dir()
             .join("objects")
@@ -557,7 +595,12 @@ pub async fn download_game_files_with_version(
                 // Update current file
                 {
                     let mut cf = current_file.lock().await;
-                    *cf = task.path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    *cf = task
+                        .path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
                 }
 
                 // Emit progress event
@@ -565,7 +608,12 @@ pub async fn download_game_files_with_version(
                     let progress = DownloadProgress {
                         total_files,
                         completed_files: completed_files.load(Ordering::Relaxed) as u32,
-                        current_file: task.path.file_name().unwrap_or_default().to_string_lossy().to_string(),
+                        current_file: task
+                            .path
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string(),
                         total_bytes,
                         downloaded_bytes: downloaded_bytes.load(Ordering::Relaxed),
                         speed_bytes_per_sec: 0,
@@ -609,9 +657,11 @@ async fn download_file(
     }
 
     // Download
-    let response = client.get(url).send().await.map_err(|e| {
-        AppError::DownloadError(format!("Failed to fetch {}: {}", url, e))
-    })?;
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| AppError::DownloadError(format!("Failed to fetch {}: {}", url, e)))?;
     if !response.status().is_success() {
         return Err(AppError::DownloadError(format!(
             "HTTP {} for {}",
@@ -651,9 +701,10 @@ fn file_valid(path: &PathBuf, expected_sha1: &str) -> bool {
 
 /// Fetch and cache the asset index
 async fn fetch_asset_index(version_info: &VersionInfo) -> Result<AssetIndex, AppError> {
-    let asset_index = version_info.asset_index.as_ref().ok_or_else(|| {
-        AppError::AssetNotFound("Version has no asset index".to_string())
-    })?;
+    let asset_index = version_info
+        .asset_index
+        .as_ref()
+        .ok_or_else(|| AppError::AssetNotFound("Version has no asset index".to_string()))?;
 
     let index_path = get_assets_dir()
         .join("indexes")
@@ -801,7 +852,11 @@ fn extract_natives(jar_path: &PathBuf, natives_dir: &PathBuf) -> Result<(), AppE
 
 /// Get the classpath for launching
 /// game_dir is the instance's .minecraft directory (for Forge-installed libraries)
-pub fn get_classpath(version_info: &VersionInfo, version_id: &str, game_dir: Option<&std::path::Path>) -> Vec<PathBuf> {
+pub fn get_classpath(
+    version_info: &VersionInfo,
+    version_id: &str,
+    game_dir: Option<&std::path::Path>,
+) -> Vec<PathBuf> {
     let mut classpath = Vec::new();
     let game_libraries_dir = game_dir.map(|d| d.join("libraries"));
 
@@ -871,7 +926,11 @@ fn maven_name_to_path(name: &str) -> Option<String> {
     let version = parts[2];
 
     // Handle classifier if present (e.g., "group:artifact:version:classifier")
-    let classifier = if parts.len() > 3 { Some(parts[3]) } else { None };
+    let classifier = if parts.len() > 3 {
+        Some(parts[3])
+    } else {
+        None
+    };
 
     let filename = if let Some(c) = classifier {
         format!("{}-{}-{}.jar", artifact, version, c)
@@ -889,11 +948,7 @@ fn maven_name_to_url(name: &str, base_url: &str) -> Option<String> {
         // URL-encode special characters in path components (like + in versions)
         let encoded_path = path
             .split('/')
-            .map(|segment| {
-                segment
-                    .replace('%', "%25")
-                    .replace(' ', "%20")
-            })
+            .map(|segment| segment.replace('%', "%25").replace(' ', "%20"))
             .collect::<Vec<_>>()
             .join("/");
         format!("{}/{}", base, encoded_path)
@@ -909,13 +964,11 @@ pub fn filter_versions(
     manifest
         .versions
         .iter()
-        .filter(|v| {
-            match v.version_type.as_str() {
-                "release" => true,
-                "snapshot" => show_snapshots,
-                "old_beta" | "old_alpha" => show_old_versions,
-                _ => false,
-            }
+        .filter(|v| match v.version_type.as_str() {
+            "release" => true,
+            "snapshot" => show_snapshots,
+            "old_beta" | "old_alpha" => show_old_versions,
+            _ => false,
         })
         .collect()
 }
@@ -1005,7 +1058,10 @@ pub fn build_jvm_arguments(
 }
 
 /// Replace placeholders in argument strings
-fn replace_placeholders(s: &str, replacements: &std::collections::HashMap<String, String>) -> String {
+fn replace_placeholders(
+    s: &str,
+    replacements: &std::collections::HashMap<String, String>,
+) -> String {
     let mut result = s.to_string();
     for (key, value) in replacements {
         result = result.replace(&format!("${{{}}}", key), value);
@@ -1013,6 +1069,7 @@ fn replace_placeholders(s: &str, replacements: &std::collections::HashMap<String
     result
 }
 
+#[allow(dead_code)]
 struct DownloadTask {
     url: String,
     path: PathBuf,

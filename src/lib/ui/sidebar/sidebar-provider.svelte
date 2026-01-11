@@ -1,14 +1,14 @@
 <script lang="ts">
-	import * as Tooltip from "$lib/ui/tooltip/index.js";
-	import { cn, type WithElementRef } from "$lib/utils.js";
-	import type { HTMLAttributes } from "svelte/elements";
+	import * as Tooltip from '$lib/ui/tooltip/index.js';
+	import { cn, type WithElementRef } from '$lib/utils.js';
+	import type { HTMLAttributes } from 'svelte/elements';
 	import {
 		SIDEBAR_COOKIE_MAX_AGE,
 		SIDEBAR_COOKIE_NAME,
 		SIDEBAR_WIDTH,
 		SIDEBAR_WIDTH_ICON,
-	} from "./constants.js";
-	import { setSidebar } from "./context.svelte.js";
+	} from './constants.js';
+	import { setSidebar } from './context.svelte.js';
 
 	let {
 		ref = $bindable(null),
@@ -41,7 +41,7 @@
 		style="--sidebar-width: {SIDEBAR_WIDTH}; --sidebar-width-icon: {SIDEBAR_WIDTH_ICON}; {style}"
 		class={cn(
 			// Stretch to the parent flex container without forcing a minimum viewport height.
-			"group/sidebar-wrapper has-data-[variant=inset]:bg-sidebar flex h-full min-h-0 w-full",
+			'group/sidebar-wrapper has-data-[variant=inset]:bg-sidebar flex h-full min-h-0 w-full',
 			className
 		)}
 		bind:this={ref}

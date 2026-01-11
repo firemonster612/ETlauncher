@@ -28,7 +28,10 @@ fn get_manifest_path(state: &AppState, instance_id: &str) -> PathBuf {
 }
 
 /// Load manifest from disk (returns empty manifest if not exists)
-pub fn load_manifest(state: &AppState, instance_id: &str) -> Result<InstalledContentManifest, AppError> {
+pub fn load_manifest(
+    state: &AppState,
+    instance_id: &str,
+) -> Result<InstalledContentManifest, AppError> {
     let manifest_path = get_manifest_path(state, instance_id);
 
     if !manifest_path.exists() {
@@ -172,17 +175,23 @@ pub fn get_user_added_content(
     let mut user_content = Vec::new();
 
     for content in manifest.mods {
-        if content.source == ContentSource::UserAdded || content.source == ContentSource::UserDependency {
+        if content.source == ContentSource::UserAdded
+            || content.source == ContentSource::UserDependency
+        {
             user_content.push(content);
         }
     }
     for content in manifest.shaders {
-        if content.source == ContentSource::UserAdded || content.source == ContentSource::UserDependency {
+        if content.source == ContentSource::UserAdded
+            || content.source == ContentSource::UserDependency
+        {
             user_content.push(content);
         }
     }
     for content in manifest.resource_packs {
-        if content.source == ContentSource::UserAdded || content.source == ContentSource::UserDependency {
+        if content.source == ContentSource::UserAdded
+            || content.source == ContentSource::UserDependency
+        {
             user_content.push(content);
         }
     }

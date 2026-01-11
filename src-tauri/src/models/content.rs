@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use crate::models::instance::{LoaderType, ModpackPlatform};
 use crate::models::loader::LoaderVersion;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Platform that hosts individual content (mods, shaders, resourcepacks)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

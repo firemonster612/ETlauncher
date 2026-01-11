@@ -176,8 +176,13 @@ async fn start_queue_processing(ctx: QueueContext, app_handle: AppHandle) {
 
         // Spawn download task
         tokio::spawn(async move {
-            let result =
-                process_download(&ctx_for_task, &handle_for_task, item_clone.clone(), token_clone).await;
+            let result = process_download(
+                &ctx_for_task,
+                &handle_for_task,
+                item_clone.clone(),
+                token_clone,
+            )
+            .await;
 
             // Remove from active downloads
             {
@@ -241,11 +246,9 @@ async fn process_download(
                 .ok_or_else(|| AppError::ContentNotFound("Version not found".to_string()))?
         }
         ContentPlatform::CurseForge => {
-            let api_key = ctx
-                .settings
-                .curseforge_api_key
-                .as_ref()
-                .ok_or_else(|| AppError::ApiError("CurseForge API key not configured".to_string()))?;
+            let api_key = ctx.settings.curseforge_api_key.as_ref().ok_or_else(|| {
+                AppError::ApiError("CurseForge API key not configured".to_string())
+            })?;
 
             let versions = curseforge_service::get_content_versions(
                 &ctx.http_client,
@@ -360,11 +363,15 @@ async fn process_download(
             manifest.mods.push(installed);
         }
         ContentType::Shader => {
-            manifest.shaders.retain(|c| c.filename != installed.filename);
+            manifest
+                .shaders
+                .retain(|c| c.filename != installed.filename);
             manifest.shaders.push(installed);
         }
         ContentType::ResourcePack => {
-            manifest.resource_packs.retain(|c| c.filename != installed.filename);
+            manifest
+                .resource_packs
+                .retain(|c| c.filename != installed.filename);
             manifest.resource_packs.push(installed);
         }
     }
@@ -418,9 +425,11 @@ async fn download_file_with_queue_progress(
     }
 
     // Start download
-    let response = client.get(url).send().await.map_err(|e| {
-        AppError::DownloadError(format!("Failed to fetch {}: {}", url, e))
-    })?;
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| AppError::DownloadError(format!("Failed to fetch {}: {}", url, e)))?;
 
     if !response.status().is_success() {
         return Err(AppError::DownloadError(format!(
@@ -443,9 +452,8 @@ async fn download_file_with_queue_progress(
             return Err(AppError::ContentNotFound("Cancelled".to_string()));
         }
 
-        let chunk = chunk_result.map_err(|e| {
-            AppError::DownloadError(format!("Failed to read chunk: {}", e))
-        })?;
+        let chunk = chunk_result
+            .map_err(|e| AppError::DownloadError(format!("Failed to read chunk: {}", e)))?;
 
         downloaded_bytes += chunk.len() as u64;
         all_bytes.extend_from_slice(&chunk);

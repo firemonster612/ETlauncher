@@ -60,7 +60,10 @@ pub async fn install_modrinth_modpack(
     app_handle: Option<&AppHandle>,
     cancel_token: Option<&CancellationToken>,
 ) -> Result<Instance, AppError> {
-    println!("[modpack_install] install_modrinth_modpack: modpack_id={}, version_id={}", modpack_id, version_id);
+    println!(
+        "[modpack_install] install_modrinth_modpack: modpack_id={}, version_id={}",
+        modpack_id, version_id
+    );
 
     // Get modpack info
     println!("[modpack_install] Fetching modpack info...");
@@ -82,7 +85,10 @@ pub async fn install_modrinth_modpack(
         .ok_or_else(|| AppError::ContentNotFound("No modpack file found".to_string()))?;
 
     // Download the mrpack file
-    println!("[modpack_install] Downloading mrpack from: {}", mrpack_file.url);
+    println!(
+        "[modpack_install] Downloading mrpack from: {}",
+        mrpack_file.url
+    );
     let mrpack_bytes = download_bytes(&state.http_client, &mrpack_file.url).await?;
     println!("[modpack_install] Downloaded {} bytes", mrpack_bytes.len());
 
@@ -108,8 +114,13 @@ pub async fn install_modrinth_modpack(
         .unwrap_or_else(|| "1.20.1".to_string());
 
     let (loader_type, loader_version) = determine_loader(&index.dependencies);
-    println!("[modpack_install] Parsed index: mc_version={}, loader={:?}, loader_version={:?}, files={}",
-        mc_version, loader_type, loader_version, index.files.len());
+    println!(
+        "[modpack_install] Parsed index: mc_version={}, loader={:?}, loader_version={:?}, files={}",
+        mc_version,
+        loader_type,
+        loader_version,
+        index.files.len()
+    );
 
     // Resolve loader version if we have a loader type but no version
     let has_mods = index.files.iter().any(|f| f.path.starts_with("mods/"));
@@ -118,29 +129,45 @@ pub async fn install_modrinth_modpack(
         loader_type.unwrap_or(LoaderType::Vanilla),
         loader_version,
         has_mods,
-    ).await?;
+    )
+    .await?;
 
-    println!("[modpack_install] Resolved loader: type={:?}, version={:?}",
-        final_loader_type, final_loader_version);
+    println!(
+        "[modpack_install] Resolved loader: type={:?}, version={:?}",
+        final_loader_type, final_loader_version
+    );
 
     // Create instance
     let instance_name = instance_name.unwrap_or_else(|| modpack.name.clone());
     let instance_id = Uuid::new_v4().to_string();
-    println!("[modpack_install] Creating instance: id={}, name={}", instance_id, instance_name);
+    println!(
+        "[modpack_install] Creating instance: id={}, name={}",
+        instance_id, instance_name
+    );
 
     emit_progress(app_handle, "Creating instance", 15, None, 0, 0);
 
     // Get instance directories
     let instances_base = state.settings.read().instances_path.clone();
-    let instance_dir = crate::utils::paths::get_instance_dir_with_base(&instances_base, &instance_id);
-    let game_dir = crate::utils::paths::get_instance_game_dir_with_base(&instances_base, &instance_id);
+    let instance_dir =
+        crate::utils::paths::get_instance_dir_with_base(&instances_base, &instance_id);
+    let game_dir =
+        crate::utils::paths::get_instance_game_dir_with_base(&instances_base, &instance_id);
 
     // Create directories
     fs::create_dir_all(&instance_dir)?;
     fs::create_dir_all(&game_dir)?;
 
     // Create standard game subdirectories
-    for subdir in ["mods", "resourcepacks", "saves", "screenshots", "logs", "config", "shaderpacks"] {
+    for subdir in [
+        "mods",
+        "resourcepacks",
+        "saves",
+        "screenshots",
+        "logs",
+        "config",
+        "shaderpacks",
+    ] {
         fs::create_dir_all(game_dir.join(subdir))?;
     }
 
@@ -187,7 +214,7 @@ pub async fn install_modrinth_modpack(
         let filename = file_entry
             .path
             .split('/')
-            .last()
+            .next_back()
             .unwrap_or(&file_entry.path);
 
         emit_progress(
@@ -261,14 +288,27 @@ pub async fn install_modrinth_modpack(
         }
     }
 
-    emit_progress(app_handle, "Installation complete", 100, None, total_files, total_files);
+    emit_progress(
+        app_handle,
+        "Installation complete",
+        100,
+        None,
+        total_files,
+        total_files,
+    );
 
     // Create manifest and mark all content as modpack-original
     if let Err(e) = create_modpack_manifest(state, &instance.id, &game_dir) {
-        eprintln!("[modpack_install] Warning: Failed to create manifest: {}", e);
+        eprintln!(
+            "[modpack_install] Warning: Failed to create manifest: {}",
+            e
+        );
     }
 
-    println!("[modpack_install] Modrinth modpack installed successfully: instance_id={}", instance.id);
+    println!(
+        "[modpack_install] Modrinth modpack installed successfully: instance_id={}",
+        instance.id
+    );
     Ok(instance)
 }
 
@@ -281,15 +321,15 @@ pub async fn install_curseforge_modpack(
     app_handle: Option<&AppHandle>,
     cancel_token: Option<&CancellationToken>,
 ) -> Result<Instance, AppError> {
-    println!("[modpack_install] install_curseforge_modpack: modpack_id={}, version_id={}", modpack_id, version_id);
+    println!(
+        "[modpack_install] install_curseforge_modpack: modpack_id={}, version_id={}",
+        modpack_id, version_id
+    );
 
-    let api_key = state
-        .get_settings()
-        .curseforge_api_key
-        .ok_or_else(|| {
-            println!("[modpack_install] CurseForge API key not configured");
-            AppError::ApiError("CurseForge API key not configured".to_string())
-        })?;
+    let api_key = state.get_settings().curseforge_api_key.ok_or_else(|| {
+        println!("[modpack_install] CurseForge API key not configured");
+        AppError::ApiError("CurseForge API key not configured".to_string())
+    })?;
 
     // Get modpack info
     println!("[modpack_install] Fetching CurseForge modpack info...");
@@ -298,7 +338,8 @@ pub async fn install_curseforge_modpack(
 
     // Get versions and find the specific one
     println!("[modpack_install] Fetching CurseForge versions...");
-    let versions = curseforge_service::get_modpack_versions(&state.http_client, &api_key, modpack_id).await?;
+    let versions =
+        curseforge_service::get_modpack_versions(&state.http_client, &api_key, modpack_id).await?;
     println!("[modpack_install] Found {} versions", versions.len());
     let version = versions
         .into_iter()
@@ -346,10 +387,13 @@ pub async fn install_curseforge_modpack(
         loader_type.unwrap_or(LoaderType::Vanilla),
         loader_version,
         has_mods,
-    ).await?;
+    )
+    .await?;
 
-    println!("[modpack_install] CurseForge resolved loader: type={:?}, version={:?}",
-        final_loader_type, final_loader_version);
+    println!(
+        "[modpack_install] CurseForge resolved loader: type={:?}, version={:?}",
+        final_loader_type, final_loader_version
+    );
 
     // Create instance
     let instance_name = instance_name.unwrap_or_else(|| modpack.name.clone());
@@ -359,15 +403,25 @@ pub async fn install_curseforge_modpack(
 
     // Get instance directories
     let instances_base = state.settings.read().instances_path.clone();
-    let instance_dir = crate::utils::paths::get_instance_dir_with_base(&instances_base, &instance_id);
-    let game_dir = crate::utils::paths::get_instance_game_dir_with_base(&instances_base, &instance_id);
+    let instance_dir =
+        crate::utils::paths::get_instance_dir_with_base(&instances_base, &instance_id);
+    let game_dir =
+        crate::utils::paths::get_instance_game_dir_with_base(&instances_base, &instance_id);
 
     // Create directories
     fs::create_dir_all(&instance_dir)?;
     fs::create_dir_all(&game_dir)?;
 
     // Create standard game subdirectories
-    for subdir in ["mods", "resourcepacks", "saves", "screenshots", "logs", "config", "shaderpacks"] {
+    for subdir in [
+        "mods",
+        "resourcepacks",
+        "saves",
+        "screenshots",
+        "logs",
+        "config",
+        "shaderpacks",
+    ] {
         fs::create_dir_all(game_dir.join(subdir))?;
     }
 
@@ -434,7 +488,8 @@ pub async fn install_curseforge_modpack(
 
         if let Ok(info) = file_info {
             let dest_path = mods_dir.join(&info.filename);
-            let _ = download_bytes_to_file(&state.http_client, &info.download_url, &dest_path).await;
+            let _ =
+                download_bytes_to_file(&state.http_client, &info.download_url, &dest_path).await;
         }
     }
 
@@ -470,14 +525,27 @@ pub async fn install_curseforge_modpack(
         }
     }
 
-    emit_progress(app_handle, "Installation complete", 100, None, total_files, total_files);
+    emit_progress(
+        app_handle,
+        "Installation complete",
+        100,
+        None,
+        total_files,
+        total_files,
+    );
 
     // Create manifest and mark all content as modpack-original
     if let Err(e) = create_modpack_manifest(state, &instance.id, &game_dir) {
-        eprintln!("[modpack_install] Warning: Failed to create manifest: {}", e);
+        eprintln!(
+            "[modpack_install] Warning: Failed to create manifest: {}",
+            e
+        );
     }
 
-    println!("[modpack_install] CurseForge modpack installed successfully: instance_id={}", instance.id);
+    println!(
+        "[modpack_install] CurseForge modpack installed successfully: instance_id={}",
+        instance.id
+    );
     Ok(instance)
 }
 
@@ -657,9 +725,11 @@ fn extract_overrides<R: Read + std::io::Seek>(
 }
 
 async fn download_bytes(client: &Client, url: &str) -> Result<Vec<u8>, AppError> {
-    let response = client.get(url).send().await.map_err(|e| {
-        AppError::DownloadError(format!("Failed to fetch {}: {}", url, e))
-    })?;
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| AppError::DownloadError(format!("Failed to fetch {}: {}", url, e)))?;
 
     if !response.status().is_success() {
         return Err(AppError::DownloadError(format!(
@@ -725,7 +795,12 @@ async fn download_file_with_hash_algo(
             };
 
             if hash != expected {
-                eprintln!("[download] Hash mismatch for {}: expected={}, got={}", path.display(), expected, hash);
+                eprintln!(
+                    "[download] Hash mismatch for {}: expected={}, got={}",
+                    path.display(),
+                    expected,
+                    hash
+                );
                 return Err(AppError::HashMismatch(path.display().to_string()));
             }
         }
@@ -748,7 +823,10 @@ pub async fn import_from_mrpack_file(
     instance_name: Option<String>,
     app_handle: Option<&AppHandle>,
 ) -> Result<Instance, AppError> {
-    println!("[modpack_install] import_from_mrpack_file: file_path={}", file_path);
+    println!(
+        "[modpack_install] import_from_mrpack_file: file_path={}",
+        file_path
+    );
 
     emit_progress(app_handle, "Reading modpack file", 0, None, 0, 0);
 
@@ -784,7 +862,10 @@ pub async fn import_from_mrpack_file(
     let (loader_type, loader_version) = determine_loader(&index.dependencies);
     println!(
         "[modpack_install] Parsed index: mc_version={}, loader={:?}, loader_version={:?}, files={}",
-        mc_version, loader_type, loader_version, index.files.len()
+        mc_version,
+        loader_type,
+        loader_version,
+        index.files.len()
     );
 
     // Resolve loader version if we have a loader type but no version
@@ -794,10 +875,13 @@ pub async fn import_from_mrpack_file(
         loader_type.unwrap_or(LoaderType::Vanilla),
         loader_version,
         has_mods,
-    ).await?;
+    )
+    .await?;
 
-    println!("[modpack_install] mrpack import resolved loader: type={:?}, version={:?}",
-        final_loader_type, final_loader_version);
+    println!(
+        "[modpack_install] mrpack import resolved loader: type={:?}, version={:?}",
+        final_loader_type, final_loader_version
+    );
 
     // Create instance
     let pack_name = index.name.clone();
@@ -871,7 +955,7 @@ pub async fn import_from_mrpack_file(
         let filename = file_entry
             .path
             .split('/')
-            .last()
+            .next_back()
             .unwrap_or(&file_entry.path);
 
         emit_progress(
@@ -956,7 +1040,10 @@ pub async fn import_from_mrpack_file(
 
     // Create manifest for imported modpack (no platform tracking since it's a local file)
     if let Err(e) = create_modpack_manifest(state, &instance.id, &game_dir) {
-        eprintln!("[modpack_install] Warning: Failed to create manifest: {}", e);
+        eprintln!(
+            "[modpack_install] Warning: Failed to create manifest: {}",
+            e
+        );
     }
 
     println!(
@@ -996,7 +1083,8 @@ pub fn create_modpack_manifest(
     // Scan resource packs folder
     let resourcepacks_dir = game_dir.join("resourcepacks");
     if resourcepacks_dir.exists() {
-        manifest.resource_packs = scan_content_folder(&resourcepacks_dir, ContentType::ResourcePack)?;
+        manifest.resource_packs =
+            scan_content_folder(&resourcepacks_dir, ContentType::ResourcePack)?;
     }
 
     // Save the manifest
@@ -1014,7 +1102,10 @@ pub fn create_modpack_manifest(
 
 /// Scan a content folder and create InstalledContent entries for all files
 /// All entries are marked as ModpackOriginal
-fn scan_content_folder(folder: &PathBuf, content_type: ContentType) -> Result<Vec<InstalledContent>, AppError> {
+fn scan_content_folder(
+    folder: &PathBuf,
+    content_type: ContentType,
+) -> Result<Vec<InstalledContent>, AppError> {
     let mut content = Vec::new();
 
     let entries = fs::read_dir(folder)?;
@@ -1054,8 +1145,15 @@ fn scan_content_folder(folder: &PathBuf, content_type: ContentType) -> Result<Ve
 
         // Create basic entry - no platform tracking since we don't know the source
         let installed = InstalledContent {
-            name: filename.trim_end_matches(".jar").trim_end_matches(".zip").to_string(),
-            slug: filename.trim_end_matches(".jar").trim_end_matches(".zip").to_lowercase().replace(' ', "-"),
+            name: filename
+                .trim_end_matches(".jar")
+                .trim_end_matches(".zip")
+                .to_string(),
+            slug: filename
+                .trim_end_matches(".jar")
+                .trim_end_matches(".zip")
+                .to_lowercase()
+                .replace(' ', "-"),
             modrinth_id: None,
             curseforge_id: None,
             installed_from: ContentPlatform::Modrinth, // Default, will be updated if identified later
@@ -1085,7 +1183,7 @@ pub async fn install_modrinth_modpack_version<F>(
     state: &AppState,
     _instance_id: &str,
     game_dir: &PathBuf,
-    modpack_id: &str,
+    _modpack_id: &str,
     version_id: &str,
     progress_callback: F,
 ) -> Result<(), AppError>
@@ -1135,7 +1233,7 @@ where
         let filename = file_entry
             .path
             .split('/')
-            .last()
+            .next_back()
             .unwrap_or(&file_entry.path);
 
         let progress = 30 + ((i * 60) / total_files.max(1));
@@ -1176,12 +1274,14 @@ where
         loader_type.unwrap_or(LoaderType::Vanilla),
         loader_version,
         has_mods,
-    ).await?;
+    )
+    .await?;
 
     if final_loader_type != LoaderType::Vanilla {
         if let Some(ref lv) = final_loader_version {
             progress_callback("Installing mod loader", 90);
-            loader_service::install_loader(game_dir, final_loader_type, &mc_version, lv, |_, _| {}).await?;
+            loader_service::install_loader(game_dir, final_loader_type, &mc_version, lv, |_, _| {})
+                .await?;
         }
     }
 
@@ -1249,7 +1349,10 @@ where
     let total_files = manifest.files.len();
     for (i, file_ref) in manifest.files.iter().enumerate() {
         let progress = 30 + ((i * 60) / total_files.max(1));
-        progress_callback(&format!("Downloading mod {}", file_ref.project_id), progress as u32);
+        progress_callback(
+            &format!("Downloading mod {}", file_ref.project_id),
+            progress as u32,
+        );
 
         // Get file info from CurseForge
         if let Ok(file_info) = curseforge_service::get_mod_file(
@@ -1261,13 +1364,15 @@ where
         .await
         {
             let dest_path = mods_dir.join(&file_info.filename);
-            let _ = download_bytes_to_file(&state.http_client, &file_info.download_url, &dest_path).await;
+            let _ = download_bytes_to_file(&state.http_client, &file_info.download_url, &dest_path)
+                .await;
         }
     }
 
     // Get loader info and install
     let mc_version = manifest.minecraft.version.clone();
-    let (loader_type, loader_version) = if let Some(loader) = manifest.minecraft.mod_loaders.first() {
+    let (loader_type, loader_version) = if let Some(loader) = manifest.minecraft.mod_loaders.first()
+    {
         parse_curseforge_loader(&loader.id)
     } else {
         (None, None)
@@ -1280,12 +1385,14 @@ where
         loader_type.unwrap_or(LoaderType::Vanilla),
         loader_version,
         has_mods,
-    ).await?;
+    )
+    .await?;
 
     if final_loader_type != LoaderType::Vanilla {
         if let Some(ref lv) = final_loader_version {
             progress_callback("Installing mod loader", 90);
-            loader_service::install_loader(game_dir, final_loader_type, &mc_version, lv, |_, _| {}).await?;
+            loader_service::install_loader(game_dir, final_loader_type, &mc_version, lv, |_, _| {})
+                .await?;
         }
     }
 
@@ -1319,7 +1426,7 @@ where
     // Download mod files
     let total_files = version.files.len();
     for (i, file) in version.files.iter().enumerate() {
-        let filename = file.path.split('/').last().unwrap_or(&file.path);
+        let filename = file.path.split('/').next_back().unwrap_or(&file.path);
         let progress = 10 + ((i * 80) / total_files.max(1));
         progress_callback(&format!("Downloading: {}", filename), progress as u32);
 
@@ -1339,12 +1446,20 @@ where
         version.loader_type.clone(),
         version.loader_version.clone(),
         has_mods,
-    ).await?;
+    )
+    .await?;
 
     if final_loader_type != LoaderType::Vanilla {
         if let Some(ref lv) = final_loader_version {
             progress_callback("Installing mod loader", 90);
-            loader_service::install_loader(game_dir, final_loader_type, &version.mc_version, lv, |_, _| {}).await?;
+            loader_service::install_loader(
+                game_dir,
+                final_loader_type,
+                &version.mc_version,
+                lv,
+                |_, _| {},
+            )
+            .await?;
         }
     }
 
@@ -1378,7 +1493,7 @@ where
     // Download mod files
     let total_files = version.files.len();
     for (i, file) in version.files.iter().enumerate() {
-        let filename = file.path.split('/').last().unwrap_or(&file.path);
+        let filename = file.path.split('/').next_back().unwrap_or(&file.path);
         let progress = 10 + ((i * 80) / total_files.max(1));
         progress_callback(&format!("Downloading: {}", filename), progress as u32);
 
@@ -1398,12 +1513,20 @@ where
         version.loader_type.clone(),
         version.loader_version.clone(),
         has_mods,
-    ).await?;
+    )
+    .await?;
 
     if final_loader_type != LoaderType::Vanilla {
         if let Some(ref lv) = final_loader_version {
             progress_callback("Installing mod loader", 90);
-            loader_service::install_loader(game_dir, final_loader_type, &version.mc_version, lv, |_, _| {}).await?;
+            loader_service::install_loader(
+                game_dir,
+                final_loader_type,
+                &version.mc_version,
+                lv,
+                |_, _| {},
+            )
+            .await?;
         }
     }
 
@@ -1435,7 +1558,7 @@ where
     // Download mod files
     let total_files = version.files.len();
     for (i, file) in version.files.iter().enumerate() {
-        let filename = file.path.split('/').last().unwrap_or(&file.path);
+        let filename = file.path.split('/').next_back().unwrap_or(&file.path);
         let progress = 10 + ((i * 80) / total_files.max(1));
         progress_callback(&format!("Downloading: {}", filename), progress as u32);
 
@@ -1455,12 +1578,20 @@ where
         version.loader_type.clone(),
         version.loader_version.clone(),
         has_mods,
-    ).await?;
+    )
+    .await?;
 
     if final_loader_type != LoaderType::Vanilla {
         if let Some(ref lv) = final_loader_version {
             progress_callback("Installing mod loader", 90);
-            loader_service::install_loader(game_dir, final_loader_type, &version.mc_version, lv, |_, _| {}).await?;
+            loader_service::install_loader(
+                game_dir,
+                final_loader_type,
+                &version.mc_version,
+                lv,
+                |_, _| {},
+            )
+            .await?;
         }
     }
 
@@ -1560,7 +1691,11 @@ pub async fn install_ftb_modpack(
     let mut instance = Instance {
         id: instance_id.clone(),
         name: instance_name,
-        minecraft_version: if needs_mc_detection { "unknown".to_string() } else { version.mc_version.clone() },
+        minecraft_version: if needs_mc_detection {
+            "unknown".to_string()
+        } else {
+            version.mc_version.clone()
+        },
         loader_type: version.loader_type.clone(),
         loader_version: version.loader_version.clone(),
         created_at: Utc::now().timestamp(),
@@ -1592,7 +1727,7 @@ pub async fn install_ftb_modpack(
             return Err(AppError::Cancelled);
         }
 
-        let filename = file.path.split('/').last().unwrap_or(&file.path);
+        let filename = file.path.split('/').next_back().unwrap_or(&file.path);
 
         emit_progress(
             app_handle,
@@ -1619,7 +1754,11 @@ pub async fn install_ftb_modpack(
     // Detect metadata if needed after files are downloaded
     // Check if mods folder has files (indicates we need a loader)
     let mods_dir = game_dir.join("mods");
-    let has_mods = mods_dir.exists() && mods_dir.read_dir().map(|mut d| d.next().is_some()).unwrap_or(false);
+    let has_mods = mods_dir.exists()
+        && mods_dir
+            .read_dir()
+            .map(|mut d| d.next().is_some())
+            .unwrap_or(false);
 
     // Run detection if:
     // 1. MC version is missing, OR
@@ -1637,12 +1776,17 @@ pub async fn install_ftb_modpack(
                 );
 
                 // Use detected values where needed
-                let mc = if needs_mc_detection { detected_mc } else { version.mc_version.clone() };
-                let (loader, loader_ver) = if needs_loader_detection && detected_loader != LoaderType::Vanilla {
-                    (detected_loader, detected_loader_ver)
+                let mc = if needs_mc_detection {
+                    detected_mc
                 } else {
-                    (version.loader_type.clone(), version.loader_version.clone())
+                    version.mc_version.clone()
                 };
+                let (loader, loader_ver) =
+                    if needs_loader_detection && detected_loader != LoaderType::Vanilla {
+                        (detected_loader, detected_loader_ver)
+                    } else {
+                        (version.loader_type.clone(), version.loader_version.clone())
+                    };
 
                 // Update instance with detected values
                 instance.minecraft_version = mc.clone();
@@ -1661,13 +1805,24 @@ pub async fn install_ftb_modpack(
                     instance_service::delete_instance(state, &instance_id, true)?;
                     return Err(e);
                 } else {
-                    eprintln!("[modpack_install] Loader detection failed, continuing with Vanilla: {}", e);
-                    (version.mc_version.clone(), version.loader_type.clone(), version.loader_version.clone())
+                    eprintln!(
+                        "[modpack_install] Loader detection failed, continuing with Vanilla: {}",
+                        e
+                    );
+                    (
+                        version.mc_version.clone(),
+                        version.loader_type.clone(),
+                        version.loader_version.clone(),
+                    )
                 }
             }
         }
     } else {
-        (version.mc_version.clone(), version.loader_type.clone(), version.loader_version.clone())
+        (
+            version.mc_version.clone(),
+            version.loader_type.clone(),
+            version.loader_version.clone(),
+        )
     };
 
     // Resolve loader type and version using centralized function
@@ -1677,7 +1832,9 @@ pub async fn install_ftb_modpack(
         final_loader_type,
         final_loader_version,
         has_mods,
-    ).await {
+    )
+    .await
+    {
         Ok((lt, lv)) => (lt, lv),
         Err(e) => {
             let _ = fs::remove_dir_all(&instance_dir);
@@ -1769,9 +1926,22 @@ pub async fn install_technic_modpack(
 
     // For Solder packs, we need to get loader info from the build, not the pack
     // The pack-level forge field is often null even for Forge packs
-    let (mut mc_version, mut loader_type, mut loader_version, needs_mc_detection, needs_loader_detection) = if let Some(ref solder_url) = pack.solder {
+    let (
+        mut mc_version,
+        mut loader_type,
+        mut loader_version,
+        needs_mc_detection,
+        needs_loader_detection,
+    ) = if let Some(ref solder_url) = pack.solder {
         // Try to get build info to determine loader
-        match technic_service::get_solder_build(&state.http_client, solder_url, modpack_id, version_id).await {
+        match technic_service::get_solder_build(
+            &state.http_client,
+            solder_url,
+            modpack_id,
+            version_id,
+        )
+        .await
+        {
             Ok(build) => {
                 let mc = build.minecraft.clone();
                 let needs_mc = mc.is_empty();
@@ -1848,7 +2018,11 @@ pub async fn install_technic_modpack(
     let mut instance = Instance {
         id: instance_id.clone(),
         name: instance_name,
-        minecraft_version: if needs_mc_detection { "unknown".to_string() } else { mc_version.clone() },
+        minecraft_version: if needs_mc_detection {
+            "unknown".to_string()
+        } else {
+            mc_version.clone()
+        },
         loader_type: loader_type.clone(),
         loader_version: loader_version.clone(),
         created_at: Utc::now().timestamp(),
@@ -1874,9 +2048,13 @@ pub async fn install_technic_modpack(
         // Solder pack - download individual mods
         emit_progress(app_handle, "Fetching version info", 10, None, 0, 0);
 
-        let build =
-            technic_service::get_solder_build(&state.http_client, solder_url, modpack_id, version_id)
-                .await?;
+        let build = technic_service::get_solder_build(
+            &state.http_client,
+            solder_url,
+            modpack_id,
+            version_id,
+        )
+        .await?;
 
         let total_files = build.mods.len() as u32;
         emit_progress(app_handle, "Downloading mods", 15, None, total_files, 0);
@@ -1978,7 +2156,11 @@ pub async fn install_technic_modpack(
     // Detect metadata if needed after files are downloaded
     // Check if mods folder has files (indicates we need a loader)
     let mods_dir = game_dir.join("mods");
-    let has_mods = mods_dir.exists() && mods_dir.read_dir().map(|mut d| d.next().is_some()).unwrap_or(false);
+    let has_mods = mods_dir.exists()
+        && mods_dir
+            .read_dir()
+            .map(|mut d| d.next().is_some())
+            .unwrap_or(false);
 
     // Run detection if:
     // 1. MC version is missing, OR
@@ -2019,7 +2201,10 @@ pub async fn install_technic_modpack(
                     instance_service::delete_instance(state, &instance_id, true)?;
                     return Err(e);
                 } else {
-                    eprintln!("[modpack_install] Loader detection failed, continuing with Vanilla: {}", e);
+                    eprintln!(
+                        "[modpack_install] Loader detection failed, continuing with Vanilla: {}",
+                        e
+                    );
                 }
             }
         }
@@ -2027,19 +2212,15 @@ pub async fn install_technic_modpack(
 
     // Resolve loader type and version using centralized function
     emit_progress(app_handle, "Resolving mod loader", 87, None, 0, 0);
-    let (loader_type, loader_version) = match resolve_loader_for_pack(
-        &mc_version,
-        loader_type,
-        loader_version,
-        has_mods,
-    ).await {
-        Ok((lt, lv)) => (lt, lv),
-        Err(e) => {
-            let _ = fs::remove_dir_all(&instance_dir);
-            instance_service::delete_instance(state, &instance_id, true)?;
-            return Err(e);
-        }
-    };
+    let (loader_type, loader_version) =
+        match resolve_loader_for_pack(&mc_version, loader_type, loader_version, has_mods).await {
+            Ok((lt, lv)) => (lt, lv),
+            Err(e) => {
+                let _ = fs::remove_dir_all(&instance_dir);
+                instance_service::delete_instance(state, &instance_id, true)?;
+                return Err(e);
+            }
+        };
 
     // Update instance with resolved loader info
     instance.loader_type = loader_type.clone();
@@ -2058,16 +2239,22 @@ pub async fn install_technic_modpack(
                 0,
             );
 
-            loader_service::install_loader(&game_dir, loader_type.clone(), &mc_version, lv, |msg, pct| {
-                emit_progress(
-                    app_handle,
-                    &format!("Loader: {}", msg),
-                    90 + (pct / 20),
-                    None,
-                    0,
-                    0,
-                );
-            })
+            loader_service::install_loader(
+                &game_dir,
+                loader_type.clone(),
+                &mc_version,
+                lv,
+                |msg, pct| {
+                    emit_progress(
+                        app_handle,
+                        &format!("Loader: {}", msg),
+                        90 + (pct / 20),
+                        None,
+                        0,
+                        0,
+                    );
+                },
+            )
             .await?;
         }
     }
@@ -2117,12 +2304,9 @@ pub async fn install_atlauncher_modpack(
 
     // Fetch version manifest from CDN (Configs.json)
     emit_progress(app_handle, "Fetching version manifest", 5, None, 0, 0);
-    let manifest = atlauncher_service::get_version_manifest(
-        &state.http_client,
-        &pack_safe_name,
-        version_id,
-    )
-    .await?;
+    let manifest =
+        atlauncher_service::get_version_manifest(&state.http_client, &pack_safe_name, version_id)
+            .await?;
 
     // Parse loader info from manifest
     let mut loader_type = match manifest.loader_type.as_deref() {
@@ -2179,7 +2363,11 @@ pub async fn install_atlauncher_modpack(
     let mut instance = Instance {
         id: instance_id.clone(),
         name: instance_name,
-        minecraft_version: if needs_mc_detection { "unknown".to_string() } else { mc_version.clone() },
+        minecraft_version: if needs_mc_detection {
+            "unknown".to_string()
+        } else {
+            mc_version.clone()
+        },
         loader_type: loader_type.clone(),
         loader_version: loader_version.clone(),
         created_at: Utc::now().timestamp(),
@@ -2271,8 +2459,7 @@ pub async fn install_atlauncher_modpack(
         let mod_type = mod_entry.mod_type.as_deref().unwrap_or("mods");
         let filename = mod_entry
             .file
-            .as_ref()
-            .map(|f| f.clone())
+            .clone()
             .unwrap_or_else(|| format!("{}-{}.jar", mod_entry.name, mod_entry.version));
         let dest_path = game_dir.join(mod_type).join(&filename);
 
@@ -2338,7 +2525,11 @@ pub async fn install_atlauncher_modpack(
     // Detect metadata if needed after files are downloaded
     // Check if mods folder has files (indicates we need a loader)
     let mods_dir = game_dir.join("mods");
-    let has_mods = mods_dir.exists() && mods_dir.read_dir().map(|mut d| d.next().is_some()).unwrap_or(false);
+    let has_mods = mods_dir.exists()
+        && mods_dir
+            .read_dir()
+            .map(|mut d| d.next().is_some())
+            .unwrap_or(false);
 
     // Run detection if:
     // 1. MC version is missing, OR
@@ -2379,7 +2570,10 @@ pub async fn install_atlauncher_modpack(
                     instance_service::delete_instance(state, &instance_id, true)?;
                     return Err(e);
                 } else {
-                    eprintln!("[modpack_install] Loader detection failed, continuing with Vanilla: {}", e);
+                    eprintln!(
+                        "[modpack_install] Loader detection failed, continuing with Vanilla: {}",
+                        e
+                    );
                 }
             }
         }
@@ -2387,19 +2581,15 @@ pub async fn install_atlauncher_modpack(
 
     // Resolve loader type and version using centralized function
     emit_progress(app_handle, "Resolving mod loader", 87, None, 0, 0);
-    let (loader_type, loader_version) = match resolve_loader_for_pack(
-        &mc_version,
-        loader_type,
-        loader_version,
-        has_mods,
-    ).await {
-        Ok((lt, lv)) => (lt, lv),
-        Err(e) => {
-            let _ = fs::remove_dir_all(&instance_dir);
-            instance_service::delete_instance(state, &instance_id, true)?;
-            return Err(e);
-        }
-    };
+    let (loader_type, loader_version) =
+        match resolve_loader_for_pack(&mc_version, loader_type, loader_version, has_mods).await {
+            Ok((lt, lv)) => (lt, lv),
+            Err(e) => {
+                let _ = fs::remove_dir_all(&instance_dir);
+                instance_service::delete_instance(state, &instance_id, true)?;
+                return Err(e);
+            }
+        };
 
     // Update instance with resolved loader info
     instance.loader_type = loader_type.clone();
@@ -2520,7 +2710,12 @@ fn parse_mc_version(s: &str) -> Option<String> {
 
     // Third part (if present) should be a small number (patch version)
     if parts.len() == 3 {
-        let patch: u32 = match parts[2].chars().take_while(|c| c.is_numeric()).collect::<String>().parse() {
+        let patch: u32 = match parts[2]
+            .chars()
+            .take_while(|c| c.is_numeric())
+            .collect::<String>()
+            .parse()
+        {
             Ok(n) if n <= 20 => n,
             _ => return None,
         };
@@ -2559,7 +2754,10 @@ async fn resolve_loader_for_pack(
 
     if is_legacy {
         // For legacy MC (pre-1.14), assume Forge and look up version
-        eprintln!("[resolve_loader] Legacy MC {} with mods - looking up Forge version", mc_version);
+        eprintln!(
+            "[resolve_loader] Legacy MC {} with mods - looking up Forge version",
+            mc_version
+        );
 
         match loader_service::get_forge_versions(mc_version).await {
             Ok(versions) => {
@@ -2588,7 +2786,10 @@ async fn resolve_loader_for_pack(
         }
 
         // Look up version for the detected loader
-        eprintln!("[resolve_loader] Modern MC {} with {:?} loader - looking up version", mc_version, current_loader);
+        eprintln!(
+            "[resolve_loader] Modern MC {} with {:?} loader - looking up version",
+            mc_version, current_loader
+        );
 
         match loader_service::get_loader_versions(current_loader.clone(), mc_version).await {
             Ok(versions) => {
@@ -2612,12 +2813,14 @@ async fn resolve_loader_for_pack(
 
 /// Detect pack metadata (MC version and loader) from downloaded files
 /// Scans the mods folder for known loader signatures and extracts MC version from filenames
-pub fn detect_pack_metadata(game_dir: &std::path::Path) -> Result<(String, LoaderType, Option<String>), AppError> {
+pub fn detect_pack_metadata(
+    game_dir: &std::path::Path,
+) -> Result<(String, LoaderType, Option<String>), AppError> {
     let mods_dir = game_dir.join("mods");
 
     if !mods_dir.exists() {
         return Err(AppError::InstallationError(
-            "Could not detect Minecraft version: no mods folder found".to_string()
+            "Could not detect Minecraft version: no mods folder found".to_string(),
         ));
     }
 
@@ -2626,9 +2829,8 @@ pub fn detect_pack_metadata(game_dir: &std::path::Path) -> Result<(String, Loade
     let mut mc_versions: Vec<String> = Vec::new();
 
     // Scan mod files
-    let entries = fs::read_dir(&mods_dir).map_err(|e| {
-        AppError::InstallationError(format!("Failed to read mods folder: {}", e))
-    })?;
+    let entries = fs::read_dir(&mods_dir)
+        .map_err(|e| AppError::InstallationError(format!("Failed to read mods folder: {}", e)))?;
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -2636,7 +2838,8 @@ pub fn detect_pack_metadata(game_dir: &std::path::Path) -> Result<(String, Loade
             continue;
         }
 
-        let filename = path.file_name()
+        let filename = path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or_default()
             .to_string();
@@ -2650,7 +2853,8 @@ pub fn detect_pack_metadata(game_dir: &std::path::Path) -> Result<(String, Loade
 
         // Detect loader from known loader JARs
         // Only match actual Forge installer/universal JARs, not mods with "forge" in the name
-        let is_forge_jar = (filename_lower.starts_with("forge-") || filename_lower.starts_with("minecraftforge-"))
+        let is_forge_jar = (filename_lower.starts_with("forge-")
+            || filename_lower.starts_with("minecraftforge-"))
             && (filename_lower.contains("universal") || filename_lower.contains("installer"));
 
         if is_forge_jar && !filename_lower.contains("neoforge") {
@@ -2665,7 +2869,11 @@ pub fn detect_pack_metadata(game_dir: &std::path::Path) -> Result<(String, Loade
                     if parts.len() >= 2 {
                         // Validate it looks like a Forge version (starts with a number >= 10)
                         let potential_ver = parts[1].trim_end_matches(".jar");
-                        if let Some(first_num) = potential_ver.split('.').next().and_then(|s| s.parse::<u32>().ok()) {
+                        if let Some(first_num) = potential_ver
+                            .split('.')
+                            .next()
+                            .and_then(|s| s.parse::<u32>().ok())
+                        {
                             if first_num >= 10 {
                                 loader_version = Some(potential_ver.to_string());
                             }
@@ -2675,11 +2883,14 @@ pub fn detect_pack_metadata(game_dir: &std::path::Path) -> Result<(String, Loade
             }
         } else if filename_lower.contains("neoforge") {
             detected_loader = LoaderType::NeoForge;
-        } else if filename_lower.contains("fabric-loader") || filename_lower.contains("fabric-api") {
+        } else if filename_lower.contains("fabric-loader") || filename_lower.contains("fabric-api")
+        {
             if detected_loader == LoaderType::Vanilla || detected_loader == LoaderType::Forge {
                 detected_loader = LoaderType::Fabric;
             }
-        } else if filename_lower.contains("quilt-loader") || filename_lower.contains("quilt-standard-libraries") {
+        } else if filename_lower.contains("quilt-loader")
+            || filename_lower.contains("quilt-standard-libraries")
+        {
             detected_loader = LoaderType::Quilt;
         }
 
@@ -2694,15 +2905,13 @@ pub fn detect_pack_metadata(game_dir: &std::path::Path) -> Result<(String, Loade
     // Also check config folder for loader-specific files
     let config_dir = game_dir.join("config");
     if config_dir.exists() {
-        if config_dir.join("forge-client.toml").exists() || config_dir.join("forge.cfg").exists() {
-            if detected_loader == LoaderType::Vanilla {
-                detected_loader = LoaderType::Forge;
-            }
+        if (config_dir.join("forge-client.toml").exists() || config_dir.join("forge.cfg").exists())
+            && detected_loader == LoaderType::Vanilla
+        {
+            detected_loader = LoaderType::Forge;
         }
-        if config_dir.join("fabric").exists() {
-            if detected_loader == LoaderType::Vanilla {
-                detected_loader = LoaderType::Fabric;
-            }
+        if config_dir.join("fabric").exists() && detected_loader == LoaderType::Vanilla {
+            detected_loader = LoaderType::Fabric;
         }
     }
 
@@ -2723,8 +2932,14 @@ pub fn detect_pack_metadata(game_dir: &std::path::Path) -> Result<(String, Loade
             if let Ok(entries) = fs::read_dir(&bin_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_lowercase();
-                    if filename.ends_with(".jar") && (filename.contains("modpack") || filename.contains("forge")) {
+                    let filename = path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or_default()
+                        .to_lowercase();
+                    if filename.ends_with(".jar")
+                        && (filename.contains("modpack") || filename.contains("forge"))
+                    {
                         detected_loader = LoaderType::Forge;
                         break;
                     }
@@ -2746,17 +2961,20 @@ pub fn detect_pack_metadata(game_dir: &std::path::Path) -> Result<(String, Loade
     // Prefer versions that appear most frequently
     let mc_version = if mc_versions.is_empty() {
         return Err(AppError::InstallationError(
-            "Could not detect Minecraft version from pack files. This pack may not be supported.".to_string()
+            "Could not detect Minecraft version from pack files. This pack may not be supported."
+                .to_string(),
         ));
     } else {
         // Count occurrences of each version
-        let mut version_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut version_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
         for v in &mc_versions {
             *version_counts.entry(v.clone()).or_insert(0) += 1;
         }
 
         // Get the most common version
-        version_counts.into_iter()
+        version_counts
+            .into_iter()
             .max_by_key(|(_, count)| *count)
             .map(|(v, _)| v)
             .unwrap_or_else(|| mc_versions[0].clone())

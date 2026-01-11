@@ -1,188 +1,181 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from '@tauri-apps/api/core';
 import type {
-  Content,
-  ContentPlatform,
-  ContentSearchParams,
-  ContentSearchResult,
-  ContentType,
-  ContentVersion,
-  InstalledContent,
-  LoaderType,
-  QueueInstallRequest,
-  ResolvedDependency,
-  ScanResult,
-} from "$lib/types";
+	Content,
+	ContentPlatform,
+	ContentSearchParams,
+	ContentSearchResult,
+	ContentType,
+	ContentVersion,
+	InstalledContent,
+	LoaderType,
+	QueueInstallRequest,
+	ResolvedDependency,
+	ScanResult,
+} from '$lib/types';
 
 /** Search for content (mods, shaders, resource packs) across platforms */
-export async function searchContent(
-  params: ContentSearchParams
-): Promise<ContentSearchResult> {
-  return invoke<ContentSearchResult>("search_content", { params });
+export async function searchContent(params: ContentSearchParams): Promise<ContentSearchResult> {
+	return invoke<ContentSearchResult>('search_content', { params });
 }
 
 /** Get content by ID */
-export async function getContent(
-  platform: ContentPlatform,
-  id: string
-): Promise<Content> {
-  return invoke<Content>("get_content", { platform, id });
+export async function getContent(platform: ContentPlatform, id: string): Promise<Content> {
+	return invoke<Content>('get_content', { platform, id });
 }
 
 /** Get versions for content */
 export async function getContentVersions(
-  platform: ContentPlatform,
-  id: string,
-  mcVersion?: string,
-  loader?: LoaderType
+	platform: ContentPlatform,
+	id: string,
+	mcVersion?: string,
+	loader?: LoaderType
 ): Promise<ContentVersion[]> {
-  return invoke<ContentVersion[]>("get_content_versions", {
-    platform,
-    id,
-    mcVersion,
-    loader,
-  });
+	return invoke<ContentVersion[]>('get_content_versions', {
+		platform,
+		id,
+		mcVersion,
+		loader,
+	});
 }
 
 /** Get a specific version by ID */
 export async function getContentVersion(
-  platform: ContentPlatform,
-  versionId: string,
-  modId?: string
+	platform: ContentPlatform,
+	versionId: string,
+	modId?: string
 ): Promise<ContentVersion> {
-  return invoke<ContentVersion>("get_content_version", { platform, versionId, modId });
+	return invoke<ContentVersion>('get_content_version', { platform, versionId, modId });
 }
 
 /** Install content (mod, shader, resource pack) to an instance */
 export async function installContent(
-  instanceId: string,
-  platform: ContentPlatform,
-  contentId: string,
-  contentName: string,
-  contentSlug: string,
-  contentType: ContentType,
-  version: ContentVersion,
-  isDependency?: boolean
+	instanceId: string,
+	platform: ContentPlatform,
+	contentId: string,
+	contentName: string,
+	contentSlug: string,
+	contentType: ContentType,
+	version: ContentVersion,
+	isDependency?: boolean
 ): Promise<InstalledContent> {
-  return invoke<InstalledContent>("install_content", {
-    instanceId,
-    platform,
-    contentId,
-    contentName,
-    contentSlug,
-    contentType,
-    version,
-    isDependency,
-  });
+	return invoke<InstalledContent>('install_content', {
+		instanceId,
+		platform,
+		contentId,
+		contentName,
+		contentSlug,
+		contentType,
+		version,
+		isDependency,
+	});
 }
 
 /** Resolve dependencies for a content version */
 export async function resolveContentDependencies(
-  instanceId: string,
-  platform: ContentPlatform,
-  version: ContentVersion,
-  mcVersion: string,
-  loader?: LoaderType
+	instanceId: string,
+	platform: ContentPlatform,
+	version: ContentVersion,
+	mcVersion: string,
+	loader?: LoaderType
 ): Promise<ResolvedDependency[]> {
-  return invoke<ResolvedDependency[]>("resolve_content_dependencies", {
-    instanceId,
-    platform,
-    version,
-    mcVersion,
-    loader,
-  });
+	return invoke<ResolvedDependency[]>('resolve_content_dependencies', {
+		instanceId,
+		platform,
+		version,
+		mcVersion,
+		loader,
+	});
 }
 
 /** Install content with its dependencies */
 export async function installContentWithDependencies(
-  instanceId: string,
-  platform: ContentPlatform,
-  content: Content,
-  version: ContentVersion,
-  mcVersion: string,
-  loader?: LoaderType
+	instanceId: string,
+	platform: ContentPlatform,
+	content: Content,
+	version: ContentVersion,
+	mcVersion: string,
+	loader?: LoaderType
 ): Promise<InstalledContent[]> {
-  return invoke<InstalledContent[]>("install_content_with_dependencies", {
-    instanceId,
-    platform,
-    content,
-    version,
-    mcVersion,
-    loader,
-  });
+	return invoke<InstalledContent[]>('install_content_with_dependencies', {
+		instanceId,
+		platform,
+		content,
+		version,
+		mcVersion,
+		loader,
+	});
 }
 
 /** Scan an instance's content folder and identify installed items via Modrinth hash lookup */
 export async function scanInstalledContent(
-  instanceId: string,
-  contentType: ContentType
+	instanceId: string,
+	contentType: ContentType
 ): Promise<ScanResult> {
-  return invoke<ScanResult>("scan_installed_content", { instanceId, contentType });
+	return invoke<ScanResult>('scan_installed_content', { instanceId, contentType });
 }
 
 /** Uninstall content by filename (delete the file directly) */
 export async function uninstallContentByFilename(
-  instanceId: string,
-  filename: string,
-  contentType: ContentType
+	instanceId: string,
+	filename: string,
+	contentType: ContentType
 ): Promise<void> {
-  return invoke<void>("uninstall_content_by_filename", {
-    instanceId,
-    filename,
-    contentType,
-  });
+	return invoke<void>('uninstall_content_by_filename', {
+		instanceId,
+		filename,
+		contentType,
+	});
 }
 
 /** Disable content by moving files to the disabled subfolder */
 export async function disableContent(
-  instanceId: string,
-  filenames: string[],
-  contentType: ContentType
+	instanceId: string,
+	filenames: string[],
+	contentType: ContentType
 ): Promise<void> {
-  return invoke<void>("disable_content", {
-    instanceId,
-    filenames,
-    contentType,
-  });
+	return invoke<void>('disable_content', {
+		instanceId,
+		filenames,
+		contentType,
+	});
 }
 
 /** Enable content by moving files from disabled subfolder back */
 export async function enableContent(
-  instanceId: string,
-  filenames: string[],
-  contentType: ContentType
+	instanceId: string,
+	filenames: string[],
+	contentType: ContentType
 ): Promise<void> {
-  return invoke<void>("enable_content", {
-    instanceId,
-    filenames,
-    contentType,
-  });
+	return invoke<void>('enable_content', {
+		instanceId,
+		filenames,
+		contentType,
+	});
 }
 
 /** Queue content for parallel installation */
-export async function queueContentInstall(
-  request: QueueInstallRequest
-): Promise<void> {
-  return invoke<void>("queue_content_install", { request });
+export async function queueContentInstall(request: QueueInstallRequest): Promise<void> {
+	return invoke<void>('queue_content_install', { request });
 }
 
 /** Cancel a queued content download */
 export async function cancelContentQueueItem(queueId: string): Promise<void> {
-  return invoke<void>("cancel_content_queue_item", { queueId });
+	return invoke<void>('cancel_content_queue_item', { queueId });
 }
 
 /** Try to process pending queue items (called when a slot becomes available) */
 export async function tryProcessContentQueue(): Promise<void> {
-  return invoke<void>("try_process_content_queue");
+	return invoke<void>('try_process_content_queue');
 }
 
 // OptiFine functions
 
 /** Check if OptiFine is available for a specific Minecraft version */
 export async function checkOptifineAvailable(mcVersion: string): Promise<boolean> {
-  return invoke<boolean>("check_optifine_available", { mcVersion });
+	return invoke<boolean>('check_optifine_available', { mcVersion });
 }
 
 /** Install OptiFine for an instance. Returns the installed filename. */
 export async function installOptifine(instanceId: string): Promise<string> {
-  return invoke<string>("install_optifine", { instanceId });
+	return invoke<string>('install_optifine', { instanceId });
 }

@@ -4,8 +4,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
-use crate::models::{AppSettings, VersionManifest};
 use crate::models::content::QueuedContentInstall;
+use crate::models::{AppSettings, VersionManifest};
 
 /// Global application state managed by Tauri
 pub struct AppState {
@@ -73,7 +73,7 @@ impl AppState {
         if config_path.exists() {
             let content = std::fs::read_to_string(&config_path)?;
             let mut settings: AppSettings = serde_json::from_str(&content)?;
-            
+
             // Fix empty instances path
             if settings.instances_path.is_empty() {
                 settings.instances_path = crate::utils::paths::get_instances_dir()
@@ -83,14 +83,16 @@ impl AppState {
                 let content = serde_json::to_string_pretty(&settings)?;
                 std::fs::write(&config_path, content)?;
             }
-            
+
             *self.settings.write() = settings;
         } else {
             // Create default settings with proper paths
-            let mut settings = AppSettings::default();
-            settings.instances_path = crate::utils::paths::get_instances_dir()
-                .to_string_lossy()
-                .to_string();
+            let settings = AppSettings {
+                instances_path: crate::utils::paths::get_instances_dir()
+                    .to_string_lossy()
+                    .to_string(),
+                ..Default::default()
+            };
             *self.settings.write() = settings;
         }
 
@@ -182,12 +184,18 @@ impl AppState {
 
     /// Get the current modpack install state
     pub fn get_modpack_install(&self) -> Option<String> {
-        self.modpack_install.read().as_ref().map(|s| s.modpack_name.clone())
+        self.modpack_install
+            .read()
+            .as_ref()
+            .map(|s| s.modpack_name.clone())
     }
 
     /// Get the cancellation token for the current install
     pub fn get_modpack_cancel_token(&self) -> Option<CancellationToken> {
-        self.modpack_install.read().as_ref().map(|s| s.cancellation_token.clone())
+        self.modpack_install
+            .read()
+            .as_ref()
+            .map(|s| s.cancellation_token.clone())
     }
 
     /// Clear the modpack install state

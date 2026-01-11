@@ -7,13 +7,13 @@ import type { LoaderType } from '$lib/types/instance';
  * Get available loader versions for a specific loader type and Minecraft version
  */
 export async function getLoaderVersions(
-  loaderType: LoaderType,
-  minecraftVersion: string
+	loaderType: LoaderType,
+	minecraftVersion: string
 ): Promise<LoaderVersion[]> {
-  return invoke('get_loader_versions', {
-    loaderType,
-    minecraftVersion,
-  });
+	return invoke('get_loader_versions', {
+		loaderType,
+		minecraftVersion,
+	});
 }
 
 /**
@@ -24,59 +24,56 @@ export async function getLoaderVersions(
  * @param onProgress - Optional callback for progress updates
  */
 export async function installLoader(
-  instanceId: string,
-  loaderType: LoaderType,
-  loaderVersion: string,
-  onProgress?: (progress: LoaderInstallProgress) => void
+	instanceId: string,
+	loaderType: LoaderType,
+	loaderVersion: string,
+	onProgress?: (progress: LoaderInstallProgress) => void
 ): Promise<void> {
-  if (onProgress) {
-    // Set up event listener for progress updates
-    const unlisten = await listen<LoaderInstallProgress>(
-      'loader-install-progress',
-      (event) => {
-        onProgress(event.payload);
-      }
-    );
+	if (onProgress) {
+		// Set up event listener for progress updates
+		const unlisten = await listen<LoaderInstallProgress>('loader-install-progress', (event) => {
+			onProgress(event.payload);
+		});
 
-    // Set up listener for completion
-    const unlistenComplete = await listen('loader-install-complete', () => {
-      unlisten();
-      unlistenComplete();
-    });
-  }
+		// Set up listener for completion
+		const unlistenComplete = await listen('loader-install-complete', () => {
+			unlisten();
+			unlistenComplete();
+		});
+	}
 
-  return invoke('install_loader', {
-    instanceId,
-    loaderType,
-    loaderVersion,
-  });
+	return invoke('install_loader', {
+		instanceId,
+		loaderType,
+		loaderVersion,
+	});
 }
 
 /**
  * Check if a loader is installed for an instance
  */
 export async function checkLoaderInstalled(
-  instanceId: string,
-  loaderType: LoaderType,
-  loaderVersion: string
+	instanceId: string,
+	loaderType: LoaderType,
+	loaderVersion: string
 ): Promise<boolean> {
-  return invoke('check_loader_installed', {
-    instanceId,
-    loaderType,
-    loaderVersion,
-  });
+	return invoke('check_loader_installed', {
+		instanceId,
+		loaderType,
+		loaderVersion,
+	});
 }
 
 /**
  * Get the latest stable loader version for a given loader type
  */
 export async function getLatestStableLoaderVersion(
-  loaderType: LoaderType,
-  minecraftVersion: string
+	loaderType: LoaderType,
+	minecraftVersion: string
 ): Promise<LoaderVersion | null> {
-  const versions = await getLoaderVersions(loaderType, minecraftVersion);
-  const stable = versions.find((v) => v.stable);
-  return stable || null;
+	const versions = await getLoaderVersions(loaderType, minecraftVersion);
+	const stable = versions.find((v) => v.stable);
+	return stable || null;
 }
 
 /**
@@ -84,13 +81,13 @@ export async function getLatestStableLoaderVersion(
  * (This is a placeholder - logic can be expanded later)
  */
 export async function getRecommendedLoaderVersion(
-  loaderType: LoaderType,
-  minecraftVersion: string
+	loaderType: LoaderType,
+	minecraftVersion: string
 ): Promise<LoaderVersion | null> {
-  // For now, just return latest stable
-  // In the future, this could consider:
-  // - Modpack compatibility
-  // - Known issues with specific versions
-  // - User preferences
-  return getLatestStableLoaderVersion(loaderType, minecraftVersion);
+	// For now, just return latest stable
+	// In the future, this could consider:
+	// - Modpack compatibility
+	// - Known issues with specific versions
+	// - User preferences
+	return getLatestStableLoaderVersion(loaderType, minecraftVersion);
 }

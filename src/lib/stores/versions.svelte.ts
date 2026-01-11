@@ -1,84 +1,84 @@
-import type { VersionEntry, VersionManifest } from "$lib/types";
-import * as minecraftService from "$lib/services/minecraft";
-import { getErrorMessage } from "$lib/utils/error";
+import type { VersionEntry, VersionManifest } from '$lib/types';
+import * as minecraftService from '$lib/services/minecraft';
+import { getErrorMessage } from '$lib/utils/error';
 
 /** Create the versions store */
 function createVersionsStore() {
-  let versions = $state<VersionEntry[]>([]);
-  let manifest = $state<VersionManifest | null>(null);
-  let isLoading = $state(false);
-  let error = $state<string | null>(null);
+	let versions = $state<VersionEntry[]>([]);
+	let manifest = $state<VersionManifest | null>(null);
+	let isLoading = $state(false);
+	let error = $state<string | null>(null);
 
-  // Filter settings
-  let showSnapshots = $state(false);
-  let showOldVersions = $state(false);
+	// Filter settings
+	let showSnapshots = $state(false);
+	let showOldVersions = $state(false);
 
-  return {
-    // Getters
-    get versions() {
-      return versions;
-    },
-    get manifest() {
-      return manifest;
-    },
-    get isLoading() {
-      return isLoading;
-    },
-    get error() {
-      return error;
-    },
-    get showSnapshots() {
-      return showSnapshots;
-    },
-    get showOldVersions() {
-      return showOldVersions;
-    },
-    get latestRelease() {
-      return manifest?.latest.release ?? null;
-    },
-    get latestSnapshot() {
-      return manifest?.latest.snapshot ?? null;
-    },
+	return {
+		// Getters
+		get versions() {
+			return versions;
+		},
+		get manifest() {
+			return manifest;
+		},
+		get isLoading() {
+			return isLoading;
+		},
+		get error() {
+			return error;
+		},
+		get showSnapshots() {
+			return showSnapshots;
+		},
+		get showOldVersions() {
+			return showOldVersions;
+		},
+		get latestRelease() {
+			return manifest?.latest.release ?? null;
+		},
+		get latestSnapshot() {
+			return manifest?.latest.snapshot ?? null;
+		},
 
-    /** Load versions from backend */
-    async load(forceRefresh: boolean = false) {
-      isLoading = true;
-      error = null;
+		/** Load versions from backend */
+		async load(forceRefresh: boolean = false) {
+			isLoading = true;
+			error = null;
 
-      try {
-        // Fetch manifest for latest version info
-        manifest = await minecraftService.fetchVersionManifest(forceRefresh);
+			try {
+				// Fetch manifest for latest version info
+				manifest = await minecraftService.fetchVersionManifest(forceRefresh);
 
-        // Fetch filtered versions
-        versions = await minecraftService.getVersions(showSnapshots, showOldVersions);
-      } catch (e) {
-        error = getErrorMessage(e);
-        console.error("Failed to load versions:", e);
-      } finally {
-        isLoading = false;
-      }
-    },
+				// Fetch filtered versions
+				versions = await minecraftService.getVersions(showSnapshots, showOldVersions);
+			} catch (e) {
+				error = getErrorMessage(e);
+				console.error('Failed to load versions:', e);
+			} finally {
+				isLoading = false;
+			}
+		},
 
-    /** Set filter options and reload */
-    async setFilters(snapshots: boolean, oldVersions: boolean) {
-      showSnapshots = snapshots;
-      showOldVersions = oldVersions;
+		/** Set filter options and reload */
+		async setFilters(snapshots: boolean, oldVersions: boolean) {
+			showSnapshots = snapshots;
+			showOldVersions = oldVersions;
 
-      // Reload with new filters
-      if (manifest) {
-        try {
-          versions = await minecraftService.getVersions(showSnapshots, showOldVersions);
-        } catch (e) {
-          error = getErrorMessage(e);
-        }
-      }
-    },
+			// Reload with new filters
+			if (manifest) {
+				try {
+					versions = await minecraftService.getVersions(showSnapshots, showOldVersions);
+				} catch (e) {
+					error = getErrorMessage(e);
+				}
+			}
+		},
 
-    /** Clear error */
-    clearError() {
-      error = null;
-    },
-  };
+		/** Clear error */
+		clearError() {
+			error = null;
+		},
+	};
 }
 
 /** Global versions store instance */

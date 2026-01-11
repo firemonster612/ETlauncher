@@ -5,8 +5,8 @@
 
 use crate::error::AppError;
 use crate::models::content::{
-    ContentPlatform, ContentSource, ContentType, IncompatibleContentAction, InstalledContent,
-    InstanceUpdatePlan, ModpackUpdatePlan, UpdatePlan, UserContentDecision,
+    ContentPlatform, ContentType, InstalledContent, InstanceUpdatePlan, ModpackUpdatePlan,
+    UpdatePlan, UserContentDecision,
 };
 use crate::models::instance::{Instance, LoaderType, ModpackPlatform};
 use crate::models::modpack::ModpackVersion;
@@ -17,7 +17,6 @@ use crate::services::{
 use crate::state::AppState;
 use crate::utils::paths::get_instance_game_dir_with_base;
 use chrono::Utc;
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter};
@@ -49,15 +48,9 @@ pub async fn execute_content_update(
     let backup_id = format!("backup_{}", Utc::now().timestamp());
     let backup_path = create_backup(&game_dir, &backup_id)?;
 
-    let result = execute_content_update_inner(
-        state,
-        instance_id,
-        &instance,
-        &game_dir,
-        plan,
-        app_handle,
-    )
-    .await;
+    let result =
+        execute_content_update_inner(state, instance_id, &instance, &game_dir, plan, app_handle)
+            .await;
 
     match result {
         Ok(()) => {
@@ -335,7 +328,8 @@ async fn update_single_content(
 
         if let Some(latest) = versions.first() {
             // Get content info
-            let content_info = modrinth_service::get_content(&state.http_client, modrinth_id).await?;
+            let content_info =
+                modrinth_service::get_content(&state.http_client, modrinth_id).await?;
 
             // Install the new version
             let installed = content_install_service::install_content(
@@ -359,9 +353,10 @@ async fn update_single_content(
 
     // Try CurseForge
     if let Some(curseforge_id) = content.curseforge_id {
-        let api_key = state.get_settings().curseforge_api_key.ok_or_else(|| {
-            AppError::ApiError("CurseForge API key not configured".to_string())
-        })?;
+        let api_key = state
+            .get_settings()
+            .curseforge_api_key
+            .ok_or_else(|| AppError::ApiError("CurseForge API key not configured".to_string()))?;
 
         let versions = curseforge_service::get_content_versions(
             &state.http_client,
@@ -549,15 +544,9 @@ pub async fn execute_modpack_update(
     let backup_id = format!("backup_{}", Utc::now().timestamp());
     let backup_path = create_backup(&game_dir, &backup_id)?;
 
-    let result = execute_modpack_update_inner(
-        state,
-        instance_id,
-        &instance,
-        &game_dir,
-        plan,
-        app_handle,
-    )
-    .await;
+    let result =
+        execute_modpack_update_inner(state, instance_id, &instance, &game_dir, plan, app_handle)
+            .await;
 
     match result {
         Ok(updated_instance) => {
@@ -614,7 +603,8 @@ async fn execute_modpack_update_inner(
 
     // Fetch the target version info
     emit_progress(app_handle, "Fetching modpack version", 15, None, 0, 0);
-    let target_version = get_modpack_version(state, platform, modpack_id, &plan.target_version_id).await?;
+    let target_version =
+        get_modpack_version(state, platform, modpack_id, &plan.target_version_id).await?;
 
     // Install the new modpack version
     emit_progress(
@@ -749,7 +739,9 @@ pub async fn execute_instance_update(
     let backup_id = format!("backup_{}", Utc::now().timestamp());
     let backup_path = create_backup(&game_dir, &backup_id)?;
 
-    let result = execute_instance_update_inner(state, instance_id, &instance, &game_dir, plan, app_handle).await;
+    let result =
+        execute_instance_update_inner(state, instance_id, &instance, &game_dir, plan, app_handle)
+            .await;
 
     match result {
         Ok(updated_instance) => {

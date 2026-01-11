@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use crate::models::{ContentType, Instance, LoaderType};
+use crate::models::{ContentType, LoaderType};
 use crate::services::{content_scan_service, instance_service, modrinth_service};
 use crate::state::AppState;
 use crate::utils::hash::{sha1_file, sha512_file};
@@ -67,7 +67,8 @@ pub async fn export_to_mrpack(
     let game_dir = get_instance_game_dir_with_base(&instances_base, instance_id);
 
     // Scan installed mods to identify them via Modrinth hash lookup
-    let scan_result = content_scan_service::scan_content(state, instance_id, &ContentType::Mod).await?;
+    let scan_result =
+        content_scan_service::scan_content(state, instance_id, &ContentType::Mod).await?;
 
     // Build the files list and collect unidentified files for overrides
     let mut mrpack_files: Vec<MrpackFile> = Vec::new();
@@ -85,9 +86,16 @@ pub async fn export_to_mrpack(
 
         if let Some(modrinth) = &item.modrinth_project {
             // Identified via Modrinth - get the download URL from version info
-            if let Ok(version) = modrinth_service::get_version(&state.http_client, &modrinth.version_id).await {
+            if let Ok(version) =
+                modrinth_service::get_version(&state.http_client, &modrinth.version_id).await
+            {
                 // Find the primary file or the first file
-                if let Some(file) = version.files.iter().find(|f| f.primary).or_else(|| version.files.first()) {
+                if let Some(file) = version
+                    .files
+                    .iter()
+                    .find(|f| f.primary)
+                    .or_else(|| version.files.first())
+                {
                     // Calculate hashes for the local file
                     let sha1 = sha1_file(&file_path).unwrap_or_default();
                     let sha512 = sha512_file(&file_path).unwrap_or_default();
@@ -150,8 +158,7 @@ pub async fn export_to_mrpack(
         name: instance.name.clone(),
         summary: Some(format!(
             "Exported from ETLauncher - MC {} with {}",
-            instance.minecraft_version,
-            instance.loader_type
+            instance.minecraft_version, instance.loader_type
         )),
         dependencies,
         files: mrpack_files,
@@ -180,7 +187,12 @@ pub async fn export_to_mrpack(
     for filename in &unidentified_mod_files {
         let file_path = mods_dir.join(filename);
         if file_path.exists() {
-            add_file_to_zip(&mut zip, &file_path, &format!("overrides/mods/{}", filename), options)?;
+            add_file_to_zip(
+                &mut zip,
+                &file_path,
+                &format!("overrides/mods/{}", filename),
+                options,
+            )?;
         }
     }
 
@@ -188,7 +200,12 @@ pub async fn export_to_mrpack(
     for dir_name in OVERRIDE_DIRS {
         let dir_path = game_dir.join(dir_name);
         if dir_path.exists() && dir_path.is_dir() {
-            add_directory_to_zip(&mut zip, &dir_path, &format!("overrides/{}", dir_name), options)?;
+            add_directory_to_zip(
+                &mut zip,
+                &dir_path,
+                &format!("overrides/{}", dir_name),
+                options,
+            )?;
         }
     }
 

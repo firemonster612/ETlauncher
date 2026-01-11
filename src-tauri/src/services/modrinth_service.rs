@@ -1,11 +1,11 @@
 use crate::error::AppError;
+use crate::models::instance::ModpackPlatform;
 use crate::models::{
-    Content, ContentFile, ContentGalleryImage, ContentPlatform, ContentSearchParams, ContentSearchResult,
-    ContentType, ContentVersion, ContentDependency, DependencyType,
+    Content, ContentDependency, ContentFile, ContentGalleryImage, ContentPlatform,
+    ContentSearchParams, ContentSearchResult, ContentType, ContentVersion, DependencyType,
     LoaderType, Modpack, ModpackFile, ModpackMod, ModpackSearchParams, ModpackSearchResult,
     ModpackSortBy, ModpackVersion,
 };
-use crate::models::instance::ModpackPlatform;
 use reqwest::Client;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
@@ -159,15 +159,13 @@ fn parse_loaders(loaders: &[String]) -> Vec<LoaderType> {
 fn extract_loaders_from_categories(categories: &[String]) -> Vec<LoaderType> {
     categories
         .iter()
-        .filter_map(|c| {
-            match c.to_lowercase().as_str() {
-                "forge" => Some(LoaderType::Forge),
-                "neoforge" => Some(LoaderType::NeoForge),
-                "fabric" => Some(LoaderType::Fabric),
-                "quilt" => Some(LoaderType::Quilt),
-                "liteloader" => Some(LoaderType::LiteLoader),
-                _ => None,
-            }
+        .filter_map(|c| match c.to_lowercase().as_str() {
+            "forge" => Some(LoaderType::Forge),
+            "neoforge" => Some(LoaderType::NeoForge),
+            "fabric" => Some(LoaderType::Fabric),
+            "quilt" => Some(LoaderType::Quilt),
+            "liteloader" => Some(LoaderType::LiteLoader),
+            _ => None,
         })
         .collect()
 }
@@ -340,7 +338,9 @@ pub async fn get_modpack(client: &Client, id_or_slug: &str) -> Result<Modpack, A
     }
 
     // Get team info for author
-    let author = get_project_author(client, &project.team).await.unwrap_or_else(|_| "Unknown".to_string());
+    let author = get_project_author(client, &project.team)
+        .await
+        .unwrap_or_else(|_| "Unknown".to_string());
 
     // Project endpoint returns loaders, but fallback to categories just in case
     let loaders = if project.loaders.is_empty() {
@@ -401,7 +401,12 @@ async fn get_project_author(client: &Client, team_id: &str) -> Result<String, Ap
         .iter()
         .find(|m| m.role.to_lowercase() == "owner")
         .or_else(|| members.first())
-        .map(|m| m.user.name.clone().unwrap_or_else(|| m.user.username.clone()))
+        .map(|m| {
+            m.user
+                .name
+                .clone()
+                .unwrap_or_else(|| m.user.username.clone())
+        })
         .unwrap_or_else(|| "Unknown".to_string());
 
     Ok(author)
@@ -565,7 +570,7 @@ pub async fn search_content(
         let is_mod = params
             .content_type
             .as_ref()
-            .map_or(true, |ct| *ct == ContentType::Mod);
+            .is_none_or(|ct| *ct == ContentType::Mod);
         if is_mod {
             if let Some(loader_str) = loader_to_string(loader) {
                 facets.push(vec![format!("categories:{}", loader_str)]);
@@ -685,7 +690,9 @@ pub async fn get_content(client: &Client, id_or_slug: &str) -> Result<Content, A
         AppError::ContentNotFound(format!("{} is a modpack, not content", id_or_slug))
     })?;
 
-    let author = get_project_author(client, &project.team).await.unwrap_or_else(|_| "Unknown".to_string());
+    let author = get_project_author(client, &project.team)
+        .await
+        .unwrap_or_else(|_| "Unknown".to_string());
 
     let url_path = match content_type {
         ContentType::Mod => "mod",
@@ -729,7 +736,10 @@ pub async fn get_content(client: &Client, id_or_slug: &str) -> Result<Content, A
         mc_versions: project.game_versions,
         loaders,
         latest_version: None,
-        url: Some(format!("https://modrinth.com/{}/{}", url_path, project.slug)),
+        url: Some(format!(
+            "https://modrinth.com/{}/{}",
+            url_path, project.slug
+        )),
         updated_at: parse_date(&project.updated),
         created_at: parse_date(&project.published),
     })
@@ -799,7 +809,9 @@ pub async fn get_content_versions(
                 .into_iter()
                 .filter_map(|d| {
                     // Use project_id if available, otherwise use version_id as fallback
-                    let id = d.project_id.clone()
+                    let id = d
+                        .project_id
+                        .clone()
                         .or_else(|| d.version_id.clone().map(|v| format!("version:{}", v)))?;
                     let dep_type = match d.dependency_type.as_str() {
                         "required" => DependencyType::Required,
@@ -864,7 +876,9 @@ pub async fn get_version(client: &Client, version_id: &str) -> Result<ContentVer
             .into_iter()
             .filter_map(|d| {
                 // Use project_id if available, otherwise use version_id as fallback
-                let id = d.project_id.clone()
+                let id = d
+                    .project_id
+                    .clone()
                     .or_else(|| d.version_id.clone().map(|v| format!("version:{}", v)))?;
                 let dep_type = match d.dependency_type.as_str() {
                     "required" => DependencyType::Required,
@@ -978,7 +992,10 @@ async fn download_bytes(client: &Client, url: &str) -> Result<Vec<u8>, AppError>
 }
 
 /// Get a mod list for a Modrinth modpack version (best-effort)
-pub async fn get_modpack_mods(client: &Client, version_id: &str) -> Result<Vec<ModpackMod>, AppError> {
+pub async fn get_modpack_mods(
+    client: &Client,
+    version_id: &str,
+) -> Result<Vec<ModpackMod>, AppError> {
     let version = get_modpack_version(client, version_id).await?;
 
     let mrpack_file = version
@@ -1012,7 +1029,9 @@ pub async fn get_modpack_mods(client: &Client, version_id: &str) -> Result<Vec<M
     sha512_hashes.sort();
     sha512_hashes.dedup();
 
-    let versions_by_hash = get_versions_from_hashes(client, &sha512_hashes).await.unwrap_or_default();
+    let versions_by_hash = get_versions_from_hashes(client, &sha512_hashes)
+        .await
+        .unwrap_or_default();
     let mut project_ids: Vec<String> = versions_by_hash
         .values()
         .map(|v| v.project_id.clone())
@@ -1020,11 +1039,11 @@ pub async fn get_modpack_mods(client: &Client, version_id: &str) -> Result<Vec<M
     project_ids.sort();
     project_ids.dedup();
 
-    let projects = get_projects_by_ids(client, &project_ids).await.unwrap_or_default();
-    let project_map: HashMap<String, ModrinthProjectLite> = projects
-        .into_iter()
-        .map(|p| (p.id.clone(), p))
-        .collect();
+    let projects = get_projects_by_ids(client, &project_ids)
+        .await
+        .unwrap_or_default();
+    let project_map: HashMap<String, ModrinthProjectLite> =
+        projects.into_iter().map(|p| (p.id.clone(), p)).collect();
 
     // Build mod list, dedupe by project id when possible.
     let mut seen: HashSet<String> = HashSet::new();

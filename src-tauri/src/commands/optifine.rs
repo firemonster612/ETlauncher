@@ -23,25 +23,21 @@ pub async fn install_optifine(
     instance_id: String,
 ) -> Result<String, CommandError> {
     // Get the instance to find its MC version and mods directory
-    let instance = instance_service::get_instance(&state, &instance_id)
-        .map_err(CommandError::from)?;
-    
+    let instance =
+        instance_service::get_instance(&state, &instance_id).map_err(CommandError::from)?;
+
     let mc_version = &instance.minecraft_version;
-    
+
     // Get the mods directory path
     let instances_base = state.settings.read().instances_path.clone();
     let game_dir = get_instance_game_dir_with_base(&instances_base, &instance_id);
     let mods_dir = game_dir.join("mods");
-    
+
     // Download OptiFine to the mods directory
-    let filename = optifine_service::download_optifine(
-        &state.http_client,
-        mc_version,
-        &mods_dir,
-    )
-    .await
-    .map_err(CommandError::from)?;
-    
+    let filename = optifine_service::download_optifine(&state.http_client, mc_version, &mods_dir)
+        .await
+        .map_err(CommandError::from)?;
+
     Ok(filename)
 }
 

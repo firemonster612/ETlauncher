@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { RadioGroup as RadioGroupPrimitive } from "bits-ui";
-	import { cn, type WithoutChildrenOrChild } from "$lib/utils.js";
+	import { RadioGroup as RadioGroupPrimitive } from 'bits-ui';
+	import { cn, type WithoutChildrenOrChild } from '$lib/utils.js';
 
 	let {
 		ref = $bindable(null),
@@ -10,7 +10,7 @@
 		onValueChange,
 		...restProps
 	}: WithoutChildrenOrChild<RadioGroupPrimitive.RootProps> & {
-		children?: import("svelte").Snippet;
+		children?: import('svelte').Snippet;
 	} = $props();
 
 	function handleValueChange(v: string) {
@@ -23,7 +23,7 @@
 	bind:ref
 	{value}
 	onValueChange={handleValueChange}
-	class={cn("flex flex-col gap-2", className)}
+	class={cn('flex flex-col gap-2', className)}
 	{...restProps}
 >
 	{@render children?.()}

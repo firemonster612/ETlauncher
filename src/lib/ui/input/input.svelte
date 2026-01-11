@@ -1,12 +1,12 @@
 <script lang="ts">
-	import type { HTMLInputAttributes, HTMLInputTypeAttribute } from "svelte/elements";
-	import { cn, type WithElementRef } from "$lib/utils.js";
+	import type { HTMLInputAttributes, HTMLInputTypeAttribute } from 'svelte/elements';
+	import { cn, type WithElementRef } from '$lib/utils.js';
 
-	type InputType = Exclude<HTMLInputTypeAttribute, "file">;
+	type InputType = Exclude<HTMLInputTypeAttribute, 'file'>;
 
 	type Props = WithElementRef<
-		Omit<HTMLInputAttributes, "type"> &
-			({ type: "file"; files?: FileList } | { type?: InputType; files?: undefined })
+		Omit<HTMLInputAttributes, 'type'> &
+			({ type: 'file'; files?: FileList } | { type?: InputType; files?: undefined })
 	>;
 
 	let {
@@ -15,19 +15,19 @@
 		type,
 		files = $bindable(),
 		class: className,
-		"data-slot": dataSlot = "input",
+		'data-slot': dataSlot = 'input',
 		...restProps
 	}: Props = $props();
 </script>
 
-{#if type === "file"}
+{#if type === 'file'}
 	<input
 		bind:this={ref}
 		data-slot={dataSlot}
 		class={cn(
-			"flex h-9 w-full min-w-0 border-2 border-border bg-background px-3 pt-1.5 text-sm font-medium transition-colors outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
-			"focus:border-primary",
-			"aria-invalid:border-destructive",
+			'border-border bg-background placeholder:text-muted-foreground flex h-9 w-full min-w-0 border-2 px-3 pt-1.5 text-sm font-medium transition-colors outline-none disabled:cursor-not-allowed disabled:opacity-50',
+			'focus:border-primary',
+			'aria-invalid:border-destructive',
 			className
 		)}
 		type="file"
@@ -40,9 +40,9 @@
 		bind:this={ref}
 		data-slot={dataSlot}
 		class={cn(
-			"flex h-9 w-full min-w-0 border-2 border-border bg-background px-3 py-1 text-sm transition-colors outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
-			"focus:border-primary",
-			"aria-invalid:border-destructive",
+			'border-border bg-background placeholder:text-muted-foreground flex h-9 w-full min-w-0 border-2 px-3 py-1 text-sm transition-colors outline-none disabled:cursor-not-allowed disabled:opacity-50',
+			'focus:border-primary',
+			'aria-invalid:border-destructive',
 			className
 		)}
 		{type}

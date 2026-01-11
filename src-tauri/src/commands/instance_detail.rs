@@ -4,8 +4,8 @@ use crate::models::instance_detail::{
 };
 use crate::services::{instance_detail_service, instance_service, launch_service};
 use crate::state::AppState;
-use tauri::{AppHandle, State};
 use std::process::Command;
+use tauri::{AppHandle, State};
 
 /// Get instance screenshots (all)
 #[tauri::command]
@@ -14,8 +14,7 @@ pub fn get_instance_screenshots(
     state: State<'_, AppState>,
 ) -> Result<ScreenshotsResponse, CommandError> {
     let game_dir = instance_service::get_game_directory(&state, &instance_id);
-    instance_detail_service::get_screenshots(&game_dir)
-        .map_err(CommandError::from)
+    instance_detail_service::get_screenshots(&game_dir).map_err(CommandError::from)
 }
 
 /// Get instance worlds (all)
@@ -44,7 +43,8 @@ pub fn get_instance_detail(
     instance_id: String,
     state: State<'_, AppState>,
 ) -> Result<InstanceDetail, CommandError> {
-    let instance = instance_service::get_instance(&state, &instance_id).map_err(CommandError::from)?;
+    let instance =
+        instance_service::get_instance(&state, &instance_id).map_err(CommandError::from)?;
     let game_dir = instance_service::get_game_directory(&state, &instance_id);
 
     instance_detail_service::get_instance_detail(&game_dir, instance.total_play_time)
@@ -59,8 +59,7 @@ pub fn get_screenshot_data(
     state: State<'_, AppState>,
 ) -> Result<String, CommandError> {
     let game_dir = instance_service::get_game_directory(&state, &instance_id);
-    instance_detail_service::get_screenshot_data(&game_dir, &filename)
-        .map_err(CommandError::from)
+    instance_detail_service::get_screenshot_data(&game_dir, &filename).map_err(CommandError::from)
 }
 
 /// Launch directly into a world (quick play)
@@ -87,7 +86,8 @@ pub async fn launch_into_world(
         });
     }
 
-    let instance = instance_service::get_instance(&state, &instance_id).map_err(CommandError::from)?;
+    let instance =
+        instance_service::get_instance(&state, &instance_id).map_err(CommandError::from)?;
 
     launch_service::launch_instance_with_quick_play(
         &instance,
@@ -115,7 +115,8 @@ pub async fn launch_into_server(
         });
     }
 
-    let instance = instance_service::get_instance(&state, &instance_id).map_err(CommandError::from)?;
+    let instance =
+        instance_service::get_instance(&state, &instance_id).map_err(CommandError::from)?;
 
     launch_service::launch_instance_with_quick_play(
         &instance,

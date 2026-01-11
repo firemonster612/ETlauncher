@@ -2,8 +2,7 @@ use crate::error::AppError;
 use crate::models::instance::{CreateInstanceRequest, Instance, LoaderType, UpdateInstanceRequest};
 use crate::state::AppState;
 use crate::utils::paths::{
-    get_instance_dir_with_base, get_instance_game_dir_with_base,
-    get_instances_dir_with_base,
+    get_instance_dir_with_base, get_instance_game_dir_with_base, get_instances_dir_with_base,
 };
 use chrono::Utc;
 use rand::Rng;
@@ -15,35 +14,132 @@ use uuid::Uuid;
 /// All available entity icons for random assignment
 const ALL_ENTITY_ICONS: &[&str] = &[
     // Hostile mobs
-    "blaze", "breeze", "creaking", "creeper", "elder_guardian", "endermite",
-    "ghast", "happy_ghast", "guardian", "hoglin", "zoglin", "illager_evoker",
-    "illager_illusioner", "illager_pillager", "illager_ravager", "illager_vex",
-    "illager_vindicator", "phantom", "piglin_brute", "shulker", "silverfish",
-    "skeleton", "skeleton_stray", "skeleton_wither", "slime", "magma_cube",
-    "spider", "cave_spider", "warden", "witch", "wither", "zombie",
-    "zombie_drowned", "zombie_husk", "zombie_villager",
+    "blaze",
+    "breeze",
+    "creaking",
+    "creeper",
+    "elder_guardian",
+    "endermite",
+    "ghast",
+    "happy_ghast",
+    "guardian",
+    "hoglin",
+    "zoglin",
+    "illager_evoker",
+    "illager_illusioner",
+    "illager_pillager",
+    "illager_ravager",
+    "illager_vex",
+    "illager_vindicator",
+    "phantom",
+    "piglin_brute",
+    "shulker",
+    "silverfish",
+    "skeleton",
+    "skeleton_stray",
+    "skeleton_wither",
+    "slime",
+    "magma_cube",
+    "spider",
+    "cave_spider",
+    "warden",
+    "witch",
+    "wither",
+    "zombie",
+    "zombie_drowned",
+    "zombie_husk",
+    "zombie_villager",
     // Passive mobs
-    "allay", "armadillo", "axolotl_blue", "axolotl_cyan", "axolotl_gold",
-    "axolotl_pink", "axolotl_wild", "bat", "camel", "cat_black", "cat_british",
-    "cat_calico", "cat_jellie", "cat_persian", "cat_ragdoll", "cat_red",
-    "cat_siamese", "cat_tabby", "cat_default", "cat_white", "chicken", "cow",
-    "mooshroom", "mooshroom_brown", "donkey", "horse_black", "horse_brown",
-    "horse_chestnut", "horse_creamy", "horse_gray", "horse_white", "mule",
-    "skeleton_horse", "zombie_horse", "llama_brown", "llama_cream", "llama_gray",
-    "llama_white", "ocelot", "panda", "parrot_blue", "parrot_red_blue",
-    "parrot_gray", "parrot_green", "parrot_yellow_blue", "pig", "rabbit_brown",
-    "rabbit_white", "rabbit_black", "rabbit_gold", "sheep_white", "sheep_black",
-    "sheep_brown", "sheep_pink", "sniffer", "strider", "villager", "wandering_trader",
+    "allay",
+    "armadillo",
+    "axolotl_blue",
+    "axolotl_cyan",
+    "axolotl_gold",
+    "axolotl_pink",
+    "axolotl_wild",
+    "bat",
+    "camel",
+    "cat_black",
+    "cat_british",
+    "cat_calico",
+    "cat_jellie",
+    "cat_persian",
+    "cat_ragdoll",
+    "cat_red",
+    "cat_siamese",
+    "cat_tabby",
+    "cat_default",
+    "cat_white",
+    "chicken",
+    "cow",
+    "mooshroom",
+    "mooshroom_brown",
+    "donkey",
+    "horse_black",
+    "horse_brown",
+    "horse_chestnut",
+    "horse_creamy",
+    "horse_gray",
+    "horse_white",
+    "mule",
+    "skeleton_horse",
+    "zombie_horse",
+    "llama_brown",
+    "llama_cream",
+    "llama_gray",
+    "llama_white",
+    "ocelot",
+    "panda",
+    "parrot_blue",
+    "parrot_red_blue",
+    "parrot_gray",
+    "parrot_green",
+    "parrot_yellow_blue",
+    "pig",
+    "rabbit_brown",
+    "rabbit_white",
+    "rabbit_black",
+    "rabbit_gold",
+    "sheep_white",
+    "sheep_black",
+    "sheep_brown",
+    "sheep_pink",
+    "sniffer",
+    "strider",
+    "villager",
+    "wandering_trader",
     // Neutral mobs
-    "bee", "enderman", "fox", "fox_snow", "goat", "iron_golem", "piglin",
-    "zombified_piglin", "polar_bear", "snow_golem", "wolf", "wolf_black",
-    "wolf_snowy", "wolf_spotted",
+    "bee",
+    "enderman",
+    "fox",
+    "fox_snow",
+    "goat",
+    "iron_golem",
+    "piglin",
+    "zombified_piglin",
+    "polar_bear",
+    "snow_golem",
+    "wolf",
+    "wolf_black",
+    "wolf_snowy",
+    "wolf_spotted",
     // Aquatic mobs
-    "dolphin", "fish_cod", "fish_salmon", "fish_pufferfish", "fish_tropical",
-    "frog_cold", "frog_temperate", "frog_warm", "squid", "glow_squid",
-    "tadpole", "turtle",
+    "dolphin",
+    "fish_cod",
+    "fish_salmon",
+    "fish_pufferfish",
+    "fish_tropical",
+    "frog_cold",
+    "frog_temperate",
+    "frog_warm",
+    "squid",
+    "glow_squid",
+    "tadpole",
+    "turtle",
     // Other
-    "enderdragon", "end_crystal", "armorstand",
+    "enderdragon",
+    "end_crystal",
+    "armorstand",
 ];
 
 /// Get a random entity icon path, prioritizing icons not already in use
@@ -72,10 +168,7 @@ fn get_random_entity_icon(used_icons: &[String]) -> String {
 /// Collect all icon paths currently in use by instances
 fn get_used_icons(state: &AppState) -> Vec<String> {
     match get_all_instances(state) {
-        Ok(instances) => instances
-            .into_iter()
-            .filter_map(|i| i.icon_path)
-            .collect(),
+        Ok(instances) => instances.into_iter().filter_map(|i| i.icon_path).collect(),
         Err(_) => Vec::new(),
     }
 }
@@ -120,10 +213,7 @@ pub fn get_all_instances(state: &AppState) -> Result<Vec<Instance>, AppError> {
         let path = entry.path();
 
         if path.is_dir() {
-            let instance_id = path
-                .file_name()
-                .and_then(OsStr::to_str)
-                .unwrap_or_default();
+            let instance_id = path.file_name().and_then(OsStr::to_str).unwrap_or_default();
 
             // Try to load the instance, skip if it fails (corrupted/incomplete)
             match get_instance(state, instance_id) {
@@ -136,20 +226,21 @@ pub fn get_all_instances(state: &AppState) -> Result<Vec<Instance>, AppError> {
     }
 
     // Sort by last played (most recent first), then by created date
-    instances.sort_by(|a, b| {
-        match (a.last_played_at, b.last_played_at) {
-            (Some(a_time), Some(b_time)) => b_time.cmp(&a_time),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => b.created_at.cmp(&a.created_at),
-        }
+    instances.sort_by(|a, b| match (a.last_played_at, b.last_played_at) {
+        (Some(a_time), Some(b_time)) => b_time.cmp(&a_time),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => b.created_at.cmp(&a.created_at),
     });
 
     Ok(instances)
 }
 
 /// Create a new instance
-pub fn create_instance(state: &AppState, request: CreateInstanceRequest) -> Result<Instance, AppError> {
+pub fn create_instance(
+    state: &AppState,
+    request: CreateInstanceRequest,
+) -> Result<Instance, AppError> {
     let id = Uuid::new_v4().to_string();
     let instance_dir = get_instance_dir_with_base(&get_instances_base_dir(state), &id);
     let game_dir = get_instance_game_dir_with_base(&get_instances_base_dir(state), &id);
@@ -159,7 +250,14 @@ pub fn create_instance(state: &AppState, request: CreateInstanceRequest) -> Resu
     fs::create_dir_all(&game_dir)?;
 
     // Create standard game subdirectories
-    let subdirs = ["mods", "resourcepacks", "saves", "screenshots", "logs", "config"];
+    let subdirs = [
+        "mods",
+        "resourcepacks",
+        "saves",
+        "screenshots",
+        "logs",
+        "config",
+    ];
     for subdir in subdirs {
         let subdir_path = game_dir.join(subdir);
         fs::create_dir_all(&subdir_path)?;
@@ -204,7 +302,11 @@ pub fn save_instance(state: &AppState, instance: &Instance) -> Result<(), AppErr
 }
 
 /// Update an existing instance
-pub fn update_instance(state: &AppState, instance_id: &str, updates: UpdateInstanceRequest) -> Result<Instance, AppError> {
+pub fn update_instance(
+    state: &AppState,
+    instance_id: &str,
+    updates: UpdateInstanceRequest,
+) -> Result<Instance, AppError> {
     let mut instance = get_instance(state, instance_id)?;
 
     // Apply updates
@@ -248,7 +350,11 @@ pub fn update_instance(state: &AppState, instance_id: &str, updates: UpdateInsta
 }
 
 /// Delete an instance
-pub fn delete_instance(state: &AppState, instance_id: &str, delete_files: bool) -> Result<(), AppError> {
+pub fn delete_instance(
+    state: &AppState,
+    instance_id: &str,
+    delete_files: bool,
+) -> Result<(), AppError> {
     let instance_dir = get_instance_dir_with_base(&get_instances_base_dir(state), instance_id);
 
     if !instance_dir.exists() {
@@ -268,7 +374,11 @@ pub fn delete_instance(state: &AppState, instance_id: &str, delete_files: bool) 
 }
 
 /// Duplicate an instance with a new name
-pub fn duplicate_instance(state: &AppState, instance_id: &str, new_name: String) -> Result<Instance, AppError> {
+pub fn duplicate_instance(
+    state: &AppState,
+    instance_id: &str,
+    new_name: String,
+) -> Result<Instance, AppError> {
     let source = get_instance(state, instance_id)?;
     let new_id = Uuid::new_v4().to_string();
     let source_dir = get_instance_dir_with_base(&get_instances_base_dir(state), instance_id);
@@ -306,7 +416,11 @@ pub fn duplicate_instance(state: &AppState, instance_id: &str, new_name: String)
 }
 
 /// Update instance's last played time and increment play time
-pub fn update_play_time(state: &AppState, instance_id: &str, session_duration_secs: u64) -> Result<Instance, AppError> {
+pub fn update_play_time(
+    state: &AppState,
+    instance_id: &str,
+    session_duration_secs: u64,
+) -> Result<Instance, AppError> {
     let mut instance = get_instance(state, instance_id)?;
     instance.last_played_at = Some(Utc::now().timestamp());
     instance.total_play_time += session_duration_secs;

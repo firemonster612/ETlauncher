@@ -1,7 +1,5 @@
 use crate::error::AppError;
-use crate::models::{
-    AuthPollStatus, DeviceCodeResponse, MinecraftAccount, MinecraftProfile,
-};
+use crate::models::{AuthPollStatus, DeviceCodeResponse, MinecraftAccount, MinecraftProfile};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
@@ -378,14 +376,12 @@ pub async fn get_minecraft_profile(
 }
 
 /// Refresh Microsoft token and get new Minecraft token
-pub async fn refresh_tokens(
-    client: &Client,
-    account_id: &str,
-) -> Result<(String, i64), AppError> {
+pub async fn refresh_tokens(client: &Client, account_id: &str) -> Result<(String, i64), AppError> {
     // Get refresh token from keyring
     let refresh_token = get_refresh_token(account_id)?;
 
     #[derive(Deserialize)]
+    #[allow(dead_code)]
     struct MsTokenResponse {
         access_token: String,
         refresh_token: String,
@@ -458,11 +454,7 @@ pub async fn upload_skin(
 }
 
 /// Set active cape
-pub async fn set_cape(
-    client: &Client,
-    access_token: &str,
-    cape_id: &str,
-) -> Result<(), AppError> {
+pub async fn set_cape(client: &Client, access_token: &str, cape_id: &str) -> Result<(), AppError> {
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
     struct SetCapeRequest {

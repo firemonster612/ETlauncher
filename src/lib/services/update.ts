@@ -1,14 +1,14 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type {
-  UpdateCheckResult,
-  ModpackUpdateInfo,
-  UpdatePlan,
-  UpdateProgress,
-  ModpackInstanceUpdateCheck,
-  ModpackUpdatePlan,
-  InstanceUpdateCheck,
-  InstanceUpdatePlan,
+	UpdateCheckResult,
+	ModpackUpdateInfo,
+	UpdatePlan,
+	UpdateProgress,
+	ModpackInstanceUpdateCheck,
+	ModpackUpdatePlan,
+	InstanceUpdateCheck,
+	InstanceUpdatePlan,
 } from '$lib/types/update';
 import type { Instance, LoaderType } from '$lib/types/instance';
 import type { InstalledContentManifest } from '$lib/types/content';
@@ -18,10 +18,8 @@ import type { InstalledContentManifest } from '$lib/types/content';
  * @param instanceId - The instance ID
  * @returns ModpackUpdateInfo if an update is available, null otherwise
  */
-export async function checkModpackUpdate(
-  instanceId: string
-): Promise<ModpackUpdateInfo | null> {
-  return invoke('check_modpack_update', { instanceId });
+export async function checkModpackUpdate(instanceId: string): Promise<ModpackUpdateInfo | null> {
+	return invoke('check_modpack_update', { instanceId });
 }
 
 /**
@@ -29,10 +27,8 @@ export async function checkModpackUpdate(
  * @param instanceId - The instance ID
  * @returns UpdateCheckResult with lists of updatable, up-to-date, incompatible content
  */
-export async function checkContentUpdates(
-  instanceId: string
-): Promise<UpdateCheckResult> {
-  return invoke('check_content_updates', { instanceId });
+export async function checkContentUpdates(instanceId: string): Promise<UpdateCheckResult> {
+	return invoke('check_content_updates', { instanceId });
 }
 
 /**
@@ -44,15 +40,15 @@ export async function checkContentUpdates(
  * @returns UpdateCheckResult with compatibility information
  */
 export async function previewVersionMigration(
-  instanceId: string,
-  targetMcVersion: string,
-  targetLoader: LoaderType
+	instanceId: string,
+	targetMcVersion: string,
+	targetLoader: LoaderType
 ): Promise<UpdateCheckResult> {
-  return invoke('preview_version_migration', {
-    instanceId,
-    targetMcVersion,
-    targetLoader,
-  });
+	return invoke('preview_version_migration', {
+		instanceId,
+		targetMcVersion,
+		targetLoader,
+	});
 }
 
 /**
@@ -62,25 +58,25 @@ export async function previewVersionMigration(
  * @param onProgress - Optional callback for progress updates
  */
 export async function updateInstanceContent(
-  instanceId: string,
-  plan: UpdatePlan,
-  onProgress?: (progress: UpdateProgress) => void
+	instanceId: string,
+	plan: UpdatePlan,
+	onProgress?: (progress: UpdateProgress) => void
 ): Promise<void> {
-  let unlisten: UnlistenFn | undefined;
+	let unlisten: UnlistenFn | undefined;
 
-  if (onProgress) {
-    unlisten = await listen<UpdateProgress>('update_progress', (event) => {
-      onProgress(event.payload);
-    });
-  }
+	if (onProgress) {
+		unlisten = await listen<UpdateProgress>('update_progress', (event) => {
+			onProgress(event.payload);
+		});
+	}
 
-  try {
-    await invoke('update_instance_content', { instanceId, plan });
-  } finally {
-    if (unlisten) {
-      unlisten();
-    }
-  }
+	try {
+		await invoke('update_instance_content', { instanceId, plan });
+	} finally {
+		if (unlisten) {
+			unlisten();
+		}
+	}
 }
 
 /**
@@ -94,34 +90,34 @@ export async function updateInstanceContent(
  * @returns Updated instance
  */
 export async function migrateInstanceVersion(
-  instanceId: string,
-  targetMcVersion: string,
-  targetLoader: LoaderType,
-  targetLoaderVersion: string,
-  plan: UpdatePlan,
-  onProgress?: (progress: UpdateProgress) => void
+	instanceId: string,
+	targetMcVersion: string,
+	targetLoader: LoaderType,
+	targetLoaderVersion: string,
+	plan: UpdatePlan,
+	onProgress?: (progress: UpdateProgress) => void
 ): Promise<Instance> {
-  let unlisten: UnlistenFn | undefined;
+	let unlisten: UnlistenFn | undefined;
 
-  if (onProgress) {
-    unlisten = await listen<UpdateProgress>('update_progress', (event) => {
-      onProgress(event.payload);
-    });
-  }
+	if (onProgress) {
+		unlisten = await listen<UpdateProgress>('update_progress', (event) => {
+			onProgress(event.payload);
+		});
+	}
 
-  try {
-    return await invoke('migrate_instance_version', {
-      instanceId,
-      targetMcVersion,
-      targetLoader,
-      targetLoaderVersion,
-      plan,
-    });
-  } finally {
-    if (unlisten) {
-      unlisten();
-    }
-  }
+	try {
+		return await invoke('migrate_instance_version', {
+			instanceId,
+			targetMcVersion,
+			targetLoader,
+			targetLoaderVersion,
+			plan,
+		});
+	} finally {
+		if (unlisten) {
+			unlisten();
+		}
+	}
 }
 
 /**
@@ -129,10 +125,8 @@ export async function migrateInstanceVersion(
  * @param instanceId - The instance ID
  * @returns The installed content manifest
  */
-export async function getContentManifest(
-  instanceId: string
-): Promise<InstalledContentManifest> {
-  return invoke('get_content_manifest', { instanceId });
+export async function getContentManifest(instanceId: string): Promise<InstalledContentManifest> {
+	return invoke('get_content_manifest', { instanceId });
 }
 
 /**
@@ -140,36 +134,35 @@ export async function getContentManifest(
  * Utility function to help build UpdatePlan from user selections
  */
 export function createUpdatePlan(
-  instanceId: string,
-  checkResult: UpdateCheckResult,
-  options: {
-    updateMinecraftVersion?: string;
-    updateLoaderVersion?: string;
-    selectedUpdates?: string[]; // filenames to update, defaults to all updatable
-    removeIncompatible?: string[]; // filenames to remove
-    keepIncompatible?: string[]; // filenames to keep despite being incompatible
-  } = {}
+	instanceId: string,
+	checkResult: UpdateCheckResult,
+	options: {
+		updateMinecraftVersion?: string;
+		updateLoaderVersion?: string;
+		selectedUpdates?: string[]; // filenames to update, defaults to all updatable
+		removeIncompatible?: string[]; // filenames to remove
+		keepIncompatible?: string[]; // filenames to keep despite being incompatible
+	} = {}
 ): UpdatePlan {
-  const {
-    updateMinecraftVersion,
-    updateLoaderVersion,
-    selectedUpdates,
-    removeIncompatible = [],
-    keepIncompatible = [],
-  } = options;
+	const {
+		updateMinecraftVersion,
+		updateLoaderVersion,
+		selectedUpdates,
+		removeIncompatible = [],
+		keepIncompatible = [],
+	} = options;
 
-  // Default to updating all updatable content if not specified
-  const contentToUpdate = selectedUpdates
-    ?? checkResult.updatable.map((c) => c.filename);
+	// Default to updating all updatable content if not specified
+	const contentToUpdate = selectedUpdates ?? checkResult.updatable.map((c) => c.filename);
 
-  return {
-    instanceId,
-    updateMinecraftVersion,
-    updateLoaderVersion,
-    contentToUpdate,
-    contentToRemove: removeIncompatible,
-    contentToKeep: keepIncompatible,
-  };
+	return {
+		instanceId,
+		updateMinecraftVersion,
+		updateLoaderVersion,
+		contentToUpdate,
+		contentToRemove: removeIncompatible,
+		contentToKeep: keepIncompatible,
+	};
 }
 
 // =============================================================================
@@ -183,9 +176,9 @@ export function createUpdatePlan(
  * @returns ModpackInstanceUpdateCheck with all available versions
  */
 export async function checkModpackInstanceUpdates(
-  instanceId: string
+	instanceId: string
 ): Promise<ModpackInstanceUpdateCheck> {
-  return invoke('check_modpack_instance_updates', { instanceId });
+	return invoke('check_modpack_instance_updates', { instanceId });
 }
 
 /**
@@ -196,25 +189,25 @@ export async function checkModpackInstanceUpdates(
  * @returns Updated instance
  */
 export async function executeModpackUpdate(
-  instanceId: string,
-  plan: ModpackUpdatePlan,
-  onProgress?: (progress: UpdateProgress) => void
+	instanceId: string,
+	plan: ModpackUpdatePlan,
+	onProgress?: (progress: UpdateProgress) => void
 ): Promise<Instance> {
-  let unlisten: UnlistenFn | undefined;
+	let unlisten: UnlistenFn | undefined;
 
-  if (onProgress) {
-    unlisten = await listen<UpdateProgress>('update_progress', (event) => {
-      onProgress(event.payload);
-    });
-  }
+	if (onProgress) {
+		unlisten = await listen<UpdateProgress>('update_progress', (event) => {
+			onProgress(event.payload);
+		});
+	}
 
-  try {
-    return await invoke('execute_modpack_update', { instanceId, plan });
-  } finally {
-    if (unlisten) {
-      unlisten();
-    }
-  }
+	try {
+		return await invoke('execute_modpack_update', { instanceId, plan });
+	} finally {
+		if (unlisten) {
+			unlisten();
+		}
+	}
 }
 
 /**
@@ -223,10 +216,8 @@ export async function executeModpackUpdate(
  * @param instanceId - The instance ID
  * @returns InstanceUpdateCheck with compatibility information
  */
-export async function checkInstanceUpdates(
-  instanceId: string
-): Promise<InstanceUpdateCheck> {
-  return invoke('check_instance_updates', { instanceId });
+export async function checkInstanceUpdates(instanceId: string): Promise<InstanceUpdateCheck> {
+	return invoke('check_instance_updates', { instanceId });
 }
 
 /**
@@ -237,23 +228,23 @@ export async function checkInstanceUpdates(
  * @returns Updated instance
  */
 export async function executeInstanceUpdate(
-  instanceId: string,
-  plan: InstanceUpdatePlan,
-  onProgress?: (progress: UpdateProgress) => void
+	instanceId: string,
+	plan: InstanceUpdatePlan,
+	onProgress?: (progress: UpdateProgress) => void
 ): Promise<Instance> {
-  let unlisten: UnlistenFn | undefined;
+	let unlisten: UnlistenFn | undefined;
 
-  if (onProgress) {
-    unlisten = await listen<UpdateProgress>('update_progress', (event) => {
-      onProgress(event.payload);
-    });
-  }
+	if (onProgress) {
+		unlisten = await listen<UpdateProgress>('update_progress', (event) => {
+			onProgress(event.payload);
+		});
+	}
 
-  try {
-    return await invoke('execute_instance_update', { instanceId, plan });
-  } finally {
-    if (unlisten) {
-      unlisten();
-    }
-  }
+	try {
+		return await invoke('execute_instance_update', { instanceId, plan });
+	} finally {
+		if (unlisten) {
+			unlisten();
+		}
+	}
 }

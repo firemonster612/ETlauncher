@@ -191,26 +191,14 @@ pub enum LaunchStatus {
 }
 
 /// Download progress information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadProgress {
     pub total_files: u32,
     pub completed_files: u32,
+    #[serde(default)]
     pub current_file: String,
     pub total_bytes: u64,
     pub downloaded_bytes: u64,
     pub speed_bytes_per_sec: u64,
-}
-
-impl Default for DownloadProgress {
-    fn default() -> Self {
-        Self {
-            total_files: 0,
-            completed_files: 0,
-            current_file: String::new(),
-            total_bytes: 0,
-            downloaded_bytes: 0,
-            speed_bytes_per_sec: 0,
-        }
-    }
 }

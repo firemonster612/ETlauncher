@@ -2,11 +2,10 @@ use crate::error::AppError;
 use crate::models::instance_detail::{
     InstanceDetail, Screenshot, ScreenshotsResponse, Server, ServersResponse, World, WorldsResponse,
 };
-use chrono::NaiveDateTime;
 use base64::Engine;
+use chrono::NaiveDateTime;
 use quartz_nbt::io::Flavor;
 use quartz_nbt::serde::deserialize_from;
-use quartz_nbt::io;
 use std::fs;
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -101,9 +100,10 @@ pub fn get_worlds(game_dir: &Path) -> Result<WorldsResponse, AppError> {
         // Parse level.dat (gz compressed NBT)
         let level_dat = world_dir.join("level.dat");
         if level_dat.exists() {
-            if let Ok((level, _)) =
-                deserialize_from::<_, LevelDatRoot>(&mut File::open(&level_dat)?, Flavor::GzCompressed)
-            {
+            if let Ok((level, _)) = deserialize_from::<_, LevelDatRoot>(
+                &mut File::open(&level_dat)?,
+                Flavor::GzCompressed,
+            ) {
                 let data = level.data;
                 if let Some(level_name) = data.level_name {
                     name = level_name;
@@ -146,8 +146,11 @@ pub fn get_servers(game_dir: &Path) -> Result<ServersResponse, AppError> {
         });
     }
 
-    let (data, _) = deserialize_from::<_, ServersDatRoot>(&mut File::open(&servers_file)?, Flavor::Uncompressed)
-        .map_err(|e| AppError::InvalidInput(format!("Failed to decode servers.dat: {}", e)))?;
+    let (data, _) = deserialize_from::<_, ServersDatRoot>(
+        &mut File::open(&servers_file)?,
+        Flavor::Uncompressed,
+    )
+    .map_err(|e| AppError::InvalidInput(format!("Failed to decode servers.dat: {}", e)))?;
 
     let servers = data
         .servers
@@ -227,9 +230,7 @@ fn read_base64_file(path: &Path) -> Result<Option<String>, AppError> {
     }
 
     let data = fs::read(path)?;
-    Ok(Some(
-        base64::engine::general_purpose::STANDARD.encode(data),
-    ))
+    Ok(Some(base64::engine::general_purpose::STANDARD.encode(data)))
 }
 
 #[derive(Debug, serde::Deserialize)]

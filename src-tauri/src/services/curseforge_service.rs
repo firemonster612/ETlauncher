@@ -1,11 +1,11 @@
 use crate::error::AppError;
+use crate::models::instance::ModpackPlatform;
 use crate::models::{
-    Content, ContentFile, ContentGalleryImage, ContentPlatform, ContentSearchParams, ContentSearchResult,
-    ContentType, ContentVersion, ContentDependency, DependencyType,
+    Content, ContentDependency, ContentFile, ContentGalleryImage, ContentPlatform,
+    ContentSearchParams, ContentSearchResult, ContentType, ContentVersion, DependencyType,
     LoaderType, Modpack, ModpackFile, ModpackMod, ModpackSearchParams, ModpackSearchResult,
     ModpackSortBy, ModpackVersion,
 };
-use crate::models::instance::ModpackPlatform;
 use reqwest::Client;
 use serde::Deserialize;
 use std::io::Read;
@@ -69,6 +69,7 @@ pub enum CurseForgeModLoaderType {
     NeoForge = 6,
 }
 
+#[allow(dead_code)]
 impl CurseForgeModLoaderType {
     fn from_loader_type(lt: &LoaderType) -> Self {
         match lt {
@@ -337,14 +338,10 @@ fn extract_loaders(
             if !loaders.contains(&LoaderType::NeoForge) {
                 loaders.push(LoaderType::NeoForge);
             }
-        } else if lower.contains("fabric") {
-            if !loaders.contains(&LoaderType::Fabric) {
-                loaders.push(LoaderType::Fabric);
-            }
-        } else if lower.contains("quilt") {
-            if !loaders.contains(&LoaderType::Quilt) {
-                loaders.push(LoaderType::Quilt);
-            }
+        } else if lower.contains("fabric") && !loaders.contains(&LoaderType::Fabric) {
+            loaders.push(LoaderType::Fabric);
+        } else if lower.contains("quilt") && !loaders.contains(&LoaderType::Quilt) {
+            loaders.push(LoaderType::Quilt);
         }
     }
 
@@ -381,7 +378,11 @@ fn extract_mc_versions(game_versions: &[String]) -> Vec<String> {
                 && !lower.contains("quilt")
                 && !lower.contains("neoforge")
                 && !lower.contains("liteloader")
-                && (v.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)
+                && (v
+                    .chars()
+                    .next()
+                    .map(|c| c.is_ascii_digit())
+                    .unwrap_or(false)
                     || v.starts_with("Snapshot"))
         })
         .cloned()
@@ -460,7 +461,11 @@ pub async fn search_modpacks(
         .data
         .into_iter()
         .map(|m| {
-            let author = m.authors.first().map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
+            let author = m
+                .authors
+                .first()
+                .map(|a| a.name.clone())
+                .unwrap_or_else(|| "Unknown".to_string());
             let mc_versions = extract_mc_versions(
                 &m.latest_files
                     .iter()
@@ -501,7 +506,10 @@ pub async fn search_modpacks(
                 mc_versions,
                 loaders,
                 latest_version: None,
-                url: Some(format!("https://www.curseforge.com/minecraft/modpacks/{}", m.slug)),
+                url: Some(format!(
+                    "https://www.curseforge.com/minecraft/modpacks/{}",
+                    m.slug
+                )),
                 updated_at: parse_date(&m.date_modified),
                 created_at: parse_date(&m.date_created),
             }
@@ -556,7 +564,11 @@ pub async fn get_modpack(
             .map(|d| d.data),
         Err(_) => None,
     };
-    let author = m.authors.first().map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
+    let author = m
+        .authors
+        .first()
+        .map(|a| a.name.clone())
+        .unwrap_or_else(|| "Unknown".to_string());
     let summary = m.summary.clone();
     let mc_versions = extract_mc_versions(
         &m.latest_files
@@ -578,7 +590,7 @@ pub async fn get_modpack(
         name: m.name,
         author,
         description: summary.clone(),
-        body: description_html.or_else(|| Some(summary)),
+        body: description_html.or(Some(summary)),
         icon_url: m.logo.map(|l| l.url),
         banner_url: None,
         downloads: m.download_count,
@@ -598,7 +610,10 @@ pub async fn get_modpack(
         mc_versions,
         loaders,
         latest_version: None,
-        url: Some(format!("https://www.curseforge.com/minecraft/modpacks/{}", m.slug)),
+        url: Some(format!(
+            "https://www.curseforge.com/minecraft/modpacks/{}",
+            m.slug
+        )),
         updated_at: parse_date(&m.date_modified),
         created_at: parse_date(&m.date_created),
     })
@@ -631,7 +646,11 @@ pub async fn get_modpack_versions(
             let loader_type = loaders.first().cloned().unwrap_or(LoaderType::Vanilla);
 
             // Get sha1 hash
-            let hash = f.hashes.iter().find(|h| h.algo == 1).map(|h| h.value.clone());
+            let hash = f
+                .hashes
+                .iter()
+                .find(|h| h.algo == 1)
+                .map(|h| h.value.clone());
 
             ModpackVersion {
                 id: f.id.to_string(),
@@ -742,7 +761,9 @@ pub async fn get_modpack_mods(
     // CurseForge API has practical limits; chunk requests
     let mut mods: Vec<ModpackMod> = Vec::new();
     for chunk in mod_ids.chunks(50) {
-        let chunk_mods = get_mods_by_ids(client, api_key, chunk).await.unwrap_or_default();
+        let chunk_mods = get_mods_by_ids(client, api_key, chunk)
+            .await
+            .unwrap_or_default();
         for m in chunk_mods {
             let author = m.authors.first().map(|a| a.name.clone());
             mods.push(ModpackMod {
@@ -750,7 +771,10 @@ pub async fn get_modpack_mods(
                 name: m.name.clone(),
                 icon_url: m.logo.as_ref().map(|l| l.url.clone()),
                 author,
-                url: Some(format!("https://www.curseforge.com/minecraft/mc-mods/{}", m.slug)),
+                url: Some(format!(
+                    "https://www.curseforge.com/minecraft/mc-mods/{}",
+                    m.slug
+                )),
             });
         }
     }
@@ -781,11 +805,7 @@ pub async fn search_content(
 
     let mut url = format!(
         "{}/mods/search?gameId={}&classId={}&index={}&pageSize={}",
-        CURSEFORGE_API_BASE,
-        MINECRAFT_GAME_ID,
-        class_id as u32,
-        index,
-        page_size
+        CURSEFORGE_API_BASE, MINECRAFT_GAME_ID, class_id as u32, index, page_size
     );
 
     if let Some(ref query) = params.query {
@@ -847,7 +867,11 @@ pub async fn search_content(
         .data
         .into_iter()
         .map(|m| {
-            let author = m.authors.first().map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
+            let author = m
+                .authors
+                .first()
+                .map(|a| a.name.clone())
+                .unwrap_or_else(|| "Unknown".to_string());
             let mc_versions = extract_mc_versions(
                 &m.latest_files
                     .iter()
@@ -878,7 +902,10 @@ pub async fn search_content(
                 mc_versions,
                 loaders,
                 latest_version: None,
-                url: Some(format!("https://www.curseforge.com/minecraft/{}/{}", url_path, m.slug)),
+                url: Some(format!(
+                    "https://www.curseforge.com/minecraft/{}/{}",
+                    url_path, m.slug
+                )),
                 updated_at: parse_date(&m.date_modified),
                 created_at: parse_date(&m.date_created),
             }
@@ -948,7 +975,11 @@ pub async fn get_content(
         ContentType::ResourcePack => "texture-packs",
     };
 
-    let author = m.authors.first().map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
+    let author = m
+        .authors
+        .first()
+        .map(|a| a.name.clone())
+        .unwrap_or_else(|| "Unknown".to_string());
     let summary = m.summary.clone();
     let mc_versions = extract_mc_versions(
         &m.latest_files
@@ -970,7 +1001,7 @@ pub async fn get_content(
         name: m.name,
         author,
         description: summary.clone(),
-        body: description_html.or_else(|| Some(summary)),
+        body: description_html.or(Some(summary)),
         icon_url: m.logo.map(|l| l.url),
         downloads: m.download_count,
         platform: ContentPlatform::CurseForge,
@@ -990,7 +1021,10 @@ pub async fn get_content(
         mc_versions,
         loaders,
         latest_version: None,
-        url: Some(format!("https://www.curseforge.com/minecraft/{}/{}", url_path, m.slug)),
+        url: Some(format!(
+            "https://www.curseforge.com/minecraft/{}/{}",
+            url_path, m.slug
+        )),
         updated_at: parse_date(&m.date_modified),
         created_at: parse_date(&m.date_created),
     })
@@ -1035,7 +1069,11 @@ pub async fn get_content_versions(
             let loaders = extract_loaders(&f.game_versions, &[]);
 
             // Get sha1 hash
-            let hash = f.hashes.iter().find(|h| h.algo == 1).map(|h| h.value.clone());
+            let hash = f
+                .hashes
+                .iter()
+                .find(|h| h.algo == 1)
+                .map(|h| h.value.clone());
 
             // Build download URL - CurseForge sometimes doesn't provide it for third-party distribution
             let download_url = f.download_url.unwrap_or_else(|| {
@@ -1111,7 +1149,11 @@ pub async fn get_version(
     let f = response.data;
     let mc_versions = extract_mc_versions(&f.game_versions);
     let loaders = extract_loaders(&f.game_versions, &[]);
-    let hash = f.hashes.iter().find(|h| h.algo == 1).map(|h| h.value.clone());
+    let hash = f
+        .hashes
+        .iter()
+        .find(|h| h.algo == 1)
+        .map(|h| h.value.clone());
 
     // Build download URL - CurseForge sometimes doesn't provide it for third-party distribution
     let download_url = f.download_url.unwrap_or_else(|| {

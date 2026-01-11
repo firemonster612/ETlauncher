@@ -1,9 +1,13 @@
 use crate::error::CommandError;
-use crate::models::{
-    Instance, Modpack, ModpackMod, ModpackSearchParams, ModpackSearchResult, ModpackSortBy, ModpackVersion,
-};
 use crate::models::instance::ModpackPlatform;
-use crate::services::{atlauncher_service, curseforge_service, ftb_service, modpack_install_service, modrinth_service, technic_service};
+use crate::models::{
+    Instance, Modpack, ModpackMod, ModpackSearchParams, ModpackSearchResult, ModpackSortBy,
+    ModpackVersion,
+};
+use crate::services::{
+    atlauncher_service, curseforge_service, ftb_service, modpack_install_service, modrinth_service,
+    technic_service,
+};
 use crate::state::AppState;
 use serde::Serialize;
 use std::cmp::Reverse;
@@ -23,7 +27,10 @@ pub async fn search_modpacks(
     state: State<'_, AppState>,
     params: ModpackSearchParams,
 ) -> Result<ModpackSearchResult, CommandError> {
-    println!("[modpack_cmd] search_modpacks: platform={:?}, query={:?}", params.platform, params.query);
+    println!(
+        "[modpack_cmd] search_modpacks: platform={:?}, query={:?}",
+        params.platform, params.query
+    );
 
     // If no platform specified, search all platforms and aggregate results
     if params.platform.is_none() {
@@ -33,30 +40,28 @@ pub async fn search_modpacks(
     let platform = params.platform.clone().unwrap();
 
     let result = match platform {
-        ModpackPlatform::Modrinth => {
-            modrinth_service::search_modpacks(&state.http_client, &params)
-                .await
-                .map_err(CommandError::from)
-        }
+        ModpackPlatform::Modrinth => modrinth_service::search_modpacks(&state.http_client, &params)
+            .await
+            .map_err(CommandError::from),
         ModpackPlatform::CurseForge => {
-            let api_key = state.get_settings().curseforge_api_key.ok_or_else(|| CommandError {
-                code: "API_KEY_REQUIRED".to_string(),
-                message: "CurseForge API key not configured. Add it to your settings.".to_string(),
-            })?;
+            let api_key = state
+                .get_settings()
+                .curseforge_api_key
+                .ok_or_else(|| CommandError {
+                    code: "API_KEY_REQUIRED".to_string(),
+                    message: "CurseForge API key not configured. Add it to your settings."
+                        .to_string(),
+                })?;
             curseforge_service::search_modpacks(&state.http_client, &api_key, &params)
                 .await
                 .map_err(CommandError::from)
         }
-        ModpackPlatform::FTB => {
-            ftb_service::search_modpacks(&state.http_client, &params)
-                .await
-                .map_err(CommandError::from)
-        }
-        ModpackPlatform::Technic => {
-            technic_service::search_modpacks(&state.http_client, &params)
-                .await
-                .map_err(CommandError::from)
-        }
+        ModpackPlatform::FTB => ftb_service::search_modpacks(&state.http_client, &params)
+            .await
+            .map_err(CommandError::from),
+        ModpackPlatform::Technic => technic_service::search_modpacks(&state.http_client, &params)
+            .await
+            .map_err(CommandError::from),
         ModpackPlatform::ATLauncher => {
             atlauncher_service::search_modpacks(&state.http_client, &params)
                 .await
@@ -65,7 +70,10 @@ pub async fn search_modpacks(
     };
 
     match &result {
-        Ok(r) => println!("[modpack_cmd] search_modpacks: success, count={}", r.modpacks.len()),
+        Ok(r) => println!(
+            "[modpack_cmd] search_modpacks: success, count={}",
+            r.modpacks.len()
+        ),
         Err(e) => println!("[modpack_cmd] search_modpacks: error={:?}", e),
     }
 
@@ -227,7 +235,10 @@ async fn search_all_platforms(
         }
     };
 
-    println!("[modpack_cmd] All platforms total: {} packs", all_modpacks.len());
+    println!(
+        "[modpack_cmd] All platforms total: {} packs",
+        all_modpacks.len()
+    );
 
     Ok(ModpackSearchResult {
         modpacks: all_modpacks,
@@ -244,37 +255,35 @@ pub async fn get_modpack(
     platform: ModpackPlatform,
     id: String,
 ) -> Result<Modpack, CommandError> {
-    println!("[modpack_cmd] get_modpack: platform={:?}, id={}", platform, id);
+    println!(
+        "[modpack_cmd] get_modpack: platform={:?}, id={}",
+        platform, id
+    );
     let result = match platform {
-        ModpackPlatform::Modrinth => {
-            modrinth_service::get_modpack(&state.http_client, &id)
-                .await
-                .map_err(CommandError::from)
-        }
+        ModpackPlatform::Modrinth => modrinth_service::get_modpack(&state.http_client, &id)
+            .await
+            .map_err(CommandError::from),
         ModpackPlatform::CurseForge => {
-            let api_key = state.get_settings().curseforge_api_key.ok_or_else(|| CommandError {
-                code: "API_KEY_REQUIRED".to_string(),
-                message: "CurseForge API key not configured".to_string(),
-            })?;
+            let api_key = state
+                .get_settings()
+                .curseforge_api_key
+                .ok_or_else(|| CommandError {
+                    code: "API_KEY_REQUIRED".to_string(),
+                    message: "CurseForge API key not configured".to_string(),
+                })?;
             curseforge_service::get_modpack(&state.http_client, &api_key, &id)
                 .await
                 .map_err(CommandError::from)
         }
-        ModpackPlatform::FTB => {
-            ftb_service::get_modpack(&state.http_client, &id)
-                .await
-                .map_err(CommandError::from)
-        }
-        ModpackPlatform::Technic => {
-            technic_service::get_modpack(&state.http_client, &id)
-                .await
-                .map_err(CommandError::from)
-        }
-        ModpackPlatform::ATLauncher => {
-            atlauncher_service::get_modpack(&state.http_client, &id)
-                .await
-                .map_err(CommandError::from)
-        }
+        ModpackPlatform::FTB => ftb_service::get_modpack(&state.http_client, &id)
+            .await
+            .map_err(CommandError::from),
+        ModpackPlatform::Technic => technic_service::get_modpack(&state.http_client, &id)
+            .await
+            .map_err(CommandError::from),
+        ModpackPlatform::ATLauncher => atlauncher_service::get_modpack(&state.http_client, &id)
+            .await
+            .map_err(CommandError::from),
     };
     match &result {
         Ok(m) => println!("[modpack_cmd] get_modpack: success, name={}", m.name),
@@ -290,7 +299,10 @@ pub async fn get_modpack_versions(
     platform: ModpackPlatform,
     id: String,
 ) -> Result<Vec<ModpackVersion>, CommandError> {
-    println!("[modpack_cmd] get_modpack_versions: platform={:?}, id={}", platform, id);
+    println!(
+        "[modpack_cmd] get_modpack_versions: platform={:?}, id={}",
+        platform, id
+    );
     let result = match platform {
         ModpackPlatform::Modrinth => {
             modrinth_service::get_modpack_versions(&state.http_client, &id)
@@ -298,24 +310,23 @@ pub async fn get_modpack_versions(
                 .map_err(CommandError::from)
         }
         ModpackPlatform::CurseForge => {
-            let api_key = state.get_settings().curseforge_api_key.ok_or_else(|| CommandError {
-                code: "API_KEY_REQUIRED".to_string(),
-                message: "CurseForge API key not configured".to_string(),
-            })?;
+            let api_key = state
+                .get_settings()
+                .curseforge_api_key
+                .ok_or_else(|| CommandError {
+                    code: "API_KEY_REQUIRED".to_string(),
+                    message: "CurseForge API key not configured".to_string(),
+                })?;
             curseforge_service::get_modpack_versions(&state.http_client, &api_key, &id)
                 .await
                 .map_err(CommandError::from)
         }
-        ModpackPlatform::FTB => {
-            ftb_service::get_modpack_versions(&state.http_client, &id)
-                .await
-                .map_err(CommandError::from)
-        }
-        ModpackPlatform::Technic => {
-            technic_service::get_modpack_versions(&state.http_client, &id)
-                .await
-                .map_err(CommandError::from)
-        }
+        ModpackPlatform::FTB => ftb_service::get_modpack_versions(&state.http_client, &id)
+            .await
+            .map_err(CommandError::from),
+        ModpackPlatform::Technic => technic_service::get_modpack_versions(&state.http_client, &id)
+            .await
+            .map_err(CommandError::from),
         ModpackPlatform::ATLauncher => {
             atlauncher_service::get_modpack_versions(&state.http_client, &id)
                 .await
@@ -323,7 +334,10 @@ pub async fn get_modpack_versions(
         }
     };
     match &result {
-        Ok(versions) => println!("[modpack_cmd] get_modpack_versions: success, count={}", versions.len()),
+        Ok(versions) => println!(
+            "[modpack_cmd] get_modpack_versions: success, count={}",
+            versions.len()
+        ),
         Err(e) => println!("[modpack_cmd] get_modpack_versions: error={:?}", e),
     }
     result
@@ -343,29 +357,46 @@ pub async fn get_modpack_mods(
     );
 
     let result = match platform {
-        ModpackPlatform::Modrinth => modrinth_service::get_modpack_mods(&state.http_client, &version_id)
-            .await
-            .map_err(CommandError::from),
-        ModpackPlatform::CurseForge => {
-            let api_key = state.get_settings().curseforge_api_key.ok_or_else(|| CommandError {
-                code: "API_KEY_REQUIRED".to_string(),
-                message: "CurseForge API key not configured".to_string(),
-            })?;
-            curseforge_service::get_modpack_mods(&state.http_client, &api_key, &modpack_id, &version_id)
+        ModpackPlatform::Modrinth => {
+            modrinth_service::get_modpack_mods(&state.http_client, &version_id)
                 .await
                 .map_err(CommandError::from)
         }
-        ModpackPlatform::FTB => ftb_service::get_modpack_mods(&state.http_client, &modpack_id, &version_id)
+        ModpackPlatform::CurseForge => {
+            let api_key = state
+                .get_settings()
+                .curseforge_api_key
+                .ok_or_else(|| CommandError {
+                    code: "API_KEY_REQUIRED".to_string(),
+                    message: "CurseForge API key not configured".to_string(),
+                })?;
+            curseforge_service::get_modpack_mods(
+                &state.http_client,
+                &api_key,
+                &modpack_id,
+                &version_id,
+            )
             .await
-            .map_err(CommandError::from),
-        ModpackPlatform::Technic => technic_service::get_modpack_mods(&state.http_client, &modpack_id, &version_id)
-            .await
-            .map_err(CommandError::from),
+            .map_err(CommandError::from)
+        }
+        ModpackPlatform::FTB => {
+            ftb_service::get_modpack_mods(&state.http_client, &modpack_id, &version_id)
+                .await
+                .map_err(CommandError::from)
+        }
+        ModpackPlatform::Technic => {
+            technic_service::get_modpack_mods(&state.http_client, &modpack_id, &version_id)
+                .await
+                .map_err(CommandError::from)
+        }
         _ => Ok(vec![]),
     };
 
     match &result {
-        Ok(mods) => println!("[modpack_cmd] get_modpack_mods: success, count={}", mods.len()),
+        Ok(mods) => println!(
+            "[modpack_cmd] get_modpack_mods: success, count={}",
+            mods.len()
+        ),
         Err(e) => println!("[modpack_cmd] get_modpack_mods: error={:?}", e),
     }
 
@@ -394,15 +425,20 @@ pub async fn install_modpack(
     }
 
     // Get display name for the modpack
-    let modpack_name = instance_name.clone().unwrap_or_else(|| format!("{:?} modpack", platform));
+    let modpack_name = instance_name
+        .clone()
+        .unwrap_or_else(|| format!("{:?} modpack", platform));
 
     // Register install state and get cancellation token
     let cancel_token = state.start_modpack_install(modpack_name.clone());
 
     // Emit started event
-    let _ = app_handle.emit("modpack_install_started", ModpackInstallStarted {
-        modpack_name: modpack_name.clone(),
-    });
+    let _ = app_handle.emit(
+        "modpack_install_started",
+        ModpackInstallStarted {
+            modpack_name: modpack_name.clone(),
+        },
+    );
 
     let result = match platform {
         ModpackPlatform::Modrinth => {
@@ -467,7 +503,10 @@ pub async fn install_modpack(
 
     match result {
         Ok(instance) => {
-            println!("[modpack_cmd] install_modpack: success, instance_id={}", instance.id);
+            println!(
+                "[modpack_cmd] install_modpack: success, instance_id={}",
+                instance.id
+            );
             let _ = app_handle.emit("modpack_install_complete", &instance);
             Ok(instance)
         }
@@ -489,9 +528,7 @@ pub async fn install_modpack(
 
 /// Cancel the current modpack installation
 #[tauri::command]
-pub async fn cancel_modpack_install(
-    state: State<'_, AppState>,
-) -> Result<(), CommandError> {
+pub async fn cancel_modpack_install(state: State<'_, AppState>) -> Result<(), CommandError> {
     println!("[modpack_cmd] cancel_modpack_install");
 
     if let Some(token) = state.get_modpack_cancel_token() {
@@ -507,12 +544,10 @@ pub async fn cancel_modpack_install(
 
 /// Get current modpack install status
 #[tauri::command]
-pub fn get_modpack_install_status(
-    state: State<'_, AppState>,
-) -> Option<ModpackInstallStarted> {
-    state.get_modpack_install().map(|name| ModpackInstallStarted {
-        modpack_name: name,
-    })
+pub fn get_modpack_install_status(state: State<'_, AppState>) -> Option<ModpackInstallStarted> {
+    state
+        .get_modpack_install()
+        .map(|name| ModpackInstallStarted { modpack_name: name })
 }
 
 /// Import an instance from a local .mrpack file

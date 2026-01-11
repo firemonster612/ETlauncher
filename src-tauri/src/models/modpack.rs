@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
 use crate::models::content::ContentGalleryImage;
 use crate::models::instance::{LoaderType, ModpackPlatform};
+use serde::{Deserialize, Serialize};
 
 /// Sort order for modpack search
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
