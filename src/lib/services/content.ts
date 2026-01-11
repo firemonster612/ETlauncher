@@ -174,3 +174,15 @@ export async function cancelContentQueueItem(queueId: string): Promise<void> {
 export async function tryProcessContentQueue(): Promise<void> {
   return invoke<void>("try_process_content_queue");
 }
+
+// OptiFine functions
+
+/** Check if OptiFine is available for a specific Minecraft version */
+export async function checkOptifineAvailable(mcVersion: string): Promise<boolean> {
+  return invoke<boolean>("check_optifine_available", { mcVersion });
+}
+
+/** Install OptiFine for an instance. Returns the installed filename. */
+export async function installOptifine(instanceId: string): Promise<string> {
+  return invoke<string>("install_optifine", { instanceId });
+}

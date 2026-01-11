@@ -109,7 +109,7 @@
     <!-- Info -->
     <div class="flex-1 min-w-0">
       <h3 class="text-lg font-bold truncate pr-8">{instance.name}</h3>
-      <div class="flex items-center gap-2 mt-1 flex-wrap">
+      <div class="flex flex-col items-start gap-1 mt-1">
         <span class="text-sm text-muted-foreground">{instance.minecraftVersion}</span>
         <span
           class="text-xs px-1.5 py-0.5 border rounded capitalize {getLoaderColor(instance.loaderType)}"

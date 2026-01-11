@@ -487,6 +487,7 @@ pub async fn install_fabric(
         .arg("-loader")
         .arg(loader_version)
         .arg("-noprofile") // Don't modify launcher profiles
+        .current_dir(game_dir)
         .output()
         .await
         .map_err(|e| AppError::ProcessError(format!("Failed to run Fabric installer: {}", e)))?;
@@ -600,6 +601,7 @@ pub async fn install_quilt(
         .arg(&resolved_loader_version)
         .arg(format!("--install-dir={}", game_dir.display()))
         .arg("--no-profile")
+        .current_dir(game_dir)
         .output()
         .await
         .map_err(|e| AppError::ProcessError(format!("Failed to run Quilt installer: {}", e)))?;
@@ -940,6 +942,7 @@ pub async fn install_forge(
             .arg(&installer_path)
             .arg("--installClient")
             .arg(&dot_minecraft)
+            .current_dir(&dot_minecraft)
             .output()
             .await
             .map_err(|e| AppError::ProcessError(format!("Failed to run Forge installer: {}", e)))?
@@ -951,6 +954,7 @@ pub async fn install_forge(
             .arg(&installer_path)
             .arg("--installClient")
             .arg(game_dir)
+            .current_dir(game_dir)
             .output()
             .await
             .map_err(|e| AppError::ProcessError(format!("Failed to run Forge installer: {}", e)))?
@@ -1111,6 +1115,7 @@ pub async fn install_neoforge(
         .arg(&installer_path)
         .arg("--installClient")
         .arg(game_dir)
+        .current_dir(game_dir)
         .output()
         .await
         .map_err(|e| AppError::ProcessError(format!("Failed to run NeoForge installer: {}", e)))?;

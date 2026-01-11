@@ -140,24 +140,30 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     (contentStore.contentType === "mod" || contentStore.contentType === "shader")
   );
 
-  // Helper detection for required companion mods (Fabric API / Iris)
-  function hasHelperInstalled(terms: string[]): boolean {
+  // Helper detection for required companion mods (Fabric API / Iris / Oculus)
+  // Uses exact slug matching to avoid false positives from addon mods
+  function hasHelperInstalled(slugs: string[], filenamePatterns: RegExp[]): boolean {
     const items = modScanResult?.items ?? [];
     return items.some((item) => {
       const lowerFilename = item.filename.toLowerCase();
       const mrSlug = item.modrinthProject?.slug?.toLowerCase() ?? "";
-      const cfName = item.curseforgeProject?.name?.toLowerCase() ?? "";
+      const cfSlug = item.curseforgeProject?.slug?.toLowerCase() ?? "";
 
-      return terms.some((term) =>
-        lowerFilename.includes(term) ||
-        mrSlug.includes(term) ||
-        cfName.includes(term)
-      );
+      // Check exact slug match (Modrinth or CurseForge)
+      const slugMatch = slugs.some((slug) => mrSlug === slug || cfSlug === slug);
+      if (slugMatch) return true;
+
+      // Check filename patterns for mods without API metadata
+      return filenamePatterns.some((pattern) => pattern.test(lowerFilename));
     });
   }
 
-  const hasFabricApi = $derived(hasHelperInstalled(["fabric-api"]));
-  const hasIris = $derived(hasHelperInstalled(["iris"]));
+  // Patterns: match "modname-" at start or "modname-mc" patterns (e.g., "iris-1.6.4.jar", "oculus-mc1.20.1-1.6.15a.jar")
+  const hasFabricApi = $derived(hasHelperInstalled(["fabric-api"], [/^fabric-api-/]));
+  const hasIris = $derived(hasHelperInstalled(["iris"], [/^iris-\d/, /^iris-mc/]));
+  const hasOculus = $derived(hasHelperInstalled(["oculus"], [/^oculus-\d/, /^oculus-mc/]));
+  const hasOptifine = $derived(hasHelperInstalled(["optifine"], [/^optifine/i, /^preview_optifine/i]));
+  const hasShaderLoader = $derived(hasIris || hasOculus || hasOptifine);
 
   const shouldWarnFabricApi = $derived(
     !isLoadingHelperScan &&
@@ -173,7 +179,12 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     !!modScanResult &&
     viewMode === "browse" &&
     contentStore.contentType === "shader" &&
-    !hasIris
+    !hasShaderLoader
+  );
+
+  // Determine which shader loader to suggest based on loader type
+  const suggestedShaderLoader = $derived<"iris" | "oculus">(
+    loaderType === "forge" || loaderType === "neoforge" ? "oculus" : "iris"
   );
 
   // Installation state
@@ -186,11 +197,17 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
   let quickInstallError = $state<string | null>(null);
   let quickInstallRequestId = $state(0);
 
-  // Helper auto-install state (Fabric API / Iris)
+  // Helper auto-install state (Fabric API / Iris / Oculus / OptiFine)
   let isInstallingHelper = $state(false);
-  let helperInstallTarget = $state<"fabric-api" | "iris" | null>(null);
+  let helperInstallTarget = $state<"fabric-api" | "iris" | "oculus" | "optifine" | null>(null);
   let helperInstallError = $state<string | null>(null);
-  let helperInstallErrorFor = $state<"fabric-api" | "iris" | null>(null);
+  let helperInstallErrorFor = $state<"fabric-api" | "iris" | "oculus" | "optifine" | null>(null);
+
+  // Shader loader availability check
+  // For Forge: tracks whether Oculus or OptiFine should be suggested
+  let suggestedForgeShaderLoader = $state<"oculus" | "optifine" | null>(null);
+  let isCheckingShaderLoader = $state(false);
+  let shaderLoaderAvailable = $state<boolean | null>(null);
 
   // Uninstall state
   let isUninstalling = $state(false);
@@ -288,9 +305,11 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     bulkActionError = null;
   }
 
-  const helperConfigs: Record<"fabric-api" | "iris", { query: string; contentType: ContentType; slugMatches: string[] }> = {
-    "fabric-api": { query: "fabric api", contentType: "mod", slugMatches: ["fabric-api"] },
-    iris: { query: "iris shaders", contentType: "mod", slugMatches: ["iris"] },
+  // exactSlugs: only match if the slug exactly equals one of these values (no partial matching)
+  const helperConfigs: Record<"fabric-api" | "iris" | "oculus", { query: string; contentType: ContentType; exactSlugs: string[] }> = {
+    "fabric-api": { query: "fabric api", contentType: "mod", exactSlugs: ["fabric-api"] },
+    iris: { query: "iris shaders", contentType: "mod", exactSlugs: ["iris"] },
+    oculus: { query: "oculus", contentType: "mod", exactSlugs: ["oculus"] },
   };
 
   async function refreshModScan() {
@@ -304,7 +323,80 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     }
   }
 
-  async function installHelper(helper: "fabric-api" | "iris") {
+  // Check if the suggested shader loader is available for this MC version/loader
+  async function checkShaderLoaderAvailability() {
+    // Only check for Forge/NeoForge since Iris (Fabric) is widely available
+    if (loaderType !== "forge" && loaderType !== "neoforge") {
+      shaderLoaderAvailable = true;
+      suggestedForgeShaderLoader = null;
+      return;
+    }
+
+    isCheckingShaderLoader = true;
+    try {
+      // First, check if Oculus is available (preferred for Forge)
+      const config = helperConfigs["oculus"];
+      const searchResult = await contentService.searchContent({
+        query: config.query,
+        contentType: config.contentType,
+        mcVersion,
+        loader: loaderType,
+        page: 0,
+        pageSize: 10,
+      });
+
+      // Use exact slug matching to avoid false positives from addon mods
+      const match = searchResult.items.find((content) => {
+        const slug = content.slug.toLowerCase();
+        return config.exactSlugs.some((exactSlug) => slug === exactSlug);
+      });
+
+      if (match) {
+        const versions = await contentService.getContentVersions(
+          match.platform,
+          match.id,
+          mcVersion,
+          loaderType
+        );
+
+        if (versions.length > 0) {
+          // Oculus is available
+          shaderLoaderAvailable = true;
+          suggestedForgeShaderLoader = "oculus";
+          return;
+        }
+      }
+
+      // Oculus not available, check OptiFine as fallback
+      try {
+        const optifineAvailable = await contentService.checkOptifineAvailable(mcVersion);
+        if (optifineAvailable) {
+          shaderLoaderAvailable = true;
+          suggestedForgeShaderLoader = "optifine";
+          return;
+        }
+      } catch (optifineError) {
+        // OptiFine check failed (e.g., site down)
+        const errorMsg = optifineError instanceof Error ? optifineError.message : "OptiFine check failed";
+        console.error("OptiFine availability check failed:", errorMsg);
+        // Store the error message to show to user
+        helperInstallError = errorMsg;
+        helperInstallErrorFor = "optifine";
+      }
+
+      // Neither Oculus nor OptiFine available
+      shaderLoaderAvailable = false;
+      suggestedForgeShaderLoader = null;
+    } catch (e) {
+      console.error("Failed to check shader loader availability:", e);
+      shaderLoaderAvailable = false;
+      suggestedForgeShaderLoader = null;
+    } finally {
+      isCheckingShaderLoader = false;
+    }
+  }
+
+  async function installHelper(helper: "fabric-api" | "iris" | "oculus") {
     isInstallingHelper = true;
     helperInstallTarget = helper;
     helperInstallError = null;
@@ -322,13 +414,16 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
         pageSize: 10,
       });
 
+      // Use exact slug matching to avoid installing wrong mods (e.g., addon mods)
       const match = searchResult.items.find((content) => {
         const slug = content.slug.toLowerCase();
-        const name = content.name.toLowerCase();
-        return config.slugMatches.some((term) => slug.includes(term) || name.includes(term));
+        return config.exactSlugs.some((exactSlug) => slug === exactSlug);
       });
 
       if (!match) {
+        if (helper === "oculus") {
+          throw new Error("Oculus is not available for this Minecraft version. No compatible shader loader found.");
+        }
         throw new Error("Could not find a compatible helper mod.");
       }
 
@@ -341,6 +436,9 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
 
       const version = versions[0];
       if (!version) {
+        if (helper === "oculus") {
+          throw new Error("Oculus is not available for this Minecraft version. No compatible shader loader found.");
+        }
         throw new Error("No compatible version found for this Minecraft version/loader.");
       }
 
@@ -364,10 +462,53 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     }
   }
 
+  // Install the appropriate shader loader based on loader type
+  async function installShaderLoader() {
+    if (loaderType === "forge" || loaderType === "neoforge") {
+      if (suggestedForgeShaderLoader === "optifine") {
+        // Use dedicated OptiFine installer
+        isInstallingHelper = true;
+        helperInstallTarget = "optifine";
+        helperInstallError = null;
+        helperInstallErrorFor = null;
+
+        try {
+          await contentService.installOptifine(instanceId);
+          await contentStore.refreshInstalledContent();
+          await refreshModScan();
+        } catch (e: unknown) {
+          helperInstallError = e instanceof Error ? e.message : "Failed to install OptiFine.";
+          helperInstallErrorFor = "optifine";
+        } finally {
+          isInstallingHelper = false;
+          helperInstallTarget = null;
+        }
+      } else {
+        // Install Oculus via the standard helper installer
+        await installHelper("oculus");
+      }
+    } else {
+      // Install Iris for Fabric/Quilt
+      await installHelper("iris");
+    }
+  }
+
   // Keep mod scan cache updated when the mods tab scans
   $effect(() => {
     if (contentStore.contentType === "mod" && contentStore.scanResult) {
       modScanResult = contentStore.scanResult;
+    }
+  });
+
+  // Check shader loader availability when viewing shaders without one installed
+  $effect(() => {
+    if (
+      contentStore.contentType === "shader" &&
+      !hasShaderLoader &&
+      shaderLoaderAvailable === null &&
+      !isCheckingShaderLoader
+    ) {
+      checkShaderLoaderAvailability();
     }
   });
 
@@ -998,31 +1139,63 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
 
   <!-- Shader loader warning -->
   {#if shouldWarnShaders}
-    <div class="mx-4 mt-3 bg-amber-500/10 border-2 border-amber-500/50 p-3 text-amber-500 text-sm flex items-center gap-3">
-      <AlertTriangle class="h-4 w-4 flex-shrink-0" />
-      <div class="flex-1">
-        Shaders need a shader loader like <span class="font-medium">Iris</span>. Install it to enable shaderpacks.
+    {#if isCheckingShaderLoader || ((loaderType === "forge" || loaderType === "neoforge") && shaderLoaderAvailable === null)}
+      <!-- Checking availability (only show for Forge since we need to verify Oculus/OptiFine exists) -->
+      <div class="mx-4 mt-3 bg-muted/50 border-2 border-border p-3 text-muted-foreground text-sm flex items-center gap-3">
+        <Loader2 class="h-4 w-4 flex-shrink-0 animate-spin" />
+        <div class="flex-1">
+          Checking shader loader availability...
+        </div>
       </div>
-      <Button
-        size="sm"
-        variant="secondary"
-        class="text-amber-500 border-amber-500/50"
-        onclick={() => installHelper("iris")}
-        disabled={isInstallingHelper}
-      >
-        {#if isInstallingHelper && helperInstallTarget === "iris"}
-          <Loader2 class="h-4 w-4 mr-2 animate-spin" />
-          Installing...
-        {:else}
-          <Download class="h-4 w-4 mr-2" />
-          Install Iris
-        {/if}
-      </Button>
-    </div>
-    {#if helperInstallError && helperInstallErrorFor === "iris"}
-      <div class="mx-4 mt-2 text-xs text-destructive">
-        {helperInstallError}
+    {:else if shaderLoaderAvailable === false}
+      <!-- No shader loader available for this version (Forge without Oculus/OptiFine support) -->
+      <div class="mx-4 mt-3 bg-destructive/10 border-2 border-destructive/50 p-3 text-destructive text-sm flex items-center gap-3">
+        <AlertTriangle class="h-4 w-4 flex-shrink-0" />
+        <div class="flex-1">
+          No shader loader available for Forge on this Minecraft version.
+        </div>
       </div>
+      {#if helperInstallError && helperInstallErrorFor === "optifine"}
+        <div class="mx-4 mt-2 text-xs text-destructive">
+          {helperInstallError}
+        </div>
+      {/if}
+    {:else}
+      <!-- Shader loader available, show install option -->
+      <div class="mx-4 mt-3 bg-amber-500/10 border-2 border-amber-500/50 p-3 text-amber-500 text-sm flex items-center gap-3">
+        <AlertTriangle class="h-4 w-4 flex-shrink-0" />
+        <div class="flex-1">
+          {#if loaderType === "forge" || loaderType === "neoforge"}
+            Shaders need a shader loader like <span class="font-medium">{suggestedForgeShaderLoader === "optifine" ? "OptiFine" : "Oculus"}</span>. Install it to enable shaderpacks.
+          {:else}
+            Shaders need a shader loader like <span class="font-medium">Iris</span>. Install it to enable shaderpacks.
+          {/if}
+        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          class="text-amber-500 border-amber-500/50"
+          onclick={() => installShaderLoader()}
+          disabled={isInstallingHelper}
+        >
+          {#if isInstallingHelper && (helperInstallTarget === "iris" || helperInstallTarget === "oculus" || helperInstallTarget === "optifine")}
+            <Loader2 class="h-4 w-4 mr-2 animate-spin" />
+            Installing...
+          {:else}
+            <Download class="h-4 w-4 mr-2" />
+            {#if loaderType === "forge" || loaderType === "neoforge"}
+              Install {suggestedForgeShaderLoader === "optifine" ? "OptiFine" : "Oculus"}
+            {:else}
+              Install Iris
+            {/if}
+          {/if}
+        </Button>
+      </div>
+      {#if helperInstallError && (helperInstallErrorFor === "iris" || helperInstallErrorFor === "oculus" || helperInstallErrorFor === "optifine")}
+        <div class="mx-4 mt-2 text-xs text-destructive">
+          {helperInstallError}
+        </div>
+      {/if}
     {/if}
   {/if}
 
