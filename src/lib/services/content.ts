@@ -172,10 +172,10 @@ export async function tryProcessContentQueue(): Promise<void> {
 
 /** Check if OptiFine is available for a specific Minecraft version */
 export async function checkOptifineAvailable(mcVersion: string): Promise<boolean> {
-  return invoke<boolean>("check_optifine_available", { mcVersion });
+	return invoke<boolean>('check_optifine_available', { mcVersion });
 }
 
 /** Install OptiFine for an instance. Returns the installed filename. */
 export async function installOptifine(instanceId: string): Promise<string> {
-  return invoke<string>("install_optifine", { instanceId });
+	return invoke<string>('install_optifine', { instanceId });
 }
