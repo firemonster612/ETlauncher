@@ -19,7 +19,7 @@
     src="https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white"> 
     <br>
   <a href="https://github.com/firemonster612/ETlauncher/blob/master/LICENSE"><img alt="License"
-    src="https://img.shields.io/github/license/firemonster612/ETlauncher?style=for-the-badge"/></a>
+    src="https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge"/></a>
   <br>
 </div>
 
@@ -92,4 +92,4 @@ Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for gu
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the [MIT License](LICENSE).https://img.shields.io/github/license/firemonster612/ETlauncher?style=for-the-badge
