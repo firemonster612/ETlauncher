@@ -93,4 +93,4 @@ Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for gu
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).https://img.shields.io/github/license/firemonster612/ETlauncher?style=for-the-badge
+This project is licensed under the [MIT License](LICENSE).
