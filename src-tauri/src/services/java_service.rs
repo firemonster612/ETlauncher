@@ -22,11 +22,17 @@ pub fn get_required_java_version(mc_version: &str) -> u32 {
     }
 
     let major = parts[0].parse::<u32>().unwrap_or(1);
-    let minor = parts.get(1).and_then(|p| p.parse::<u32>().ok()).unwrap_or(0);
-    let patch = parts.get(2).and_then(|p| {
-        // Handle versions like "1.20.5-pre1"
-        p.split('-').next().and_then(|n| n.parse::<u32>().ok())
-    }).unwrap_or(0);
+    let minor = parts
+        .get(1)
+        .and_then(|p| p.parse::<u32>().ok())
+        .unwrap_or(0);
+    let patch = parts
+        .get(2)
+        .and_then(|p| {
+            // Handle versions like "1.20.5-pre1"
+            p.split('-').next().and_then(|n| n.parse::<u32>().ok())
+        })
+        .unwrap_or(0);
 
     // MC 1.20.5+ requires Java 21
     if major > 1 || (major == 1 && minor > 20) || (major == 1 && minor == 20 && patch >= 5) {
@@ -72,7 +78,8 @@ pub fn save_java_manifest(manifest: &JavaManifest) -> Result<(), AppError> {
 pub fn get_installed_java(major_version: u32) -> Option<String> {
     let manifest = load_java_manifest();
 
-    manifest.installations
+    manifest
+        .installations
         .iter()
         .find(|i| i.major_version == major_version)
         .and_then(|i| {
@@ -127,21 +134,25 @@ pub async fn ensure_java_installed(
     }
 
     // Need to download
-    emit_status(app_handle, instance_id, &format!("Downloading Java {}...", major_version));
+    emit_status(
+        app_handle,
+        instance_id,
+        &format!("Downloading Java {}...", major_version),
+    );
 
     let url = get_adoptium_download_url(major_version);
     let client = reqwest::Client::new();
 
     // Send request
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| AppError::JavaInstallError(format!("Failed to connect to Adoptium: {}", e)))?;
+    let response =
+        client.get(&url).send().await.map_err(|e| {
+            AppError::JavaInstallError(format!("Failed to connect to Adoptium: {}", e))
+        })?;
 
     if !response.status().is_success() {
         return Err(AppError::JavaInstallError(format!(
-            "Adoptium returned status {}", response.status()
+            "Adoptium returned status {}",
+            response.status()
         )));
     }
 
@@ -152,7 +163,11 @@ pub async fn ensure_java_installed(
     let java_dir = get_java_dir();
     fs::create_dir_all(&java_dir)?;
 
-    let extension = if Os::current() == Os::Windows { "zip" } else { "tar.gz" };
+    let extension = if Os::current() == Os::Windows {
+        "zip"
+    } else {
+        "tar.gz"
+    };
     let temp_path = java_dir.join(format!("temurin-{}-download.{}", major_version, extension));
 
     // Stream download with progress
@@ -162,7 +177,8 @@ pub async fn ensure_java_installed(
 
     use futures::StreamExt;
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| AppError::JavaInstallError(format!("Download error: {}", e)))?;
+        let chunk =
+            chunk.map_err(|e| AppError::JavaInstallError(format!("Download error: {}", e)))?;
         file.write_all(&chunk)?;
 
         downloaded += chunk.len() as u64;
@@ -170,14 +186,22 @@ pub async fn ensure_java_installed(
         // Emit progress
         if total_size > 0 {
             let percent = (downloaded as f64 / total_size as f64 * 100.0) as u32;
-            emit_status(app_handle, instance_id, &format!("Downloading Java {}... {}%", major_version, percent));
+            emit_status(
+                app_handle,
+                instance_id,
+                &format!("Downloading Java {}... {}%", major_version, percent),
+            );
         }
     }
 
     drop(file);
 
     // Extract
-    emit_status(app_handle, instance_id, &format!("Extracting Java {}...", major_version));
+    emit_status(
+        app_handle,
+        instance_id,
+        &format!("Extracting Java {}...", major_version),
+    );
 
     let install_dir = java_dir.join(format!("temurin-{}", major_version));
 
@@ -217,7 +241,9 @@ pub async fn ensure_java_installed(
     let mut manifest = load_java_manifest();
 
     // Remove any existing entry for this version
-    manifest.installations.retain(|i| i.major_version != major_version);
+    manifest
+        .installations
+        .retain(|i| i.major_version != major_version);
 
     manifest.installations.push(JavaInstallation {
         major_version,
@@ -232,7 +258,11 @@ pub async fn ensure_java_installed(
 
 /// Find the java executable within an extracted JDK directory
 fn find_java_executable(install_dir: &PathBuf) -> Result<String, AppError> {
-    let java_exe = if Os::current() == Os::Windows { "java.exe" } else { "java" };
+    let java_exe = if Os::current() == Os::Windows {
+        "java.exe"
+    } else {
+        "java"
+    };
 
     // Adoptium extracts to a directory like jdk-21.0.5+11
     // We need to find it and look in bin/
@@ -249,7 +279,11 @@ fn find_java_executable(install_dir: &PathBuf) -> Result<String, AppError> {
             }
 
             // macOS has Contents/Home/bin/java structure
-            let mac_java = path.join("Contents").join("Home").join("bin").join(java_exe);
+            let mac_java = path
+                .join("Contents")
+                .join("Home")
+                .join("bin")
+                .join(java_exe);
             if mac_java.exists() {
                 return Ok(mac_java.to_string_lossy().to_string());
             }
@@ -257,7 +291,7 @@ fn find_java_executable(install_dir: &PathBuf) -> Result<String, AppError> {
     }
 
     Err(AppError::JavaInstallError(
-        "Could not find java executable in extracted archive".to_string()
+        "Could not find java executable in extracted archive".to_string(),
     ))
 }
 
@@ -270,9 +304,9 @@ fn extract_tar_gz(archive_path: &PathBuf, dest_dir: &PathBuf) -> Result<(), AppE
     let decoder = GzDecoder::new(file);
     let mut archive = Archive::new(decoder);
 
-    archive.unpack(dest_dir).map_err(|e| {
-        AppError::JavaInstallError(format!("Failed to extract tar.gz: {}", e))
-    })?;
+    archive
+        .unpack(dest_dir)
+        .map_err(|e| AppError::JavaInstallError(format!("Failed to extract tar.gz: {}", e)))?;
 
     Ok(())
 }

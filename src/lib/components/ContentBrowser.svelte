@@ -35,7 +35,6 @@
   import DescriptionModal from "$lib/components/DescriptionModal.svelte";
   import type {
     Content,
-    ContentDownloadProgress,
     ContentDownloadProgressWithId,
     ContentType,
     ContentSortBy,
@@ -182,20 +181,13 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     !hasShaderLoader
   );
 
-  // Determine which shader loader to suggest based on loader type
-  const suggestedShaderLoader = $derived<"iris" | "oculus">(
-    loaderType === "forge" || loaderType === "neoforge" ? "oculus" : "iris"
-  );
-
   // Installation state
   let isInstalling = $state(false);
   let installSuccess = $state<string | null>(null);
   let installError = $state<string | null>(null);
   let quickInstallName = $state<string | null>(null);
-  let quickInstallContentId = $state<string | null>(null);
   let showQuickInstallProgress = $state(false);
   let quickInstallError = $state<string | null>(null);
-  let quickInstallRequestId = $state(0);
 
   // Helper auto-install state (Fabric API / Iris / Oculus / OptiFine)
   let isInstallingHelper = $state(false);
@@ -292,7 +284,6 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     selectedItems.clear();
     showQuickInstallProgress = false;
     quickInstallName = null;
-    quickInstallContentId = null;
     quickInstallError = null;
     if (viewMode === "browse") {
       contentStore.search();
@@ -713,7 +704,6 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     descriptionExpanded = false;
     showQuickInstallProgress = false;
     quickInstallName = null;
-    quickInstallContentId = null;
     quickInstallError = null;
     isLoadingDetail = true;
     detailError = null;
@@ -730,8 +720,9 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
       detailError = e instanceof Error ? e.message : "Failed to load content details";
       selectedContentDetail = content;
     } finally {
-      if (requestId !== detailRequestId) return;
-      isLoadingDetail = false;
+      if (requestId === detailRequestId) {
+        isLoadingDetail = false;
+      }
     }
   }
 
@@ -773,8 +764,9 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
       detailError = e instanceof Error ? e.message : "Failed to load dependency";
       selectedContentDetail = content;
     } finally {
-      if (requestId !== detailRequestId) return;
-      isLoadingDetail = false;
+      if (requestId === detailRequestId) {
+        isLoadingDetail = false;
+      }
     }
   }
 
@@ -800,8 +792,9 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
       detailError = e instanceof Error ? e.message : "Failed to load previous content";
       selectedContentDetail = previous;
     } finally {
-      if (requestId !== detailRequestId) return;
-      isLoadingDetail = false;
+      if (requestId === detailRequestId) {
+        isLoadingDetail = false;
+      }
     }
   }
 
@@ -832,7 +825,6 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
     contentStore.setDownloadProgress(null);
     showQuickInstallProgress = false;
     quickInstallName = null;
-    quickInstallContentId = null;
     quickInstallError = null;
 
     try {
@@ -984,7 +976,6 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
       console.error("[ContentBrowser] Quick install failed:", e);
       // Show error inline for this content
       quickInstallError = getErrorMessage(e);
-      quickInstallContentId = content.id;
     }
   }
 
@@ -1041,7 +1032,6 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
   function dismissQuickInstallProgress() {
     showQuickInstallProgress = false;
     quickInstallName = null;
-    quickInstallContentId = null;
     quickInstallError = null;
     contentStore.setDownloadProgress(null);
   }
@@ -1293,7 +1283,6 @@ let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props
 
       <div class="space-y-2">
         {#each contentStore.items as content (content.id)}
-          {@const isThisInstalling = isInstalling && quickInstallContentId === content.id}
           {@const isInstalled = contentStore.isContentInstalled(content)}
           {@const isQueued = contentStore.isContentQueued(content.id)}
           {@const isDownloading = contentStore.isContentDownloading(content.id)}

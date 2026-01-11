@@ -1,5 +1,5 @@
-pub mod paths;
 pub mod hash;
-pub mod platform;
 pub mod http;
+pub mod paths;
+pub mod platform;
 pub mod version;

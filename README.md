@@ -26,9 +26,10 @@
 A fast, modern Minecraft launcher that brings together modpacks from CurseForge, Modrinth, ATLauncher, FTB, and Technic in one place. Built with Tauri and Rust for native performance across Windows, macOS, and Linux.
 
 ## Features
+
 - 5 modpack platforms in one place
 - One-click mod installation with dependency resolution
-- Smart Java management  
+- Smart Java management
 - Multiple Microsoft accounts
 - Powerful instance management
 - Update checking for packs and mods

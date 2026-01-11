@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::utils::paths;
+use serde::{Deserialize, Serialize};
 
 /// Application theme
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]

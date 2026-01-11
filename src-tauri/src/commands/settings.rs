@@ -41,8 +41,10 @@ pub fn update_settings(
 /// Reset settings to defaults
 #[tauri::command]
 pub fn reset_settings(state: State<'_, AppState>) -> Result<AppSettings, CommandError> {
-    let mut settings = AppSettings::default();
-    settings.instances_path = settings_service::get_default_instances_path();
+    let settings = AppSettings {
+        instances_path: settings_service::get_default_instances_path(),
+        ..Default::default()
+    };
 
     // Update state
     {

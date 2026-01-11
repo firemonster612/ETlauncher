@@ -76,25 +76,27 @@ pub async fn install_content(
         file.hash.as_deref(),
         file.hash_algorithm.as_deref(),
         app_handle,
-    ).await?;
+    )
+    .await?;
 
     // Emit progress event
     if let Some(handle) = app_handle {
-        let _ = handle.emit("content_installed", serde_json::json!({
-            "instanceId": instance_id,
-            "contentType": content_type,
-            "name": content_name,
-            "filename": file.filename,
-        }));
+        let _ = handle.emit(
+            "content_installed",
+            serde_json::json!({
+                "instanceId": instance_id,
+                "contentType": content_type,
+                "name": content_name,
+                "filename": file.filename,
+            }),
+        );
     }
 
     // Determine source: use provided source, or default based on is_dependency
-    let content_source = source.unwrap_or_else(|| {
-        if is_dependency {
-            ContentSource::UserDependency
-        } else {
-            ContentSource::UserAdded
-        }
+    let content_source = source.unwrap_or(if is_dependency {
+        ContentSource::UserDependency
+    } else {
+        ContentSource::UserAdded
     });
 
     // Create installed content entry
@@ -147,9 +149,11 @@ async fn download_file_with_progress(
     }
 
     // Start download
-    let response = client.get(url).send().await.map_err(|e| {
-        AppError::DownloadError(format!("Failed to fetch {}: {}", url, e))
-    })?;
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| AppError::DownloadError(format!("Failed to fetch {}: {}", url, e)))?;
 
     if !response.status().is_success() {
         return Err(AppError::DownloadError(format!(
@@ -170,16 +174,17 @@ async fn download_file_with_progress(
     const EMIT_THRESHOLD: u64 = 65536; // Emit every 64KB
 
     while let Some(chunk_result) = stream.next().await {
-        let chunk = chunk_result.map_err(|e| {
-            AppError::DownloadError(format!("Failed to read chunk: {}", e))
-        })?;
+        let chunk = chunk_result
+            .map_err(|e| AppError::DownloadError(format!("Failed to read chunk: {}", e)))?;
 
         downloaded_bytes += chunk.len() as u64;
         all_bytes.extend_from_slice(&chunk);
 
         // Emit progress event periodically
         if let Some(handle) = app_handle {
-            if downloaded_bytes - last_emit_bytes >= EMIT_THRESHOLD || downloaded_bytes == total_bytes {
+            if downloaded_bytes - last_emit_bytes >= EMIT_THRESHOLD
+                || downloaded_bytes == total_bytes
+            {
                 let progress_percent = if total_bytes > 0 {
                     ((downloaded_bytes as f64 / total_bytes as f64) * 100.0).min(100.0) as u8
                 } else {
@@ -385,15 +390,8 @@ pub async fn install_content_with_dependencies(
     };
 
     // First, resolve and install dependencies
-    let dependencies = resolve_dependencies(
-        state,
-        instance_id,
-        &platform,
-        version,
-        mc_version,
-        loader,
-    )
-    .await?;
+    let dependencies =
+        resolve_dependencies(state, instance_id, &platform, version, mc_version, loader).await?;
 
     for dep in dependencies {
         if !dep.already_installed {

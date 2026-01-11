@@ -1,6 +1,6 @@
 use crate::error::CommandError;
 use crate::models::instance::{CreateInstanceRequest, Instance, UpdateInstanceRequest};
-use crate::services::{instance_service, instance_export_service};
+use crate::services::{instance_export_service, instance_service};
 use crate::state::AppState;
 use std::path::PathBuf;
 use std::process::Command;
@@ -14,13 +14,19 @@ pub fn get_instances(state: State<'_, AppState>) -> Result<Vec<Instance>, Comman
 
 /// Get a single instance by ID
 #[tauri::command]
-pub fn get_instance(state: State<'_, AppState>, instance_id: String) -> Result<Instance, CommandError> {
+pub fn get_instance(
+    state: State<'_, AppState>,
+    instance_id: String,
+) -> Result<Instance, CommandError> {
     instance_service::get_instance(&state, &instance_id).map_err(CommandError::from)
 }
 
 /// Create a new instance
 #[tauri::command]
-pub fn create_instance(state: State<'_, AppState>, request: CreateInstanceRequest) -> Result<Instance, CommandError> {
+pub fn create_instance(
+    state: State<'_, AppState>,
+    request: CreateInstanceRequest,
+) -> Result<Instance, CommandError> {
     instance_service::create_instance(&state, request).map_err(CommandError::from)
 }
 
@@ -36,19 +42,31 @@ pub fn update_instance(
 
 /// Delete an instance
 #[tauri::command]
-pub fn delete_instance(state: State<'_, AppState>, instance_id: String, delete_files: bool) -> Result<(), CommandError> {
-    instance_service::delete_instance(&state, &instance_id, delete_files).map_err(CommandError::from)
+pub fn delete_instance(
+    state: State<'_, AppState>,
+    instance_id: String,
+    delete_files: bool,
+) -> Result<(), CommandError> {
+    instance_service::delete_instance(&state, &instance_id, delete_files)
+        .map_err(CommandError::from)
 }
 
 /// Duplicate an instance with a new name
 #[tauri::command]
-pub fn duplicate_instance(state: State<'_, AppState>, instance_id: String, new_name: String) -> Result<Instance, CommandError> {
+pub fn duplicate_instance(
+    state: State<'_, AppState>,
+    instance_id: String,
+    new_name: String,
+) -> Result<Instance, CommandError> {
     instance_service::duplicate_instance(&state, &instance_id, new_name).map_err(CommandError::from)
 }
 
 /// Open the game folder for an instance in the file explorer
 #[tauri::command]
-pub fn open_instance_folder(state: State<'_, AppState>, instance_id: String) -> Result<(), CommandError> {
+pub fn open_instance_folder(
+    state: State<'_, AppState>,
+    instance_id: String,
+) -> Result<(), CommandError> {
     let game_dir = instance_service::get_game_directory(&state, &instance_id);
 
     if !game_dir.exists() {

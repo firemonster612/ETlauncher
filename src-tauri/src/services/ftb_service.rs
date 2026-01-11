@@ -1,9 +1,9 @@
 use crate::error::AppError;
+use crate::models::instance::ModpackPlatform;
 use crate::models::{
     LoaderType, Modpack, ModpackFile, ModpackMod, ModpackSearchParams, ModpackSearchResult,
     ModpackVersion,
 };
-use crate::models::instance::ModpackPlatform;
 use reqwest::Client;
 use serde::Deserialize;
 
@@ -217,7 +217,11 @@ pub async fn search_modpacks(
     // Note: FTB API requires at least 3 characters for search, otherwise returns empty
     let url = if let Some(ref query) = params.query {
         if query.len() >= 3 {
-            format!("{}/modpack/search/100?term={}", FTB_API_BASE, urlencoding::encode(query))
+            format!(
+                "{}/modpack/search/100?term={}",
+                FTB_API_BASE,
+                urlencoding::encode(query)
+            )
         } else {
             format!("{}/modpack/popular/installs/100", FTB_API_BASE)
         }
@@ -226,18 +230,32 @@ pub async fn search_modpacks(
     };
 
     eprintln!("[ftb] Search URL: {}", url);
-    let search_response: FtbPackSearchResponse = match tokio::time::timeout(
-        std::time::Duration::from_secs(15),
-        client.get(&url).send()
-    ).await {
-        Ok(Ok(response)) => {
-            let resp: FtbPackSearchResponse = response.error_for_status()?.json().await?;
-            eprintln!("[ftb] Search response: {} packs, {} curseforge, total={}", resp.packs.len(), resp.curseforge.len(), resp.total);
-            resp
-        },
-        Ok(Err(e)) => return Err(AppError::ApiError(format!("FTB search request failed: {}", e))),
-        Err(_) => return Err(AppError::ApiError("FTB search request timed out".to_string())),
-    };
+    let search_response: FtbPackSearchResponse =
+        match tokio::time::timeout(std::time::Duration::from_secs(15), client.get(&url).send())
+            .await
+        {
+            Ok(Ok(response)) => {
+                let resp: FtbPackSearchResponse = response.error_for_status()?.json().await?;
+                eprintln!(
+                    "[ftb] Search response: {} packs, {} curseforge, total={}",
+                    resp.packs.len(),
+                    resp.curseforge.len(),
+                    resp.total
+                );
+                resp
+            }
+            Ok(Err(e)) => {
+                return Err(AppError::ApiError(format!(
+                    "FTB search request failed: {}",
+                    e
+                )))
+            }
+            Err(_) => {
+                return Err(AppError::ApiError(
+                    "FTB search request timed out".to_string(),
+                ))
+            }
+        };
 
     // Fetch individual pack details for the visible page in parallel
     let start = (page * page_size) as usize;
@@ -257,8 +275,10 @@ pub async fn search_modpacks(
             async move {
                 match tokio::time::timeout(
                     std::time::Duration::from_secs(10),
-                    get_pack_details(&client, pack_id)
-                ).await {
+                    get_pack_details(&client, pack_id),
+                )
+                .await
+                {
                     Ok(Ok(pack)) => Some(pack),
                     Ok(Err(e)) => {
                         eprintln!("[ftb] Failed to fetch pack {}: {}", pack_id, e);
@@ -312,7 +332,11 @@ async fn get_pack_details(client: &Client, pack_id: u64) -> Result<Modpack, AppE
         description: pack.synopsis,
         body: Some(pack.description),
         icon_url: get_icon_url(&pack.art),
-        banner_url: pack.art.iter().find(|a| a.art_type == "splash").map(|a| a.url.clone()),
+        banner_url: pack
+            .art
+            .iter()
+            .find(|a| a.art_type == "splash")
+            .map(|a| a.url.clone()),
         downloads: pack.installs,
         platform: ModpackPlatform::FTB,
         categories: pack.tags.into_iter().map(|t| t.name).collect(),
@@ -320,15 +344,28 @@ async fn get_pack_details(client: &Client, pack_id: u64) -> Result<Modpack, AppE
         mc_versions: vec![],
         loaders: vec![LoaderType::Unknown], // FTB API doesn't include loader in pack list
         latest_version: None,
-        url: Some(format!("https://www.feed-the-beast.com/modpacks/{}", pack.id)),
-        updated_at: if pack.updated > 0 { Some(pack.updated as i64) } else { None },
-        created_at: if pack.released > 0 { Some(pack.released as i64) } else { None },
+        url: Some(format!(
+            "https://www.feed-the-beast.com/modpacks/{}",
+            pack.id
+        )),
+        updated_at: if pack.updated > 0 {
+            Some(pack.updated as i64)
+        } else {
+            None
+        },
+        created_at: if pack.released > 0 {
+            Some(pack.released as i64)
+        } else {
+            None
+        },
     })
 }
 
 /// Get a modpack by ID
 pub async fn get_modpack(client: &Client, pack_id: &str) -> Result<Modpack, AppError> {
-    let id: u64 = pack_id.parse().map_err(|_| AppError::ModpackNotFound(pack_id.to_string()))?;
+    let id: u64 = pack_id
+        .parse()
+        .map_err(|_| AppError::ModpackNotFound(pack_id.to_string()))?;
     get_pack_details(client, id).await
 }
 
@@ -337,18 +374,20 @@ pub async fn get_modpack_versions(
     client: &Client,
     pack_id: &str,
 ) -> Result<Vec<ModpackVersion>, AppError> {
-    let id: u64 = pack_id.parse().map_err(|_| AppError::ModpackNotFound(pack_id.to_string()))?;
+    let id: u64 = pack_id
+        .parse()
+        .map_err(|_| AppError::ModpackNotFound(pack_id.to_string()))?;
 
     // First get pack info to get version IDs with timeout
     let url = format!("{}/modpack/{}", FTB_API_BASE, id);
-    let pack: FtbPack = match tokio::time::timeout(
-        std::time::Duration::from_secs(15),
-        client.get(&url).send()
-    ).await {
-        Ok(Ok(response)) => response.error_for_status()?.json().await?,
-        Ok(Err(e)) => return Err(AppError::ApiError(format!("FTB API request failed: {}", e))),
-        Err(_) => return Err(AppError::ApiError("FTB API request timed out".to_string())),
-    };
+    let pack: FtbPack =
+        match tokio::time::timeout(std::time::Duration::from_secs(15), client.get(&url).send())
+            .await
+        {
+            Ok(Ok(response)) => response.error_for_status()?.json().await?,
+            Ok(Err(e)) => return Err(AppError::ApiError(format!("FTB API request failed: {}", e))),
+            Err(_) => return Err(AppError::ApiError("FTB API request timed out".to_string())),
+        };
 
     // Fetch version details in parallel with timeout
     // Reverse to get newest versions first (API returns oldest first)
@@ -365,8 +404,10 @@ pub async fn get_modpack_versions(
             async move {
                 match tokio::time::timeout(
                     std::time::Duration::from_secs(10),
-                    get_version_details(&client, pack_id, version_id)
-                ).await {
+                    get_version_details(&client, pack_id, version_id),
+                )
+                .await
+                {
                     Ok(Ok(version)) => Some(version),
                     _ => {
                         // Return a minimal version entry on failure
@@ -391,9 +432,7 @@ pub async fn get_modpack_versions(
     let mut versions: Vec<ModpackVersion> = results.into_iter().flatten().collect();
 
     // Sort newest first by released_at timestamp
-    versions.sort_by(|a, b| {
-        b.released_at.unwrap_or(0).cmp(&a.released_at.unwrap_or(0))
-    });
+    versions.sort_by(|a, b| b.released_at.unwrap_or(0).cmp(&a.released_at.unwrap_or(0)));
 
     Ok(versions)
 }
@@ -411,23 +450,19 @@ pub async fn get_version_details(
 
     // Try to fetch and parse the manifest, fall back to default on any error
     let manifest: FtbVersionManifest = match client.get(&url).send().await {
-        Ok(response) => {
-            match response.error_for_status() {
-                Ok(resp) => {
-                    match resp.json().await {
-                        Ok(m) => m,
-                        Err(e) => {
-                            eprintln!("[ftb] Failed to parse version manifest JSON: {}", e);
-                            FtbVersionManifest::default()
-                        }
-                    }
-                }
+        Ok(response) => match response.error_for_status() {
+            Ok(resp) => match resp.json().await {
+                Ok(m) => m,
                 Err(e) => {
-                    eprintln!("[ftb] API returned error status: {}", e);
+                    eprintln!("[ftb] Failed to parse version manifest JSON: {}", e);
                     FtbVersionManifest::default()
                 }
+            },
+            Err(e) => {
+                eprintln!("[ftb] API returned error status: {}", e);
+                FtbVersionManifest::default()
             }
-        }
+        },
         Err(e) => {
             eprintln!("[ftb] Failed to fetch version manifest: {}", e);
             FtbVersionManifest::default()
@@ -437,7 +472,10 @@ pub async fn get_version_details(
     // Check if FTB API returned an error response
     if let Some(ref status) = manifest.status {
         if status == "error" {
-            let msg = manifest.message.clone().unwrap_or_else(|| "Unknown FTB API error".to_string());
+            let msg = manifest
+                .message
+                .clone()
+                .unwrap_or_else(|| "Unknown FTB API error".to_string());
             eprintln!("[ftb] API error response: {}", msg);
             // Don't fail - return empty manifest and let caller handle
         }
@@ -451,8 +489,11 @@ pub async fn get_version_details(
         .files
         .into_iter()
         .filter(|f| {
-            !f.url.is_empty() &&
-            (f.file_type == "mod" || f.file_type == "config" || f.file_type == "modpack" || f.file_type.is_empty())
+            !f.url.is_empty()
+                && (f.file_type == "mod"
+                    || f.file_type == "config"
+                    || f.file_type == "modpack"
+                    || f.file_type.is_empty())
         })
         .map(|f| ModpackFile {
             url: f.url,
@@ -468,13 +509,25 @@ pub async fn get_version_details(
     // The caller can check if files.is_empty() and mc_version.is_empty() to detect legacy packs
 
     Ok(ModpackVersion {
-        id: if manifest.id > 0 { manifest.id.to_string() } else { version_id.to_string() },
-        name: if manifest.name.is_empty() { format!("Version {}", version_id) } else { manifest.name },
+        id: if manifest.id > 0 {
+            manifest.id.to_string()
+        } else {
+            version_id.to_string()
+        },
+        name: if manifest.name.is_empty() {
+            format!("Version {}", version_id)
+        } else {
+            manifest.name
+        },
         mc_version,
         loader_type,
         loader_version,
         changelog: None,
-        released_at: if manifest.updated > 0 { Some(manifest.updated as i64) } else { None },
+        released_at: if manifest.updated > 0 {
+            Some(manifest.updated as i64)
+        } else {
+            None
+        },
         downloads: None,
         files,
     })
@@ -493,8 +546,17 @@ pub async fn get_modpack_mods(
         .parse()
         .map_err(|_| AppError::ContentNotFound("Invalid version id".to_string()))?;
 
-    let url = format!("{}/modpack/{}/{}", FTB_API_BASE, pack_id_num, version_id_num);
-    let manifest: FtbVersionManifest = client.get(&url).send().await?.error_for_status()?.json().await?;
+    let url = format!(
+        "{}/modpack/{}/{}",
+        FTB_API_BASE, pack_id_num, version_id_num
+    );
+    let manifest: FtbVersionManifest = client
+        .get(&url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
 
     let mut mods: Vec<ModpackMod> = manifest
         .files
@@ -504,8 +566,19 @@ pub async fn get_modpack_mods(
             let url = f
                 .curseforge
                 .as_ref()
-                .map(|cf| format!("https://www.curseforge.com/minecraft/mc-mods/{}", cf.project))
-                .or_else(|| if f.url.is_empty() { None } else { Some(f.url.clone()) });
+                .map(|cf| {
+                    format!(
+                        "https://www.curseforge.com/minecraft/mc-mods/{}",
+                        cf.project
+                    )
+                })
+                .or_else(|| {
+                    if f.url.is_empty() {
+                        None
+                    } else {
+                        Some(f.url.clone())
+                    }
+                });
 
             ModpackMod {
                 id: f

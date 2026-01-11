@@ -4,8 +4,8 @@ use crate::models::loader::{LoaderInstallProgress, LoaderVersion};
 use crate::services::instance_service;
 use crate::services::loader_service;
 use crate::state::AppState;
-use tauri::{AppHandle, Emitter, State};
 use std::sync::Arc;
+use tauri::{AppHandle, Emitter, State};
 
 /// Get available loader versions for a specific loader type and Minecraft version
 #[tauri::command]
@@ -59,10 +59,7 @@ pub async fn install_loader(
         };
 
         let _ = app_handle.emit("loader-install-progress", progress);
-        let _ = app_handle.emit(
-            "loader-install-status",
-            format!("{}: {}%", stage, percent),
-        );
+        let _ = app_handle.emit("loader-install-status", format!("{}: {}%", stage, percent));
     };
 
     loader_service::install_loader(

@@ -71,7 +71,11 @@ fn collect_files_from_dir(
     expected_ext: &str,
     cache: &ScanCache,
     is_disabled: bool,
-) -> (Vec<PathBuf>, HashMap<String, (CachedFileHash, bool)>, HashMap<String, bool>) {
+) -> (
+    Vec<PathBuf>,
+    HashMap<String, (CachedFileHash, bool)>,
+    HashMap<String, bool>,
+) {
     let mut file_paths: Vec<PathBuf> = vec![];
     let mut cached_results: HashMap<String, (CachedFileHash, bool)> = HashMap::new();
     let mut current_files: HashMap<String, bool> = HashMap::new();
@@ -198,7 +202,10 @@ pub async fn scan_content(
     for (cache_key, (cached, is_disabled)) in &cached_results {
         // Extract just the filename from cache_key (remove "disabled/" prefix if present)
         let filename = if cache_key.starts_with("disabled/") {
-            cache_key.strip_prefix("disabled/").unwrap_or(cache_key).to_string()
+            cache_key
+                .strip_prefix("disabled/")
+                .unwrap_or(cache_key)
+                .to_string()
         } else {
             cache_key.clone()
         };
@@ -222,7 +229,10 @@ pub async fn scan_content(
                     .unwrap_or("")
                     .to_string();
 
-                let is_disabled = path_is_disabled.get(&hash_result.path).copied().unwrap_or(false);
+                let is_disabled = path_is_disabled
+                    .get(&hash_result.path)
+                    .copied()
+                    .unwrap_or(false);
 
                 // Use cache key that includes disabled status
                 let cache_key = if is_disabled {
@@ -272,7 +282,10 @@ pub async fn scan_content(
     save_cache(&content_dir, content_type, &cache);
 
     // Step 4: Batch lookup hashes via Modrinth API
-    let hashes: Vec<String> = content_files.iter().map(|(_, _, h, _, _)| h.clone()).collect();
+    let hashes: Vec<String> = content_files
+        .iter()
+        .map(|(_, _, h, _, _)| h.clone())
+        .collect();
     let modrinth_results = modrinth_service::get_versions_from_hashes(&state.http_client, &hashes)
         .await
         .unwrap_or_default();
@@ -285,13 +298,15 @@ pub async fn scan_content(
     modrinth_project_ids.sort();
     modrinth_project_ids.dedup();
 
-    let modrinth_projects = modrinth_service::get_projects_by_ids(&state.http_client, &modrinth_project_ids)
-        .await
-        .unwrap_or_default();
-    let modrinth_project_map: HashMap<String, modrinth_service::ModrinthProjectLite> = modrinth_projects
-        .into_iter()
-        .map(|p| (p.id.clone(), p))
-        .collect();
+    let modrinth_projects =
+        modrinth_service::get_projects_by_ids(&state.http_client, &modrinth_project_ids)
+            .await
+            .unwrap_or_default();
+    let modrinth_project_map: HashMap<String, modrinth_service::ModrinthProjectLite> =
+        modrinth_projects
+            .into_iter()
+            .map(|p| (p.id.clone(), p))
+            .collect();
 
     // Step 5: Batch lookup fingerprints via CurseForge API (if API key configured)
     // Note: CurseForge fingerprinting may only work well for mods
@@ -305,28 +320,28 @@ pub async fn scan_content(
     };
 
     // Best-effort: fetch CurseForge mod names so we can display project name (not file/version name)
-    let curseforge_mod_map: HashMap<u64, curseforge_service::CurseForgeMod> =
-        if let Some(api_key) = &state.get_settings().curseforge_api_key {
-            let mut mod_ids: Vec<u32> = curseforge_results
-                .values()
-                .filter_map(|m| u32::try_from(m.mod_id).ok())
-                .collect();
-            mod_ids.sort();
-            mod_ids.dedup();
+    let curseforge_mod_map: HashMap<u64, curseforge_service::CurseForgeMod> = if let Some(api_key) =
+        &state.get_settings().curseforge_api_key
+    {
+        let mut mod_ids: Vec<u32> = curseforge_results
+            .values()
+            .filter_map(|m| u32::try_from(m.mod_id).ok())
+            .collect();
+        mod_ids.sort();
+        mod_ids.dedup();
 
-            let mut all_mods: Vec<curseforge_service::CurseForgeMod> = Vec::new();
-            for chunk in mod_ids.chunks(50) {
-                let mut mods =
-                    curseforge_service::get_mods_by_ids(&state.http_client, api_key, chunk)
-                        .await
-                        .unwrap_or_default();
-                all_mods.append(&mut mods);
-            }
+        let mut all_mods: Vec<curseforge_service::CurseForgeMod> = Vec::new();
+        for chunk in mod_ids.chunks(50) {
+            let mut mods = curseforge_service::get_mods_by_ids(&state.http_client, api_key, chunk)
+                .await
+                .unwrap_or_default();
+            all_mods.append(&mut mods);
+        }
 
-            all_mods.into_iter().map(|m| (m.id, m)).collect()
-        } else {
-            HashMap::new()
-        };
+        all_mods.into_iter().map(|m| (m.id, m)).collect()
+    } else {
+        HashMap::new()
+    };
 
     // Step 6: Load manifest for fallback identification
     // This allows us to identify content that was installed via the launcher
@@ -370,9 +385,7 @@ pub async fn scan_content(
             let name = mod_info
                 .map(|m| m.name.clone())
                 .unwrap_or_else(|| match_info.file_name.clone());
-            let slug = mod_info
-                .map(|m| m.slug.clone())
-                .unwrap_or_default();
+            let slug = mod_info.map(|m| m.slug.clone()).unwrap_or_default();
             DetectedCurseForgeProject {
                 project_id: match_info.mod_id,
                 file_id: match_info.file_id,

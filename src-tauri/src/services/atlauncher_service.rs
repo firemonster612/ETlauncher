@@ -1,9 +1,8 @@
 use crate::error::AppError;
-use crate::models::{
-    LoaderType, Modpack, ModpackSearchParams, ModpackSearchResult,
-    ModpackSortBy, ModpackVersion,
-};
 use crate::models::instance::ModpackPlatform;
+use crate::models::{
+    LoaderType, Modpack, ModpackSearchParams, ModpackSearchResult, ModpackSortBy, ModpackVersion,
+};
 use reqwest::Client;
 use serde::Deserialize;
 
@@ -256,7 +255,11 @@ fn parse_loader_type(loader: Option<&str>) -> LoaderType {
 /// Get icon URL for ATLauncher pack
 /// Uses the CDN endpoint with lowercase safeName
 fn get_icon_url(safe_name: &str) -> String {
-    format!("{}/launcher/images/{}.png", ATLAUNCHER_CDN_BASE, safe_name.to_lowercase())
+    format!(
+        "{}/launcher/images/{}.png",
+        ATLAUNCHER_CDN_BASE,
+        safe_name.to_lowercase()
+    )
 }
 
 // ============================================================================
@@ -291,31 +294,34 @@ pub async fn search_modpacks(
         .await?;
 
     // Filter by query and type (only show public packs)
-    let mut filtered: Vec<_> = packs.into_iter().filter(|pack| {
-        // Only show public packs
-        if pack.pack_type.as_deref() != Some("public") {
-            return false;
-        }
+    let mut filtered: Vec<_> = packs
+        .into_iter()
+        .filter(|pack| {
+            // Only show public packs
+            if pack.pack_type.as_deref() != Some("public") {
+                return false;
+            }
 
-        // Filter by query
-        if let Some(ref query) = params.query {
-            if !query.is_empty() {
-                let query_lower = query.to_lowercase();
-                if !pack.name.to_lowercase().contains(&query_lower) {
+            // Filter by query
+            if let Some(ref query) = params.query {
+                if !query.is_empty() {
+                    let query_lower = query.to_lowercase();
+                    if !pack.name.to_lowercase().contains(&query_lower) {
+                        return false;
+                    }
+                }
+            }
+
+            // Filter by MC version
+            if let Some(ref mc_version) = params.mc_version {
+                if !pack.versions.iter().any(|v| &v.minecraft == mc_version) {
                     return false;
                 }
             }
-        }
 
-        // Filter by MC version
-        if let Some(ref mc_version) = params.mc_version {
-            if !pack.versions.iter().any(|v| &v.minecraft == mc_version) {
-                return false;
-            }
-        }
-
-        true
-    }).collect();
+            true
+        })
+        .collect();
 
     // Sort
     match params.sort_by.as_ref().unwrap_or(&ModpackSortBy::Name) {
@@ -339,7 +345,8 @@ pub async fn search_modpacks(
         .skip(start)
         .take(page_size as usize)
         .map(|pack| {
-            let mc_versions: Vec<String> = pack.versions.iter().map(|v| v.minecraft.clone()).collect();
+            let mc_versions: Vec<String> =
+                pack.versions.iter().map(|v| v.minecraft.clone()).collect();
             let safe_name = name_to_safe_name(&pack.name);
 
             // Extract loaders from CDN versions
@@ -450,7 +457,10 @@ pub async fn get_modpack(client: &Client, pack_name: &str) -> Result<Modpack, Ap
         loaders,
         latest_version: None, // Would need full version details
         url: pack.website_url,
-        updated_at: pack.versions.first().and_then(|v| v.published.map(|p| p as i64)),
+        updated_at: pack
+            .versions
+            .first()
+            .and_then(|v| v.published.map(|p| p as i64)),
         created_at: None,
     })
 }

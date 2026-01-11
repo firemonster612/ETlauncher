@@ -20,7 +20,8 @@ pub async fn launch_instance(
     }
 
     // Get the instance
-    let instance = instance_service::get_instance(&state, &instance_id).map_err(CommandError::from)?;
+    let instance =
+        instance_service::get_instance(&state, &instance_id).map_err(CommandError::from)?;
 
     // Launch
     launch_service::launch_instance(&instance, &account_id, &app_handle, None)
@@ -54,9 +55,7 @@ pub fn kill_instance(instance_id: String, state: State<'_, AppState>) -> Result<
         #[cfg(unix)]
         {
             use std::process::Command;
-            let _ = Command::new("kill")
-                .args(["-9", &pid.to_string()])
-                .output();
+            let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
         }
 
         #[cfg(windows)]

@@ -1,3 +1,8 @@
+// Allow some clippy lints that would require extensive refactoring
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::type_complexity)]
+#![allow(clippy::ptr_arg)]
+
 pub mod commands;
 pub mod error;
 pub mod models;

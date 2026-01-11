@@ -27,7 +27,8 @@ pub fn parse_mc_version(version: &str) -> Option<McVersion> {
     let version = version.trim();
 
     // Check if it's a snapshot (e.g., "24w14a")
-    if version.len() >= 5 && version.chars().take(2).all(|c| c.is_ascii_digit())
+    if version.len() >= 5
+        && version.chars().take(2).all(|c| c.is_ascii_digit())
         && version.chars().nth(2) == Some('w')
     {
         return Some(McVersion {
@@ -162,7 +163,7 @@ fn parse_version_numbers(version: &str) -> Option<Vec<u64>> {
     // Split by common delimiters and extract numbers
     let mut numbers = Vec::new();
 
-    for part in version.split(|c: char| c == '.' || c == '-' || c == '_') {
+    for part in version.split(['.', '-', '_']) {
         // Try to parse as number, skip non-numeric parts (like "beta", "alpha")
         if let Ok(num) = part.parse::<u64>() {
             numbers.push(num);

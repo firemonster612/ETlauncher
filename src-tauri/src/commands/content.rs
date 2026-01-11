@@ -1,10 +1,13 @@
 use crate::error::CommandError;
+use crate::models::content::QueueInstallRequest;
 use crate::models::{
     Content, ContentPlatform, ContentSearchParams, ContentSearchResult, ContentType,
     ContentVersion, InstalledContent, LoaderType, ResolvedDependency, ScanResult,
 };
-use crate::models::content::QueueInstallRequest;
-use crate::services::{content_install_service, content_queue_service, content_scan_service, curseforge_service, instance_service, modrinth_service};
+use crate::services::{
+    content_install_service, content_queue_service, content_scan_service, curseforge_service,
+    instance_service, modrinth_service,
+};
 use crate::state::AppState;
 use tauri::{AppHandle, State};
 
@@ -21,8 +24,8 @@ fn validate_vanilla_restrictions(
     }
 
     // Get the instance to check its loader type
-    let instance = instance_service::get_instance(state, instance_id)
-        .map_err(CommandError::from)?;
+    let instance =
+        instance_service::get_instance(state, instance_id).map_err(CommandError::from)?;
 
     if instance.loader_type == LoaderType::Vanilla {
         let content_name = match content_type {
@@ -52,16 +55,18 @@ pub async fn search_content(
     let platform = params.platform.clone().unwrap_or(ContentPlatform::Modrinth);
 
     match platform {
-        ContentPlatform::Modrinth => {
-            modrinth_service::search_content(&state.http_client, &params)
-                .await
-                .map_err(CommandError::from)
-        }
+        ContentPlatform::Modrinth => modrinth_service::search_content(&state.http_client, &params)
+            .await
+            .map_err(CommandError::from),
         ContentPlatform::CurseForge => {
-            let api_key = state.get_settings().curseforge_api_key.ok_or_else(|| CommandError {
-                code: "API_KEY_REQUIRED".to_string(),
-                message: "CurseForge API key not configured. Add it to your settings.".to_string(),
-            })?;
+            let api_key = state
+                .get_settings()
+                .curseforge_api_key
+                .ok_or_else(|| CommandError {
+                    code: "API_KEY_REQUIRED".to_string(),
+                    message: "CurseForge API key not configured. Add it to your settings."
+                        .to_string(),
+                })?;
             curseforge_service::search_content(&state.http_client, &api_key, &params)
                 .await
                 .map_err(CommandError::from)
@@ -81,10 +86,13 @@ pub async fn get_content(
             .await
             .map_err(CommandError::from),
         ContentPlatform::CurseForge => {
-            let api_key = state.get_settings().curseforge_api_key.ok_or_else(|| CommandError {
-                code: "API_KEY_REQUIRED".to_string(),
-                message: "CurseForge API key not configured".to_string(),
-            })?;
+            let api_key = state
+                .get_settings()
+                .curseforge_api_key
+                .ok_or_else(|| CommandError {
+                    code: "API_KEY_REQUIRED".to_string(),
+                    message: "CurseForge API key not configured".to_string(),
+                })?;
             curseforge_service::get_content(&state.http_client, &api_key, &id)
                 .await
                 .map_err(CommandError::from)
@@ -102,21 +110,22 @@ pub async fn get_content_versions(
     loader: Option<LoaderType>,
 ) -> Result<Vec<ContentVersion>, CommandError> {
     match platform {
-        ContentPlatform::Modrinth => {
-            modrinth_service::get_content_versions(
-                &state.http_client,
-                &id,
-                mc_version.as_deref(),
-                loader.as_ref(),
-            )
-            .await
-            .map_err(CommandError::from)
-        }
+        ContentPlatform::Modrinth => modrinth_service::get_content_versions(
+            &state.http_client,
+            &id,
+            mc_version.as_deref(),
+            loader.as_ref(),
+        )
+        .await
+        .map_err(CommandError::from),
         ContentPlatform::CurseForge => {
-            let api_key = state.get_settings().curseforge_api_key.ok_or_else(|| CommandError {
-                code: "API_KEY_REQUIRED".to_string(),
-                message: "CurseForge API key not configured".to_string(),
-            })?;
+            let api_key = state
+                .get_settings()
+                .curseforge_api_key
+                .ok_or_else(|| CommandError {
+                    code: "API_KEY_REQUIRED".to_string(),
+                    message: "CurseForge API key not configured".to_string(),
+                })?;
             curseforge_service::get_content_versions(
                 &state.http_client,
                 &api_key,
@@ -144,10 +153,13 @@ pub async fn get_content_version(
             .await
             .map_err(CommandError::from),
         ContentPlatform::CurseForge => {
-            let api_key = state.get_settings().curseforge_api_key.ok_or_else(|| CommandError {
-                code: "API_KEY_REQUIRED".to_string(),
-                message: "CurseForge API key not configured".to_string(),
-            })?;
+            let api_key = state
+                .get_settings()
+                .curseforge_api_key
+                .ok_or_else(|| CommandError {
+                    code: "API_KEY_REQUIRED".to_string(),
+                    message: "CurseForge API key not configured".to_string(),
+                })?;
             let mod_id = mod_id.ok_or_else(|| CommandError {
                 code: "MISSING_MOD_ID".to_string(),
                 message: "mod_id is required for CurseForge versions".to_string(),

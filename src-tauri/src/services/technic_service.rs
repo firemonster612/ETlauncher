@@ -1,9 +1,9 @@
 use crate::error::AppError;
-use crate::models::{
-    LoaderType, Modpack, ModpackFile, ModpackSearchParams, ModpackSearchResult,
-    ModpackMod, ModpackVersion,
-};
 use crate::models::instance::ModpackPlatform;
+use crate::models::{
+    LoaderType, Modpack, ModpackFile, ModpackMod, ModpackSearchParams, ModpackSearchResult,
+    ModpackVersion,
+};
 use reqwest::Client;
 use serde::Deserialize;
 
@@ -205,7 +205,7 @@ pub async fn search_modpacks(
             slug: m.slug.clone(),
             name: m.name,
             author: "Unknown".to_string(), // Technic search doesn't include author
-            description: String::new(), // Would need to fetch individual pack
+            description: String::new(),    // Would need to fetch individual pack
             body: None,
             icon_url: m.icon_url.or(m.logo_url),
             banner_url: None,
@@ -330,10 +330,16 @@ pub async fn get_modpack_versions(
         match get_solder_versions(client, solder_url, slug).await {
             Ok(versions) if !versions.is_empty() => return Ok(versions),
             Ok(_) => {
-                eprintln!("[technic] Solder returned empty for {}, using Latest fallback", slug);
+                eprintln!(
+                    "[technic] Solder returned empty for {}, using Latest fallback",
+                    slug
+                );
             }
             Err(e) => {
-                eprintln!("[technic] Solder failed for {}: {}, using Latest fallback", slug, e);
+                eprintln!(
+                    "[technic] Solder failed for {}: {}, using Latest fallback",
+                    slug, e
+                );
             }
         }
     }
@@ -368,19 +374,19 @@ async fn get_solder_versions(
     let url = format!("{}/modpack/{}", solder_url.trim_end_matches('/'), slug);
 
     // Use a short timeout for the Solder API
-    let solder_pack: TechnicSolderModpack = match tokio::time::timeout(
-        std::time::Duration::from_secs(10),
-        client.get(&url).send()
-    ).await {
-        Ok(Ok(response)) => match response.error_for_status() {
-            Ok(r) => match r.json().await {
-                Ok(pack) => pack,
+    let solder_pack: TechnicSolderModpack =
+        match tokio::time::timeout(std::time::Duration::from_secs(10), client.get(&url).send())
+            .await
+        {
+            Ok(Ok(response)) => match response.error_for_status() {
+                Ok(r) => match r.json().await {
+                    Ok(pack) => pack,
+                    Err(_) => return Ok(vec![]),
+                },
                 Err(_) => return Ok(vec![]),
             },
-            Err(_) => return Ok(vec![]),
-        },
-        Ok(Err(_)) | Err(_) => return Ok(vec![]), // Timeout or error - return empty
-    };
+            Ok(Err(_)) | Err(_) => return Ok(vec![]), // Timeout or error - return empty
+        };
 
     // Fetch build details in parallel with timeout
     // Reverse to get newest versions first
@@ -401,46 +407,44 @@ async fn get_solder_versions(
             async move {
                 let result = tokio::time::timeout(
                     std::time::Duration::from_secs(5),
-                    client.get(&build_url).send()
-                ).await;
+                    client.get(&build_url).send(),
+                )
+                .await;
 
-                match result {
-                    Ok(Ok(response)) => {
-                        if let Ok(build_info) = response.json::<TechnicSolderBuild>().await {
-                            let loader_type = if build_info.forge.is_some() {
-                                LoaderType::Forge
-                            } else {
-                                // Use Unknown instead of Vanilla when loader info not available
-                                LoaderType::Unknown
-                            };
+                if let Ok(Ok(response)) = result {
+                    if let Ok(build_info) = response.json::<TechnicSolderBuild>().await {
+                        let loader_type = if build_info.forge.is_some() {
+                            LoaderType::Forge
+                        } else {
+                            // Use Unknown instead of Vanilla when loader info not available
+                            LoaderType::Unknown
+                        };
 
-                            let files: Vec<ModpackFile> = build_info
-                                .mods
-                                .into_iter()
-                                .map(|m| ModpackFile {
-                                    url: m.url,
-                                    hash: Some(m.md5),
-                                    hash_algorithm: Some("md5".to_string()),
-                                    size: m.filesize.unwrap_or(0),
-                                    path: format!("mods/{}-{}.zip", m.name, m.version),
-                                    required: true,
-                                })
-                                .collect();
+                        let files: Vec<ModpackFile> = build_info
+                            .mods
+                            .into_iter()
+                            .map(|m| ModpackFile {
+                                url: m.url,
+                                hash: Some(m.md5),
+                                hash_algorithm: Some("md5".to_string()),
+                                size: m.filesize.unwrap_or(0),
+                                path: format!("mods/{}-{}.zip", m.name, m.version),
+                                required: true,
+                            })
+                            .collect();
 
-                            return Some(ModpackVersion {
-                                id: build_name.clone(),
-                                name: build_name,
-                                mc_version: build_info.minecraft,
-                                loader_type,
-                                loader_version: build_info.forge,
-                                changelog: None,
-                                released_at: None,
-                                downloads: None,
-                                files,
-                            });
-                        }
+                        return Some(ModpackVersion {
+                            id: build_name.clone(),
+                            name: build_name,
+                            mc_version: build_info.minecraft,
+                            loader_type,
+                            loader_version: build_info.forge,
+                            changelog: None,
+                            released_at: None,
+                            downloads: None,
+                            files,
+                        });
                     }
-                    _ => {}
                 }
 
                 // Return a minimal version entry on failure

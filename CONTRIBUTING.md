@@ -118,13 +118,15 @@ cargo check            # Check compilation
 
 1. **Create a branch** from `master` for your changes
 2. **Make your changes** and ensure all checks pass:
+
    ```bash
    # Frontend
    bun run format:check && bun run lint && bun run check
-   
+
    # Backend (from src-tauri/)
    cargo fmt-check && cargo lint
    ```
+
 3. **Test locally** by running `bun run tauri dev`
 4. **Push your branch** and open a pull request
 5. **Wait for CI** - All checks must pass before merging

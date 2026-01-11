@@ -60,14 +60,9 @@ pub async fn update_instance_content(
     instance_id: String,
     plan: UpdatePlan,
 ) -> Result<(), CommandError> {
-    update_execution_service::execute_content_update(
-        &state,
-        &instance_id,
-        &plan,
-        Some(&app_handle),
-    )
-    .await
-    .map_err(CommandError::from)
+    update_execution_service::execute_content_update(&state, &instance_id, &plan, Some(&app_handle))
+        .await
+        .map_err(CommandError::from)
 }
 
 /// Execute MC version migration
@@ -150,7 +145,12 @@ pub async fn execute_instance_update(
     instance_id: String,
     plan: InstanceUpdatePlan,
 ) -> Result<Instance, CommandError> {
-    update_execution_service::execute_instance_update(&state, &instance_id, &plan, Some(&app_handle))
-        .await
-        .map_err(CommandError::from)
+    update_execution_service::execute_instance_update(
+        &state,
+        &instance_id,
+        &plan,
+        Some(&app_handle),
+    )
+    .await
+    .map_err(CommandError::from)
 }

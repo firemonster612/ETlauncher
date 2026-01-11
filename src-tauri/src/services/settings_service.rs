@@ -16,9 +16,7 @@ pub fn load_settings() -> Result<AppSettings, AppError> {
 
             // Fix empty instances path
             if settings.instances_path.is_empty() {
-                settings.instances_path = paths::get_instances_dir()
-                    .to_string_lossy()
-                    .to_string();
+                settings.instances_path = paths::get_instances_dir().to_string_lossy().to_string();
                 needs_save = true;
             }
 
@@ -53,10 +51,10 @@ pub fn load_settings() -> Result<AppSettings, AppError> {
     }
 
     // Create default settings with proper paths
-    let mut settings = AppSettings::default();
-    settings.instances_path = paths::get_instances_dir()
-        .to_string_lossy()
-        .to_string();
+    let settings = AppSettings {
+        instances_path: paths::get_instances_dir().to_string_lossy().to_string(),
+        ..Default::default()
+    };
 
     // Try to save the defaults
     if let Err(e) = save_settings(&settings) {
@@ -71,44 +69,53 @@ fn migrate_old_settings(old: &serde_json::Value) -> AppSettings {
     let default_instances = paths::get_instances_dir().to_string_lossy().to_string();
 
     AppSettings {
-        instances_path: old.get("instances_path")
+        instances_path: old
+            .get("instances_path")
             .or_else(|| old.get("instancesPath"))
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string())
             .unwrap_or_else(|| default_instances.clone()),
-        memory_min_mb: old.get("memory_min_mb")
+        memory_min_mb: old
+            .get("memory_min_mb")
             .or_else(|| old.get("memoryMinMb"))
             .and_then(|v| v.as_u64())
             .map(|v| v as u32)
             .unwrap_or(512),
-        memory_max_mb: old.get("memory_max_mb")
+        memory_max_mb: old
+            .get("memory_max_mb")
             .or_else(|| old.get("memoryMaxMb"))
             .and_then(|v| v.as_u64())
             .map(|v| v as u32)
             .unwrap_or(4096),
-        concurrent_downloads: old.get("concurrent_downloads")
+        concurrent_downloads: old
+            .get("concurrent_downloads")
             .or_else(|| old.get("concurrentDownloads"))
             .and_then(|v| v.as_u64())
             .map(|v| v as u32)
             .unwrap_or(4),
-        close_launcher_on_game_start: old.get("close_launcher_on_game_start")
+        close_launcher_on_game_start: old
+            .get("close_launcher_on_game_start")
             .or_else(|| old.get("closeLauncherOnGameStart"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
-        reopen_launcher_on_game_close: old.get("reopen_launcher_on_game_close")
+        reopen_launcher_on_game_close: old
+            .get("reopen_launcher_on_game_close")
             .or_else(|| old.get("reopenLauncherOnGameClose"))
             .and_then(|v| v.as_bool())
             .unwrap_or(true),
-        show_snapshots: old.get("show_snapshots")
+        show_snapshots: old
+            .get("show_snapshots")
             .or_else(|| old.get("showSnapshots"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
-        show_old_versions: old.get("show_old_versions")
+        show_old_versions: old
+            .get("show_old_versions")
             .or_else(|| old.get("showOldVersions"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
-        theme: old.get("theme")
+        theme: old
+            .get("theme")
             .and_then(|v| v.as_str())
             .and_then(|s| match s {
                 "dark" => Some(crate::models::Theme::Dark),
@@ -117,12 +124,14 @@ fn migrate_old_settings(old: &serde_json::Value) -> AppSettings {
                 _ => None,
             })
             .unwrap_or_default(),
-        curseforge_api_key: old.get("curseforge_api_key")
+        curseforge_api_key: old
+            .get("curseforge_api_key")
             .or_else(|| old.get("curseforgeApiKey"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
         // Existing users migrating from old format should not see tutorial
-        setup_completed: old.get("setup_completed")
+        setup_completed: old
+            .get("setup_completed")
             .or_else(|| old.get("setupCompleted"))
             .and_then(|v| v.as_bool())
             .unwrap_or(true),
@@ -145,21 +154,30 @@ pub fn save_settings(settings: &AppSettings) -> Result<(), AppError> {
 }
 
 /// Update settings with partial updates, merging with existing values
-pub fn update_settings(
-    current: &AppSettings,
-    updates: UpdateSettingsRequest,
-) -> AppSettings {
+pub fn update_settings(current: &AppSettings, updates: UpdateSettingsRequest) -> AppSettings {
     AppSettings {
-        instances_path: updates.instances_path.unwrap_or_else(|| current.instances_path.clone()),
+        instances_path: updates
+            .instances_path
+            .unwrap_or_else(|| current.instances_path.clone()),
         memory_min_mb: updates.memory_min_mb.unwrap_or(current.memory_min_mb),
         memory_max_mb: updates.memory_max_mb.unwrap_or(current.memory_max_mb),
-        concurrent_downloads: updates.concurrent_downloads.unwrap_or(current.concurrent_downloads),
-        close_launcher_on_game_start: updates.close_launcher_on_game_start.unwrap_or(current.close_launcher_on_game_start),
-        reopen_launcher_on_game_close: updates.reopen_launcher_on_game_close.unwrap_or(current.reopen_launcher_on_game_close),
+        concurrent_downloads: updates
+            .concurrent_downloads
+            .unwrap_or(current.concurrent_downloads),
+        close_launcher_on_game_start: updates
+            .close_launcher_on_game_start
+            .unwrap_or(current.close_launcher_on_game_start),
+        reopen_launcher_on_game_close: updates
+            .reopen_launcher_on_game_close
+            .unwrap_or(current.reopen_launcher_on_game_close),
         show_snapshots: updates.show_snapshots.unwrap_or(current.show_snapshots),
-        show_old_versions: updates.show_old_versions.unwrap_or(current.show_old_versions),
+        show_old_versions: updates
+            .show_old_versions
+            .unwrap_or(current.show_old_versions),
         theme: updates.theme.unwrap_or_else(|| current.theme.clone()),
-        curseforge_api_key: updates.curseforge_api_key.or_else(|| current.curseforge_api_key.clone()),
+        curseforge_api_key: updates
+            .curseforge_api_key
+            .or_else(|| current.curseforge_api_key.clone()),
         setup_completed: updates.setup_completed.unwrap_or(current.setup_completed),
     }
 }
@@ -169,26 +187,26 @@ pub fn validate_settings(settings: &AppSettings) -> Result<(), AppError> {
     // Validate memory settings
     if settings.memory_min_mb > settings.memory_max_mb {
         return Err(AppError::SettingsError(
-            "Minimum memory cannot be greater than maximum memory".to_string()
+            "Minimum memory cannot be greater than maximum memory".to_string(),
         ));
     }
 
     if settings.memory_min_mb < 256 {
         return Err(AppError::SettingsError(
-            "Minimum memory must be at least 256 MB".to_string()
+            "Minimum memory must be at least 256 MB".to_string(),
         ));
     }
 
     if settings.memory_max_mb > 32768 {
         return Err(AppError::SettingsError(
-            "Maximum memory cannot exceed 32 GB".to_string()
+            "Maximum memory cannot exceed 32 GB".to_string(),
         ));
     }
 
     // Validate concurrent downloads
     if settings.concurrent_downloads < 1 || settings.concurrent_downloads > 16 {
         return Err(AppError::SettingsError(
-            "Concurrent downloads must be between 1 and 16".to_string()
+            "Concurrent downloads must be between 1 and 16".to_string(),
         ));
     }
 
