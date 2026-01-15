@@ -1,7 +1,8 @@
 use crate::error::AppError;
 use crate::models::{
-    Content, ContentDownloadProgress, ContentPlatform, ContentSource, ContentType, ContentVersion,
-    DependencyType, InstalledContent, LoaderType, ResolvedDependency,
+    Content, ContentDownloadProgress, ContentDownloadProgressWithId, ContentPlatform,
+    ContentSource, ContentType, ContentVersion, DependencyType, InstalledContent, LoaderType,
+    ResolvedDependency,
 };
 use crate::services::{curseforge_service, manifest_service, modrinth_service};
 use crate::state::AppState;
@@ -16,6 +17,7 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter};
+use tokio_util::sync::CancellationToken;
 
 /// Result of downloading a file including computed hashes
 struct DownloadResult {
@@ -37,6 +39,8 @@ fn get_content_dir(game_dir: &PathBuf, content_type: &ContentType) -> PathBuf {
 /// # Arguments
 /// * `source` - How the content is being installed (UserAdded, ModpackOriginal, etc.)
 ///   If None, defaults to UserAdded for regular installs, UserDependency for dependencies
+/// * `cancel_token` - Optional cancellation token for queue-based installs
+/// * `queue_id` - Optional queue ID for queue-aware progress events
 pub async fn install_content(
     state: &AppState,
     instance_id: &str,
@@ -49,7 +53,16 @@ pub async fn install_content(
     is_dependency: bool,
     source: Option<ContentSource>,
     app_handle: Option<&AppHandle>,
+    cancel_token: Option<&CancellationToken>,
+    queue_id: Option<&str>,
 ) -> Result<InstalledContent, AppError> {
+    // Check for cancellation at start
+    if let Some(token) = cancel_token {
+        if token.is_cancelled() {
+            return Err(AppError::Cancelled);
+        }
+    }
+
     let instances_base = state.settings.read().instances_path.clone();
     let game_dir = get_instance_game_dir_with_base(&instances_base, instance_id);
     let content_dir = get_content_dir(&game_dir, &content_type);
@@ -72,10 +85,13 @@ pub async fn install_content(
         &file.url,
         &file_path,
         &file.filename,
+        content_id,
         file.size,
         file.hash.as_deref(),
         file.hash_algorithm.as_deref(),
         app_handle,
+        cancel_token,
+        queue_id,
     )
     .await?;
 
@@ -133,16 +149,30 @@ pub async fn install_content(
 
 /// Download a file with streaming progress updates and optional hash verification
 /// Returns the computed SHA512 hash and Murmur2 fingerprint for manifest tracking
+///
+/// # Arguments
+/// * `cancel_token` - Optional cancellation token for queue-based installs
+/// * `queue_id` - Optional queue ID; when provided, emits queue-specific progress events
 async fn download_file_with_progress(
     client: &Client,
     url: &str,
     path: &PathBuf,
     filename: &str,
+    content_id: &str,
     expected_size: u64,
     expected_hash: Option<&str>,
     hash_algorithm: Option<&str>,
     app_handle: Option<&AppHandle>,
+    cancel_token: Option<&CancellationToken>,
+    queue_id: Option<&str>,
 ) -> Result<DownloadResult, AppError> {
+    // Check for cancellation
+    if let Some(token) = cancel_token {
+        if token.is_cancelled() {
+            return Err(AppError::Cancelled);
+        }
+    }
+
     // Create parent directories
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -174,6 +204,13 @@ async fn download_file_with_progress(
     const EMIT_THRESHOLD: u64 = 65536; // Emit every 64KB
 
     while let Some(chunk_result) = stream.next().await {
+        // Check for cancellation periodically during download
+        if let Some(token) = cancel_token {
+            if token.is_cancelled() {
+                return Err(AppError::Cancelled);
+            }
+        }
+
         let chunk = chunk_result
             .map_err(|e| AppError::DownloadError(format!("Failed to read chunk: {}", e)))?;
 
@@ -191,14 +228,27 @@ async fn download_file_with_progress(
                     0
                 };
 
-                let progress = ContentDownloadProgress {
-                    filename: filename.to_string(),
-                    downloaded_bytes,
-                    total_bytes,
-                    progress_percent,
-                };
-
-                let _ = handle.emit("content_download_progress", &progress);
+                // Emit queue-specific progress if queue_id is provided
+                if let Some(qid) = queue_id {
+                    let progress = ContentDownloadProgressWithId {
+                        queue_id: qid.to_string(),
+                        content_id: content_id.to_string(),
+                        filename: filename.to_string(),
+                        downloaded_bytes,
+                        total_bytes,
+                        progress_percent,
+                    };
+                    let _ = handle.emit("content_download_progress", &progress);
+                } else {
+                    // Non-queue progress (legacy)
+                    let progress = ContentDownloadProgress {
+                        filename: filename.to_string(),
+                        downloaded_bytes,
+                        total_bytes,
+                        progress_percent,
+                    };
+                    let _ = handle.emit("content_download_progress", &progress);
+                }
                 last_emit_bytes = downloaded_bytes;
             }
         }
@@ -365,7 +415,11 @@ pub async fn resolve_dependencies(
     Ok(resolved)
 }
 
-/// Install content with its dependencies
+/// Install content with its dependencies (blocking/synchronous version)
+///
+/// NOTE: For user-initiated installs, prefer using the queue system via
+/// `content_queue_service::queue_content_with_deps()` which is non-blocking.
+/// This function is kept for modpack installation which may need synchronous behavior.
 ///
 /// # Arguments
 /// * `source` - How the content is being installed (UserAdded, ModpackOriginal, etc.)
@@ -407,6 +461,8 @@ pub async fn install_content_with_dependencies(
                 true, // is_dependency = true
                 dep_source.clone(),
                 app_handle,
+                None, // cancel_token: not used in blocking install
+                None, // queue_id: not used in blocking install
             )
             .await?;
             installed.push(dep_installed);
@@ -426,6 +482,8 @@ pub async fn install_content_with_dependencies(
         false, // is_dependency = false
         source,
         app_handle,
+        None, // cancel_token: not used in blocking install
+        None, // queue_id: not used in blocking install
     )
     .await?;
     installed.push(main_installed);

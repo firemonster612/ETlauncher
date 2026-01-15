@@ -200,6 +200,8 @@ pub async fn install_content(
         is_dependency.unwrap_or(false),
         None, // source: defaults to UserAdded
         Some(&app_handle),
+        None, // cancel_token: not used in direct command
+        None, // queue_id: not used in direct command
     )
     .await
     .map_err(CommandError::from)
@@ -227,7 +229,8 @@ pub async fn resolve_content_dependencies(
     .map_err(CommandError::from)
 }
 
-/// Install content with its dependencies
+/// Install content with its dependencies (queued, non-blocking)
+/// Returns queue IDs for all queued items (dependencies + main content)
 #[tauri::command]
 pub async fn install_content_with_dependencies(
     state: State<'_, AppState>,
@@ -238,20 +241,20 @@ pub async fn install_content_with_dependencies(
     version: ContentVersion,
     mc_version: String,
     loader: Option<LoaderType>,
-) -> Result<Vec<InstalledContent>, CommandError> {
+) -> Result<Vec<String>, CommandError> {
     // Validate vanilla restrictions (mods/shaders require a mod loader)
     validate_vanilla_restrictions(&state, &instance_id, &content.content_type)?;
 
-    content_install_service::install_content_with_dependencies(
+    // Use the unified queue system with dependency resolution
+    content_queue_service::queue_content_with_deps(
         &state,
+        app_handle,
         &instance_id,
         platform,
         &content,
         &version,
         &mc_version,
         loader.as_ref(),
-        None, // source: defaults to UserAdded
-        Some(&app_handle),
     )
     .await
     .map_err(CommandError::from)
