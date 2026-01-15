@@ -122,6 +122,112 @@ fn get_adoptium_download_url(major_version: u32) -> String {
 }
 
 /// Ensure a Java version is installed, downloading if necessary
+/// Simple version with progress callback - for use in loader installers
+pub async fn ensure_java_with_progress(
+    major_version: u32,
+    progress: impl Fn(String),
+) -> Result<String, AppError> {
+    // Check if already installed
+    if let Some(java_path) = get_installed_java(major_version) {
+        return Ok(java_path);
+    }
+
+    // Need to download
+    progress(format!("Downloading Java {}...", major_version));
+
+    let url = get_adoptium_download_url(major_version);
+    let client = reqwest::Client::new();
+
+    let response = client.get(&url).send().await.map_err(|e| {
+        AppError::JavaInstallError(format!("Failed to connect to Adoptium: {}", e))
+    })?;
+
+    if !response.status().is_success() {
+        return Err(AppError::JavaInstallError(format!(
+            "Adoptium returned status {}",
+            response.status()
+        )));
+    }
+
+    let total_size = response.content_length().unwrap_or(0);
+    let java_dir = get_java_dir();
+    fs::create_dir_all(&java_dir)?;
+
+    let extension = if Os::current() == Os::Windows {
+        "zip"
+    } else {
+        "tar.gz"
+    };
+    let temp_path = java_dir.join(format!("temurin-{}-download.{}", major_version, extension));
+
+    let mut file = fs::File::create(&temp_path)?;
+    let mut downloaded: u64 = 0;
+    let mut stream = response.bytes_stream();
+
+    use futures::StreamExt;
+    while let Some(chunk) = stream.next().await {
+        let chunk =
+            chunk.map_err(|e| AppError::JavaInstallError(format!("Download error: {}", e)))?;
+        file.write_all(&chunk)?;
+
+        downloaded += chunk.len() as u64;
+
+        if total_size > 0 {
+            let percent = (downloaded as f64 / total_size as f64 * 100.0) as u32;
+            progress(format!("Downloading Java {}... {}%", major_version, percent));
+        }
+    }
+
+    drop(file);
+
+    progress(format!("Extracting Java {}...", major_version));
+
+    let install_dir = java_dir.join(format!("temurin-{}", major_version));
+
+    if install_dir.exists() {
+        fs::remove_dir_all(&install_dir)?;
+    }
+
+    fs::create_dir_all(&install_dir)?;
+
+    if Os::current() == Os::Windows {
+        extract_zip(&temp_path, &install_dir)?;
+    } else {
+        extract_tar_gz(&temp_path, &install_dir)?;
+    }
+
+    let _ = fs::remove_file(&temp_path);
+
+    let java_path = find_java_executable(&install_dir)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let java_exe = PathBuf::from(&java_path);
+        if java_exe.exists() {
+            let mut perms = fs::metadata(&java_exe)?.permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&java_exe, perms)?;
+        }
+    }
+
+    let mut manifest = load_java_manifest();
+    manifest
+        .installations
+        .retain(|i| i.major_version != major_version);
+
+    manifest.installations.push(JavaInstallation {
+        major_version,
+        java_path: java_path.clone(),
+        installed_at: Utc::now().timestamp(),
+    });
+
+    save_java_manifest(&manifest)?;
+
+    Ok(java_path)
+}
+
+/// Ensure a Java version is installed, downloading if necessary
 /// Returns the path to the java executable
 pub async fn ensure_java_installed(
     major_version: u32,
