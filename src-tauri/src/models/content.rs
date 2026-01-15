@@ -394,6 +394,9 @@ pub struct QueueInstallRequest {
     pub version_name: String,
     pub mc_version: String,
     pub loader: Option<LoaderType>,
+    /// Whether this is a dependency (auto-resolved) vs user-requested
+    #[serde(default)]
+    pub is_dependency: bool,
 }
 
 /// Queue status change event payload
@@ -402,6 +405,8 @@ pub struct QueueInstallRequest {
 pub struct QueueStatusEvent {
     pub queue_id: String,
     pub content_id: String,
+    pub content_name: String,
+    pub content_type: ContentType,
     pub status: QueueItemStatus,
     pub error: Option<String>,
 }
@@ -420,6 +425,8 @@ pub struct QueuedContentInstall {
     pub version_name: String,
     pub mc_version: String,
     pub loader: Option<LoaderType>,
+    /// Whether this is a dependency (auto-resolved) vs user-requested
+    pub is_dependency: bool,
 }
 
 /// Resolved dependency with install info

@@ -87,7 +87,9 @@ export async function resolveContentDependencies(
 	});
 }
 
-/** Install content with its dependencies */
+/** Install content with its dependencies (queued, non-blocking)
+ * Returns queue IDs for all queued items (dependencies + main content)
+ */
 export async function installContentWithDependencies(
 	instanceId: string,
 	platform: ContentPlatform,
@@ -95,8 +97,8 @@ export async function installContentWithDependencies(
 	version: ContentVersion,
 	mcVersion: string,
 	loader?: LoaderType
-): Promise<InstalledContent[]> {
-	return invoke<InstalledContent[]>('install_content_with_dependencies', {
+): Promise<string[]> {
+	return invoke<string[]>('install_content_with_dependencies', {
 		instanceId,
 		platform,
 		content,

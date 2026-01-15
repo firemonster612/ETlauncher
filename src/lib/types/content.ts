@@ -285,6 +285,8 @@ export interface QueueInstallRequest {
 	versionName: string;
 	mcVersion: string;
 	loader?: LoaderType;
+	/** Whether this is a dependency (auto-resolved) vs user-requested */
+	isDependency?: boolean;
 }
 
 /** Resolved dependency with install info */

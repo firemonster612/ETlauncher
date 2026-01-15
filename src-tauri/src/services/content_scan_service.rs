@@ -366,7 +366,7 @@ pub async fn scan_content(
 
     for (filename, size, hash, murmur2, is_disabled) in content_files {
         // Try API-based identification first
-        let modrinth_project = modrinth_results.get(&hash).map(|version| {
+        let mut modrinth_project = modrinth_results.get(&hash).map(|version| {
             let (slug, name) = modrinth_project_map
                 .get(&version.project_id)
                 .map(|p| (p.slug.clone(), p.title.clone()))
@@ -395,12 +395,21 @@ pub async fn scan_content(
             }
         });
 
-        // Fallback to manifest-based identification for CurseForge content
-        // This handles cases where CurseForge fingerprint API doesn't return matches
+        // Fallback to manifest-based identification when API lookups fail
+        // This handles cases where hash/fingerprint APIs don't return matches
+        // (common for shaders, resource packs, or when APIs are down)
         if curseforge_project.is_none() && modrinth_project.is_none() {
             if let Some(manifest_entry) = manifest_content.get(&filename) {
                 // Use manifest data to create project info
-                if let Some(cf_id) = manifest_entry.curseforge_id {
+                if let Some(ref mr_id) = manifest_entry.modrinth_id {
+                    modrinth_project = Some(DetectedModrinthProject {
+                        project_id: mr_id.clone(),
+                        slug: manifest_entry.slug.clone(),
+                        name: manifest_entry.name.clone(),
+                        version_id: manifest_entry.version_id.clone(),
+                        version_number: manifest_entry.version.clone(),
+                    });
+                } else if let Some(cf_id) = manifest_entry.curseforge_id {
                     curseforge_project = Some(DetectedCurseForgeProject {
                         project_id: cf_id as u64,
                         file_id: 0, // We don't store file_id in manifest
@@ -446,7 +455,7 @@ pub async fn scan_mods(state: &AppState, instance_id: &str) -> Result<ScanResult
     scan_content(state, instance_id, &ContentType::Mod).await
 }
 
-/// Uninstall content by filename (delete the file)
+/// Uninstall content by filename (delete the file and remove from manifest)
 pub fn uninstall_by_filename(
     state: &AppState,
     instance_id: &str,
@@ -466,6 +475,9 @@ pub fn uninstall_by_filename(
     } else if disabled_path.exists() {
         fs::remove_file(&disabled_path)?;
     }
+
+    // Also remove from manifest so reinstall works correctly
+    manifest_service::remove_content(state, instance_id, filename, content_type)?;
 
     Ok(())
 }

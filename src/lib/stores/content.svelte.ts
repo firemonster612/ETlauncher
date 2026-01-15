@@ -233,11 +233,61 @@ function createContentStore() {
 			downloadQueue = downloadQueue.filter((item) => item.queueId !== queueId);
 		},
 
-		/** Update queue item status (called from event listener) */
-		updateQueueItemStatus(queueId: string, status: QueueItemStatus, error?: string) {
-			downloadQueue = downloadQueue.map((item) =>
-				item.queueId === queueId ? { ...item, status, error } : item
-			);
+		/** Update queue item status (called from event listener)
+		 * Also creates the queue item if it doesn't exist (for dependencies queued by backend)
+		 */
+		updateQueueItemStatus(
+			queueId: string,
+			contentId: string,
+			contentName: string,
+			itemContentType: ContentType,
+			status: QueueItemStatus,
+			error?: string
+		) {
+			// Check if item exists in local queue
+			const exists = downloadQueue.some((item) => item.queueId === queueId);
+
+			if (exists) {
+				// Update existing item
+				downloadQueue = downloadQueue.map((item) =>
+					item.queueId === queueId ? { ...item, status, error } : item
+				);
+			} else {
+				// Create new item for dependencies queued by backend
+				// We don't have full Content/Version objects, so create minimal placeholders
+				const newItem: QueuedDownload = {
+					queueId,
+					content: {
+						id: contentId,
+						name: contentName,
+						slug: contentId,
+						description: '',
+						author: '',
+						downloads: 0,
+						iconUrl: undefined,
+						categories: [],
+						mcVersions: [],
+						loaders: [],
+						platform: 'modrinth', // Default, doesn't affect display
+						contentType: itemContentType, // Use actual content type from backend
+					},
+					version: {
+						id: '',
+						projectId: contentId,
+						name: '',
+						versionNumber: '',
+						mcVersions: [],
+						loaders: [],
+						files: [],
+						dependencies: [],
+					},
+					instanceId: instanceId || '',
+					status,
+					error,
+					queuedAt: Date.now(),
+				};
+				downloadQueue = [...downloadQueue, newItem];
+			}
 
 			// Remove completed/failed items after delay
 			if (status === 'completed' || status === 'failed') {

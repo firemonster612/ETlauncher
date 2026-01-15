@@ -239,6 +239,8 @@
 		const unlistenQueueStatusPromise = listen<{
 			queueId: string;
 			contentId: string;
+			contentName: string;
+			contentType: ContentType;
 			status: QueueItemStatus;
 			error?: string;
 		}>('content_queue_status', async (event) => {
@@ -246,9 +248,16 @@
 			// This ensures the "installed" badge shows immediately instead of a gap
 			if (event.payload.status === 'completed') {
 				await contentStore.refreshInstalledContent();
+				// Refresh mod scan for helper detection (Iris/Oculus/OptiFine) when mods complete
+				if (event.payload.contentType === 'mod') {
+					await refreshModScan();
+				}
 			}
 			contentStore.updateQueueItemStatus(
 				event.payload.queueId,
+				event.payload.contentId,
+				event.payload.contentName,
+				event.payload.contentType,
 				event.payload.status,
 				event.payload.error
 			);
@@ -829,22 +838,18 @@
 		if (!selectedContentDetail || !contentStore.selectedVersion) return;
 
 		isInstalling = true;
-		installSuccess = null;
 		installError = null;
-		contentStore.setDownloadProgress(null);
-		showQuickInstallProgress = false;
-		quickInstallName = null;
-		quickInstallError = null;
+		installSuccess = null;
 
 		try {
 			console.log(
-				'[ContentBrowser] Installing:',
+				'[ContentBrowser] Queueing install:',
 				selectedContentDetail.name,
 				contentStore.selectedVersion.versionNumber
 			);
 
-			// Install with dependencies
-			const installed = await contentService.installContentWithDependencies(
+			// Queue install with dependencies (non-blocking, returns queue IDs)
+			const queueIds = await contentService.installContentWithDependencies(
 				instanceId,
 				selectedContentDetail.platform,
 				selectedContentDetail,
@@ -853,25 +858,24 @@
 				loaderType === 'vanilla' ? undefined : loaderType
 			);
 
-			console.log('[ContentBrowser] Installation complete:', installed.length, 'items installed');
+			console.log('[ContentBrowser] Queued', queueIds.length, 'items for installation');
 
-			// Refresh installed content manifest so badges update
-			await contentStore.refreshInstalledContent();
-
+			// Show success message briefly before closing
 			installSuccess =
-				installed.length > 1
-					? `Installed ${selectedContentDetail.name} and ${installed.length - 1} dependencies`
-					: `Installed ${selectedContentDetail.name}`;
+				queueIds.length > 1
+					? `Queued ${selectedContentDetail.name} and ${queueIds.length - 1} dependencies`
+					: `Queued ${selectedContentDetail.name} for installation`;
 
-			// Close the detail modal immediately after installation completes
-			closeContentDetail();
-			installSuccess = null;
+			// Auto-close after brief delay to show feedback
+			setTimeout(() => {
+				closeContentDetail();
+				installSuccess = null;
+			}, 1200);
 		} catch (e: unknown) {
-			console.error('[ContentBrowser] Installation failed:', e);
+			console.error('[ContentBrowser] Queue failed:', e);
 			installError = e instanceof Error ? e.message : String(e);
 		} finally {
 			isInstalling = false;
-			contentStore.setDownloadProgress(null);
 		}
 	}
 
@@ -995,8 +999,16 @@
 				throw new Error('No compatible versions found');
 			}
 
-			// Queue the install (non-blocking)
-			await contentStore.queueInstall(content, latest);
+			// Queue the install with dependency resolution (non-blocking)
+			// Uses the same unified queue system as the modal install
+			await contentService.installContentWithDependencies(
+				instanceId,
+				content.platform,
+				content,
+				latest,
+				mcVersion,
+				loaderType === 'vanilla' ? undefined : loaderType
+			);
 		} catch (e: unknown) {
 			console.error('[ContentBrowser] Quick install failed:', e);
 			// Show error inline for this content
@@ -2191,28 +2203,29 @@
 					</div>
 				{/if}
 
-				{#if isInstalling && contentStore.downloadProgress}
-					<div class="bg-primary/5 border-primary/30 rounded border-2 p-3">
-						<div class="mb-2 flex items-center justify-between text-sm">
-							<span class="text-muted-foreground mr-2 flex-1 truncate">
-								Downloading {contentStore.downloadProgress.filename}
-							</span>
-							<span class="text-primary flex-shrink-0 font-medium">
-								{contentStore.downloadProgress.progressPercent}%
-							</span>
+				{#if contentStore.isContentDownloading(selectedContentDetail.id)}
+					{@const progress = contentStore.getContentProgress(selectedContentDetail.id)}
+					{#if progress}
+						<div class="bg-primary/5 border-primary/30 rounded border-2 p-3">
+							<div class="mb-2 flex items-center justify-between text-sm">
+								<span class="text-muted-foreground mr-2 flex-1 truncate">
+									Downloading {progress.filename}
+								</span>
+								<span class="text-primary flex-shrink-0 font-medium">
+									{progress.progressPercent}%
+								</span>
+							</div>
+							<div class="bg-muted h-2 overflow-hidden rounded-full">
+								<div
+									class="bg-primary h-full transition-all duration-150 ease-out"
+									style="width: {progress.progressPercent}%"
+								></div>
+							</div>
+							<div class="text-muted-foreground mt-1 text-xs">
+								{formatBytes(progress.downloadedBytes)} / {formatBytes(progress.totalBytes)}
+							</div>
 						</div>
-						<div class="bg-muted h-2 overflow-hidden rounded-full">
-							<div
-								class="bg-primary h-full transition-all duration-150 ease-out"
-								style="width: {contentStore.downloadProgress.progressPercent}%"
-							></div>
-						</div>
-						<div class="text-muted-foreground mt-1 text-xs">
-							{formatBytes(contentStore.downloadProgress.downloadedBytes)} / {formatBytes(
-								contentStore.downloadProgress.totalBytes
-							)}
-						</div>
-					</div>
+					{/if}
 				{/if}
 
 				<div class="flex gap-2">

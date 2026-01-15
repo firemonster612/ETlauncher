@@ -344,6 +344,8 @@ async fn update_single_content(
                 content.is_dependency,
                 Some(content.source.clone()),
                 app_handle,
+                None, // cancel_token: not used in updates
+                None, // queue_id: not used in updates
             )
             .await?;
 
@@ -387,6 +389,8 @@ async fn update_single_content(
                 content.is_dependency,
                 Some(content.source.clone()),
                 app_handle,
+                None, // cancel_token: not used in updates
+                None, // queue_id: not used in updates
             )
             .await?;
 
