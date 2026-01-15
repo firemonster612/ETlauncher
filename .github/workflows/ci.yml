@@ -77,9 +77,43 @@ jobs:
         working-directory: src-tauri
         run: cargo lint
 
+  tauri-version-check:
+    name: Tauri Version Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check Tauri plugin version sync
+        run: |
+          echo "Checking Tauri plugin version sync between Rust and JS..."
+          echo ""
+
+          mismatches=""
+          for plugin in $(grep -oP '(?<=name = "tauri-plugin-)[a-z-]+(?=")' src-tauri/Cargo.lock | sort -u); do
+            rust_ver=$(grep -A1 "name = \"tauri-plugin-$plugin\"" src-tauri/Cargo.lock | grep -oP '(?<=version = ")[0-9]+\.[0-9]+' | head -1)
+            js_ver=$(grep -oP "@tauri-apps/plugin-$plugin@\K[0-9]+\.[0-9]+" bun.lock | head -1)
+
+            if [ -n "$rust_ver" ] && [ -n "$js_ver" ]; then
+              echo "tauri-plugin-$plugin: Rust=$rust_ver, JS=$js_ver"
+              if [ "$rust_ver" != "$js_ver" ]; then
+                mismatches="${mismatches}  tauri-plugin-$plugin (Rust: $rust_ver) != @tauri-apps/plugin-$plugin (JS: $js_ver)\n"
+              fi
+            fi
+          done
+
+          echo ""
+          if [ -n "$mismatches" ]; then
+            echo "::error::Tauri plugin version mismatch detected!"
+            echo -e "$mismatches"
+            echo "Fix: Update JS packages to match Rust crate versions (major.minor must match)"
+            exit 1
+          fi
+
+          echo "All Tauri plugin versions are in sync!"
+
   build:
     name: Build (${{ matrix.platform }})
-    needs: [frontend-checks, rust-checks]
+    needs: [frontend-checks, rust-checks, tauri-version-check]
     strategy:
       fail-fast: false
       matrix:
