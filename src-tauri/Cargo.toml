@@ -52,7 +52,7 @@ futures = "0.3"
 tokio-util = "0.7"
 
 # ZIP extraction for natives
-zip = "2"
+zip = "7"
 
 # TAR.GZ extraction for Java downloads
 flate2 = "1"
