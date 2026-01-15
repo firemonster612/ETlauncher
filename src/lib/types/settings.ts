@@ -23,6 +23,8 @@ export interface AppSettings {
 	theme: Theme;
 	/** Whether the first-launch setup/tutorial has been completed */
 	setupCompleted: boolean;
+	/** CurseForge API key for accessing CurseForge content */
+	curseforgeApiKey?: string;
 }
 
 /** Request to update settings (partial update) */
@@ -37,4 +39,5 @@ export interface UpdateSettingsRequest {
 	showOldVersions?: boolean;
 	theme?: Theme;
 	setupCompleted?: boolean;
+	curseforgeApiKey?: string;
 }

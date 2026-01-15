@@ -5,7 +5,7 @@
 	import { Input } from '$lib/ui/input';
 	import { Slider } from '$lib/ui/slider';
 	import { settingsStore } from '$lib/stores/settings.svelte';
-	import { RotateCcw } from '@lucide/svelte';
+	import { RotateCcw, Eye, EyeOff } from '@lucide/svelte';
 
 	let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
@@ -16,6 +16,7 @@
 	let memoryMin = $state(0);
 	let memoryMax = $state(0);
 	let concurrentDownloads = $state(1);
+	let showApiKey = $state(false);
 
 	// Sync local state when settings load
 	$effect(() => {
@@ -191,6 +192,52 @@
 					onValueCommit={(value) => saveSettings({ concurrentDownloads: value })}
 				/>
 				<p class="text-muted-foreground text-xs">Number of files to download simultaneously</p>
+			</div>
+		</section>
+
+		<!-- CurseForge API -->
+		<section class="border-border bg-card space-y-4 border-2 p-4">
+			<h3 class="text-muted-foreground text-sm tracking-wider uppercase">CurseForge</h3>
+
+			<div class="space-y-2">
+				<label for="curseforgeApiKey" class="text-sm">API Key</label>
+				<div class="flex gap-2">
+					<Input
+						id="curseforgeApiKey"
+						type={showApiKey ? 'text' : 'password'}
+						placeholder="Enter your CurseForge API key"
+						value={settings.curseforgeApiKey ?? ''}
+						onchange={(e) => saveSettings({ curseforgeApiKey: e.currentTarget.value || undefined })}
+						class="flex-1"
+					/>
+					<Button
+						variant="outline"
+						size="icon"
+						onclick={() => (showApiKey = !showApiKey)}
+						aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
+					>
+						{#if showApiKey}
+							<EyeOff class="h-4 w-4" />
+						{:else}
+							<Eye class="h-4 w-4" />
+						{/if}
+					</Button>
+				</div>
+				<p class="text-muted-foreground text-xs">
+					Required to browse and download CurseForge content. Get your free API key at{' '}
+					<a
+						href="https://console.curseforge.com"
+						target="_blank"
+						rel="noopener noreferrer"
+						class="text-primary underline hover:no-underline"
+					>
+						console.curseforge.com
+					</a>
+				</p>
+				<p class="text-muted-foreground text-xs">
+					A built-in API key is planned for a future release. For now, each user needs their own
+					key due to CurseForge's API terms of service.
+				</p>
 			</div>
 		</section>
 
