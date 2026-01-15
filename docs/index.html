@@ -1,623 +1,677 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ETlauncher - An Alien's Minecraft Launcher</title>
-  <meta name="description"
-    content="A fast, modern Minecraft launcher that brings together modpacks from CurseForge, Modrinth, ATLauncher, FTB, and Technic in one place.">
-  <meta name="keywords" content="Minecraft, launcher, modpacks, CurseForge, Modrinth, ATLauncher, FTB, Technic, mods">
-  <meta property="og:title" content="ETlauncher - An Alien's Minecraft Launcher">
-  <meta property="og:description" content="A fast, modern Minecraft launcher with 5 modpack platforms in one place.">
-  <meta property="og:type" content="website">
-  <meta property="og:url" content="https://firemonster612.github.io/ETlauncher">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    :root {
-      --background: #1a1a1f;
-      --background-darker: #111114;
-      --card: #222228;
-      --border: #3a3a42;
-      --primary: #2dd4bf;
-      --primary-glow: rgba(45, 212, 191, 0.4);
-      --primary-dim: rgba(45, 212, 191, 0.15);
-      --foreground: #f0f0f0;
-      --muted: #888892;
-    }
-
-    body {
-      font-family: 'Silkscreen', monospace;
-      background: var(--background);
-      color: var(--foreground);
-      line-height: 1.6;
-      -webkit-font-smoothing: none;
-      -moz-osx-font-smoothing: unset;
-    }
-
-    /* Pixel grid background */
-    body::before {
-      content: '';
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background-image:
-        linear-gradient(rgba(45, 212, 191, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(45, 212, 191, 0.03) 1px, transparent 1px);
-      background-size: 20px 20px;
-      pointer-events: none;
-      z-index: -1;
-    }
-
-    .container {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 0 1.5rem;
-    }
-
-    /* Navigation */
-    nav {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      background: var(--background-darker);
-      border-bottom: 2px solid var(--border);
-      padding: 1rem 0;
-      z-index: 100;
-    }
-
-    nav .container {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .logo {
-      font-size: 1.25rem;
-      font-weight: 700;
-      color: var(--primary);
-      text-decoration: none;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      text-shadow: 0 0 10px var(--primary-glow);
-    }
-
-    .nav-links {
-      display: flex;
-      gap: 1.5rem;
-      list-style: none;
-    }
-
-    .nav-links a {
-      color: var(--muted);
-      text-decoration: none;
-      text-transform: uppercase;
-      font-size: 0.75rem;
-      letter-spacing: 0.1em;
-      transition: color 0.2s, text-shadow 0.2s;
-    }
-
-    .nav-links a:hover {
-      color: var(--primary);
-      text-shadow: 0 0 8px var(--primary-glow);
-    }
-
-    /* Hero Section */
-    .hero {
-      padding: 8rem 0 4rem;
-      text-align: center;
-      position: relative;
-    }
-
-    .hero-badge {
-      display: inline-block;
-      padding: 0.5rem 1rem;
-      background: var(--primary-dim);
-      border: 2px solid var(--primary);
-      color: var(--primary);
-      font-size: 0.625rem;
-      text-transform: uppercase;
-      letter-spacing: 0.15em;
-      margin-bottom: 1.5rem;
-    }
-
-    h1 {
-      font-size: clamp(2rem, 5vw, 3.5rem);
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      margin-bottom: 1rem;
-      text-shadow: 3px 3px 0 var(--primary-glow);
-    }
-
-    .tagline {
-      font-size: 1rem;
-      color: var(--muted);
-      margin-bottom: 2rem;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-    }
-
-    .hero-description {
-      font-size: 0.875rem;
-      color: var(--muted);
-      max-width: 600px;
-      margin: 0 auto 2.5rem;
-      line-height: 1.8;
-    }
-
-    /* Buttons */
-    .buttons {
-      display: flex;
-      gap: 1rem;
-      justify-content: center;
-      flex-wrap: wrap;
-      margin-bottom: 3rem;
-    }
-
-    .btn {
-      display: inline-block;
-      padding: 1rem 2rem;
-      text-decoration: none;
-      font-family: 'Silkscreen', monospace;
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      border: 2px solid;
-      transition: all 0.15s ease-out;
-      cursor: pointer;
-    }
-
-    .btn:hover {
-      transform: translateY(-2px);
-    }
-
-    .btn:active {
-      transform: translateY(1px);
-    }
-
-    .btn-primary {
-      background: var(--primary);
-      border-color: var(--primary);
-      color: var(--background-darker);
-      box-shadow: 0 0 15px var(--primary-glow), 0 0 30px rgba(45, 212, 191, 0.2);
-    }
-
-    .btn-primary:hover {
-      box-shadow: 0 0 20px var(--primary-glow), 0 0 40px rgba(45, 212, 191, 0.3);
-    }
-
-    .btn-secondary {
-      background: transparent;
-      border-color: var(--border);
-      color: var(--foreground);
-    }
-
-    .btn-secondary:hover {
-      border-color: var(--primary);
-      color: var(--primary);
-    }
-
-    /* Platform badges */
-    .platforms-bar {
-      display: flex;
-      justify-content: center;
-      gap: 1rem;
-      flex-wrap: wrap;
-      padding: 1.5rem;
-      background: var(--card);
-      border: 2px solid var(--border);
-      margin-bottom: 4rem;
-    }
-
-    .platform-badge {
-      font-size: 0.625rem;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: var(--muted);
-      padding: 0.5rem 1rem;
-      border: 1px solid var(--border);
-    }
-
-    /* Screenshots */
-    .screenshots {
-      padding: 2rem 0 4rem;
-    }
-
-    .screenshots h2 {
-      text-align: center;
-      font-size: 1.5rem;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      margin-bottom: 2rem;
-      text-shadow: 2px 2px 0 var(--primary-glow);
-    }
-
-    .screenshot-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 1rem;
-    }
-
-    .screenshot {
-      border: 2px solid var(--border);
-      overflow: hidden;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-
-    .screenshot:hover {
-      border-color: var(--primary);
-      box-shadow: 0 0 20px var(--primary-glow);
-    }
-
-    .screenshot img {
-      width: 100%;
-      height: auto;
-      display: block;
-    }
-
-    /* Features */
-    .features {
-      padding: 4rem 0;
-    }
-
-    .features h2 {
-      text-align: center;
-      font-size: 1.5rem;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      margin-bottom: 3rem;
-      text-shadow: 2px 2px 0 var(--primary-glow);
-    }
-
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 1.5rem;
-    }
-
-    .feature-card {
-      background: var(--card);
-      border: 2px solid var(--border);
-      padding: 1.5rem;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-
-    .feature-card:hover {
-      border-color: rgba(45, 212, 191, 0.5);
-      box-shadow: 0 0 15px rgba(45, 212, 191, 0.15);
-    }
-
-    .feature-card h3 {
-      font-size: 0.875rem;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      margin-bottom: 0.75rem;
-      color: var(--primary);
-    }
-
-    .feature-card p {
-      font-size: 0.75rem;
-      color: var(--muted);
-      line-height: 1.8;
-    }
-
-    /* Download Section */
-    .download {
-      padding: 4rem 0;
-      text-align: center;
-    }
-
-    .download h2 {
-      font-size: 1.5rem;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      margin-bottom: 1rem;
-      text-shadow: 2px 2px 0 var(--primary-glow);
-    }
-
-    .download p {
-      color: var(--muted);
-      font-size: 0.75rem;
-      margin-bottom: 2rem;
-    }
-
-    .download-cards {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 1rem;
-      max-width: 700px;
-      margin: 0 auto 2rem;
-    }
-
-    .download-card {
-      background: var(--card);
-      border: 2px solid var(--border);
-      padding: 1.5rem;
-      text-align: center;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-
-    .download-card:hover {
-      border-color: var(--primary);
-      box-shadow: 0 0 15px var(--primary-glow);
-    }
-
-    .download-card h3 {
-      font-size: 0.875rem;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      margin-bottom: 0.5rem;
-    }
-
-    .download-card p {
-      font-size: 0.625rem;
-      color: var(--muted);
-      margin-bottom: 0;
-    }
-
-    .note {
-      font-size: 0.625rem;
-      color: var(--muted);
-      max-width: 500px;
-      margin: 0 auto;
-      padding: 1rem;
-      border: 1px solid var(--border);
-      background: var(--card);
-    }
-
-    /* Tech Stack */
-    .tech {
-      padding: 4rem 0;
-      border-top: 2px solid var(--border);
-    }
-
-    .tech h2 {
-      text-align: center;
-      font-size: 1rem;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      margin-bottom: 2rem;
-      color: var(--muted);
-    }
-
-    .tech-list {
-      display: flex;
-      justify-content: center;
-      gap: 2rem;
-      flex-wrap: wrap;
-    }
-
-    .tech-item {
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: var(--muted);
-      padding: 0.75rem 1.25rem;
-      border: 2px solid var(--border);
-      transition: border-color 0.2s, color 0.2s;
-    }
-
-    .tech-item:hover {
-      border-color: var(--primary);
-      color: var(--primary);
-    }
-
-    /* Footer */
-    footer {
-      padding: 2rem 0;
-      border-top: 2px solid var(--border);
-      text-align: center;
-    }
-
-    footer p {
-      font-size: 0.625rem;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-    }
-
-    footer a {
-      color: var(--primary);
-      text-decoration: none;
-    }
-
-    footer a:hover {
-      text-shadow: 0 0 8px var(--primary-glow);
-    }
-
-    /* Responsive */
-    @media (max-width: 640px) {
-      .nav-links {
-        display: none;
-      }
-
-      .hero {
-        padding: 6rem 0 3rem;
-      }
-
-      h1 {
-        font-size: 1.75rem;
-      }
-
-      .buttons {
-        flex-direction: column;
-        align-items: center;
-      }
-
-      .btn {
-        width: 100%;
-        max-width: 250px;
-        text-align: center;
-      }
-    }
-  </style>
-</head>
-
-<body>
-  <nav>
-    <div class="container">
-      <a href="#" class="logo">ETlauncher</a>
-      <ul class="nav-links">
-        <li><a href="#features">Features</a></li>
-        <li><a href="#screenshots">Screenshots</a></li>
-        <li><a href="#download">Download</a></li>
-        <li><a href="https://github.com/firemonster612/ETlauncher">GitHub</a></li>
-      </ul>
-    </div>
-  </nav>
-
-  <main>
-    <section class="hero">
-      <div class="container">
-        <h1>ETlauncher</h1>
-        <p class="tagline">An Alien's Minecraft Launcher</p>
-        <p class="hero-description">
-          A fast, modern Minecraft launcher that brings together modpacks from
-          CurseForge, Modrinth, ATLauncher, FTB, and Technic in one place.
-          Built with Tauri and Rust for native performance.
-        </p>
-        <div class="buttons">
-          <a href="https://github.com/firemonster612/ETlauncher/releases" class="btn btn-primary">Download</a>
-          <a href="https://github.com/firemonster612/ETlauncher" class="btn btn-secondary">View Source</a>
-        </div>
-        <div class="platforms-bar">
-          <span class="platform-badge">CurseForge</span>
-          <span class="platform-badge">Modrinth</span>
-          <span class="platform-badge">ATLauncher</span>
-          <span class="platform-badge">FTB</span>
-          <span class="platform-badge">Technic</span>
-        </div>
-      </div>
-    </section>
-
-    <section class="screenshots" id="screenshots">
-      <div class="container">
-        <h2>Screenshots</h2>
-        <div class="screenshot-grid">
-          <div class="screenshot">
-            <img
-              src="https://raw.githubusercontent.com/firemonster612/ETlauncher/master/.github/assets/screenshots/instances.png"
-              alt="Instances view">
-          </div>
-          <div class="screenshot">
-            <img
-              src="https://raw.githubusercontent.com/firemonster612/ETlauncher/master/.github/assets/screenshots/modpacks.png"
-              alt="Modpacks browser">
-          </div>
-          <div class="screenshot">
-            <img
-              src="https://raw.githubusercontent.com/firemonster612/ETlauncher/master/.github/assets/screenshots/instance-detail.png"
-              alt="Instance details">
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="features" id="features">
-      <div class="container">
-        <h2>Features</h2>
-        <div class="features-grid">
-          <div class="feature-card">
-            <h3>5 Platforms in One</h3>
-            <p>Browse and install modpacks from CurseForge, Modrinth, ATLauncher, FTB, and Technic without switching
-              apps.</p>
-          </div>
-          <div class="feature-card">
-            <h3>One-Click Install</h3>
-            <p>Install mods with automatic dependency resolution. No more hunting for required libraries.</p>
-          </div>
-          <div class="feature-card">
-            <h3>Smart Java</h3>
-            <p>Automatically detects installed Java versions and selects the right one for each Minecraft version.</p>
-          </div>
-          <div class="feature-card">
-            <h3>Multiple Accounts</h3>
-            <p>Sign in with multiple Microsoft accounts and switch between them instantly.</p>
-          </div>
-          <div class="feature-card">
-            <h3>Instance Management</h3>
-            <p>Create, organize, and manage multiple instances with different versions and mod configurations.</p>
-          </div>
-          <div class="feature-card">
-            <h3>Update Checking</h3>
-            <p>Check for updates to your modpacks and individual mods. Stay current with one click.</p>
-          </div>
-          <div class="feature-card">
-            <h3>Native Performance</h3>
-            <p>Built with Tauri and Rust for fast startup, low memory usage, and native OS integration.</p>
-          </div>
-          <div class="feature-card">
-            <h3>Cross-Platform</h3>
-            <p>Available for Windows, macOS, and Linux with consistent experience across all platforms.</p>
-          </div>
-          <div class="feature-card">
-            <h3>Open Source</h3>
-            <p>MIT licensed and open source. Inspect the code, contribute, or fork it for your own needs.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="download" id="download">
-      <div class="container">
-        <h2>Download</h2>
-        <p>Choose your platform and get started</p>
-        <div class="download-cards">
-          <div class="download-card">
-            <h3>Windows</h3>
-            <p>.exe installer</p>
-          </div>
-          <div class="download-card">
-            <h3>macOS</h3>
-            <p>.dmg for Apple Silicon & Intel</p>
-          </div>
-          <div class="download-card">
-            <h3>Linux</h3>
-            <p>.AppImage, .deb, .rpm</p>
-          </div>
-        </div>
-        <a href="https://github.com/firemonster612/ETlauncher/releases" class="btn btn-primary">Go to Releases</a>
-        <div class="note" style="margin-top: 2rem;">
-          Note: The app is unsigned. On Windows, click "More info" then "Run anyway".
-          On macOS, right-click and select "Open" to bypass Gatekeeper.
-        </div>
-      </div>
-    </section>
-
-    <section class="tech">
-      <div class="container">
-        <h2>Built With</h2>
-        <div class="tech-list">
-          <span class="tech-item">Rust</span>
-          <span class="tech-item">Tauri</span>
-          <span class="tech-item">Svelte</span>
-          <span class="tech-item">TypeScript</span>
-          <span class="tech-item">Bun</span>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <footer>
-    <div class="container">
-      <p>
-        ETlauncher is open source under the
-        <a href="https://github.com/firemonster612/ETlauncher/blob/master/LICENSE">MIT License</a>
-      </p>
-    </div>
-  </footer>
-</body>
-
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>ETlauncher - An Alien's Minecraft Launcher</title>
+		<meta
+			name="description"
+			content="A fast, modern Minecraft launcher that brings together modpacks from CurseForge, Modrinth, ATLauncher, FTB, and Technic in one place."
+		/>
+		<meta
+			name="keywords"
+			content="Minecraft, launcher, modpacks, CurseForge, Modrinth, ATLauncher, FTB, Technic, mods"
+		/>
+		<meta property="og:title" content="ETlauncher - An Alien's Minecraft Launcher" />
+		<meta
+			property="og:description"
+			content="A fast, modern Minecraft launcher with 5 modpack platforms in one place."
+		/>
+		<meta property="og:type" content="website" />
+		<meta property="og:url" content="https://firemonster612.github.io/ETlauncher" />
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link
+			href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap"
+			rel="stylesheet"
+		/>
+		<style>
+			* {
+				margin: 0;
+				padding: 0;
+				box-sizing: border-box;
+			}
+
+			:root {
+				--background: #1a1a1f;
+				--background-darker: #111114;
+				--card: #222228;
+				--border: #3a3a42;
+				--primary: #2dd4bf;
+				--primary-glow: rgba(45, 212, 191, 0.4);
+				--primary-dim: rgba(45, 212, 191, 0.15);
+				--foreground: #f0f0f0;
+				--muted: #888892;
+			}
+
+			body {
+				font-family: 'Silkscreen', monospace;
+				background: var(--background);
+				color: var(--foreground);
+				line-height: 1.6;
+				-webkit-font-smoothing: none;
+				-moz-osx-font-smoothing: unset;
+			}
+
+			/* Pixel grid background */
+			body::before {
+				content: '';
+				position: fixed;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				background-image:
+					linear-gradient(rgba(45, 212, 191, 0.03) 1px, transparent 1px),
+					linear-gradient(90deg, rgba(45, 212, 191, 0.03) 1px, transparent 1px);
+				background-size: 20px 20px;
+				pointer-events: none;
+				z-index: -1;
+			}
+
+			.container {
+				max-width: 1100px;
+				margin: 0 auto;
+				padding: 0 1.5rem;
+			}
+
+			/* Navigation */
+			nav {
+				position: fixed;
+				top: 0;
+				left: 0;
+				right: 0;
+				background: var(--background-darker);
+				border-bottom: 2px solid var(--border);
+				padding: 1rem 0;
+				z-index: 100;
+			}
+
+			nav .container {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+			}
+
+			.logo {
+				font-size: 1.25rem;
+				font-weight: 700;
+				color: var(--primary);
+				text-decoration: none;
+				text-transform: uppercase;
+				letter-spacing: 0.1em;
+				text-shadow: 0 0 10px var(--primary-glow);
+			}
+
+			.nav-links {
+				display: flex;
+				gap: 1.5rem;
+				list-style: none;
+			}
+
+			.nav-links a {
+				color: var(--muted);
+				text-decoration: none;
+				text-transform: uppercase;
+				font-size: 0.75rem;
+				letter-spacing: 0.1em;
+				transition:
+					color 0.2s,
+					text-shadow 0.2s;
+			}
+
+			.nav-links a:hover {
+				color: var(--primary);
+				text-shadow: 0 0 8px var(--primary-glow);
+			}
+
+			/* Hero Section */
+			.hero {
+				padding: 8rem 0 4rem;
+				text-align: center;
+				position: relative;
+			}
+
+			.hero-badge {
+				display: inline-block;
+				padding: 0.5rem 1rem;
+				background: var(--primary-dim);
+				border: 2px solid var(--primary);
+				color: var(--primary);
+				font-size: 0.625rem;
+				text-transform: uppercase;
+				letter-spacing: 0.15em;
+				margin-bottom: 1.5rem;
+			}
+
+			h1 {
+				font-size: clamp(2rem, 5vw, 3.5rem);
+				font-weight: 700;
+				text-transform: uppercase;
+				letter-spacing: 0.1em;
+				margin-bottom: 1rem;
+				text-shadow: 3px 3px 0 var(--primary-glow);
+			}
+
+			.tagline {
+				font-size: 1rem;
+				color: var(--muted);
+				margin-bottom: 2rem;
+				text-transform: uppercase;
+				letter-spacing: 0.1em;
+			}
+
+			.hero-description {
+				font-size: 0.875rem;
+				color: var(--muted);
+				max-width: 600px;
+				margin: 0 auto 2.5rem;
+				line-height: 1.8;
+			}
+
+			/* Buttons */
+			.buttons {
+				display: flex;
+				gap: 1rem;
+				justify-content: center;
+				flex-wrap: wrap;
+				margin-bottom: 3rem;
+			}
+
+			.btn {
+				display: inline-block;
+				padding: 1rem 2rem;
+				text-decoration: none;
+				font-family: 'Silkscreen', monospace;
+				font-size: 0.75rem;
+				text-transform: uppercase;
+				letter-spacing: 0.1em;
+				border: 2px solid;
+				transition: all 0.15s ease-out;
+				cursor: pointer;
+			}
+
+			.btn:hover {
+				transform: translateY(-2px);
+			}
+
+			.btn:active {
+				transform: translateY(1px);
+			}
+
+			.btn-primary {
+				background: var(--primary);
+				border-color: var(--primary);
+				color: var(--background-darker);
+				box-shadow:
+					0 0 15px var(--primary-glow),
+					0 0 30px rgba(45, 212, 191, 0.2);
+			}
+
+			.btn-primary:hover {
+				box-shadow:
+					0 0 20px var(--primary-glow),
+					0 0 40px rgba(45, 212, 191, 0.3);
+			}
+
+			.btn-secondary {
+				background: transparent;
+				border-color: var(--border);
+				color: var(--foreground);
+			}
+
+			.btn-secondary:hover {
+				border-color: var(--primary);
+				color: var(--primary);
+			}
+
+			/* Platform badges */
+			.platforms-bar {
+				display: flex;
+				justify-content: center;
+				gap: 1rem;
+				flex-wrap: wrap;
+				padding: 1.5rem;
+				background: var(--card);
+				border: 2px solid var(--border);
+				margin-bottom: 4rem;
+			}
+
+			.platform-badge {
+				font-size: 0.625rem;
+				text-transform: uppercase;
+				letter-spacing: 0.1em;
+				color: var(--muted);
+				padding: 0.5rem 1rem;
+				border: 1px solid var(--border);
+			}
+
+			/* Screenshots */
+			.screenshots {
+				padding: 2rem 0 4rem;
+			}
+
+			.screenshots h2 {
+				text-align: center;
+				font-size: 1.5rem;
+				text-transform: uppercase;
+				letter-spacing: 0.1em;
+				margin-bottom: 2rem;
+				text-shadow: 2px 2px 0 var(--primary-glow);
+			}
+
+			.screenshot-grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+				gap: 1rem;
+			}
+
+			.screenshot {
+				border: 2px solid var(--border);
+				overflow: hidden;
+				transition:
+					border-color 0.2s,
+					box-shadow 0.2s;
+			}
+
+			.screenshot:hover {
+				border-color: var(--primary);
+				box-shadow: 0 0 20px var(--primary-glow);
+			}
+
+			.screenshot img {
+				width: 100%;
+				height: auto;
+				display: block;
+			}
+
+			/* Features */
+			.features {
+				padding: 4rem 0;
+			}
+
+			.features h2 {
+				text-align: center;
+				font-size: 1.5rem;
+				text-transform: uppercase;
+				letter-spacing: 0.1em;
+				margin-bottom: 3rem;
+				text-shadow: 2px 2px 0 var(--primary-glow);
+			}
+
+			.features-grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+				gap: 1.5rem;
+			}
+
+			.feature-card {
+				background: var(--card);
+				border: 2px solid var(--border);
+				padding: 1.5rem;
+				transition:
+					border-color 0.2s,
+					box-shadow 0.2s;
+			}
+
+			.feature-card:hover {
+				border-color: rgba(45, 212, 191, 0.5);
+				box-shadow: 0 0 15px rgba(45, 212, 191, 0.15);
+			}
+
+			.feature-card h3 {
+				font-size: 0.875rem;
+				text-transform: uppercase;
+				letter-spacing: 0.1em;
+				margin-bottom: 0.75rem;
+				color: var(--primary);
+			}
+
+			.feature-card p {
+				font-size: 0.75rem;
+				color: var(--muted);
+				line-height: 1.8;
+			}
+
+			/* Download Section */
+			.download {
+				padding: 4rem 0;
+				text-align: center;
+			}
+
+			.download h2 {
+				font-size: 1.5rem;
+				text-transform: uppercase;
+				letter-spacing: 0.1em;
+				margin-bottom: 1rem;
+				text-shadow: 2px 2px 0 var(--primary-glow);
+			}
+
+			.download p {
+				color: var(--muted);
+				font-size: 0.75rem;
+				margin-bottom: 2rem;
+			}
+
+			.download-cards {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+				gap: 1rem;
+				max-width: 700px;
+				margin: 0 auto 2rem;
+			}
+
+			.download-card {
+				background: var(--card);
+				border: 2px solid var(--border);
+				padding: 1.5rem;
+				text-align: center;
+				transition:
+					border-color 0.2s,
+					box-shadow 0.2s;
+			}
+
+			.download-card:hover {
+				border-color: var(--primary);
+				box-shadow: 0 0 15px var(--primary-glow);
+			}
+
+			.download-card h3 {
+				font-size: 0.875rem;
+				text-transform: uppercase;
+				letter-spacing: 0.1em;
+				margin-bottom: 0.5rem;
+			}
+
+			.download-card p {
+				font-size: 0.625rem;
+				color: var(--muted);
+				margin-bottom: 0;
+			}
+
+			.note {
+				font-size: 0.625rem;
+				color: var(--muted);
+				max-width: 500px;
+				margin: 0 auto;
+				padding: 1rem;
+				border: 1px solid var(--border);
+				background: var(--card);
+			}
+
+			/* Tech Stack */
+			.tech {
+				padding: 4rem 0;
+				border-top: 2px solid var(--border);
+			}
+
+			.tech h2 {
+				text-align: center;
+				font-size: 1rem;
+				text-transform: uppercase;
+				letter-spacing: 0.1em;
+				margin-bottom: 2rem;
+				color: var(--muted);
+			}
+
+			.tech-list {
+				display: flex;
+				justify-content: center;
+				gap: 2rem;
+				flex-wrap: wrap;
+			}
+
+			.tech-item {
+				font-size: 0.75rem;
+				text-transform: uppercase;
+				letter-spacing: 0.1em;
+				color: var(--muted);
+				padding: 0.75rem 1.25rem;
+				border: 2px solid var(--border);
+				transition:
+					border-color 0.2s,
+					color 0.2s;
+			}
+
+			.tech-item:hover {
+				border-color: var(--primary);
+				color: var(--primary);
+			}
+
+			/* Footer */
+			footer {
+				padding: 2rem 0;
+				border-top: 2px solid var(--border);
+				text-align: center;
+			}
+
+			footer p {
+				font-size: 0.625rem;
+				color: var(--muted);
+				text-transform: uppercase;
+				letter-spacing: 0.1em;
+			}
+
+			footer a {
+				color: var(--primary);
+				text-decoration: none;
+			}
+
+			footer a:hover {
+				text-shadow: 0 0 8px var(--primary-glow);
+			}
+
+			/* Responsive */
+			@media (max-width: 640px) {
+				.nav-links {
+					display: none;
+				}
+
+				.hero {
+					padding: 6rem 0 3rem;
+				}
+
+				h1 {
+					font-size: 1.75rem;
+				}
+
+				.buttons {
+					flex-direction: column;
+					align-items: center;
+				}
+
+				.btn {
+					width: 100%;
+					max-width: 250px;
+					text-align: center;
+				}
+			}
+		</style>
+	</head>
+
+	<body>
+		<nav>
+			<div class="container">
+				<a href="#" class="logo">ETlauncher</a>
+				<ul class="nav-links">
+					<li><a href="#features">Features</a></li>
+					<li><a href="#screenshots">Screenshots</a></li>
+					<li><a href="#download">Download</a></li>
+					<li><a href="https://github.com/firemonster612/ETlauncher">GitHub</a></li>
+				</ul>
+			</div>
+		</nav>
+
+		<main>
+			<section class="hero">
+				<div class="container">
+					<h1>ETlauncher</h1>
+					<p class="tagline">An Alien's Minecraft Launcher</p>
+					<p class="hero-description">
+						A fast, modern Minecraft launcher that brings together modpacks from CurseForge,
+						Modrinth, ATLauncher, FTB, and Technic in one place. Built with Tauri and Rust for
+						native performance.
+					</p>
+					<div class="buttons">
+						<a href="https://github.com/firemonster612/ETlauncher/releases" class="btn btn-primary"
+							>Download</a
+						>
+						<a href="https://github.com/firemonster612/ETlauncher" class="btn btn-secondary"
+							>View Source</a
+						>
+					</div>
+					<div class="platforms-bar">
+						<span class="platform-badge">CurseForge</span>
+						<span class="platform-badge">Modrinth</span>
+						<span class="platform-badge">ATLauncher</span>
+						<span class="platform-badge">FTB</span>
+						<span class="platform-badge">Technic</span>
+					</div>
+				</div>
+			</section>
+
+			<section class="screenshots" id="screenshots">
+				<div class="container">
+					<h2>Screenshots</h2>
+					<div class="screenshot-grid">
+						<div class="screenshot">
+							<img
+								src="https://raw.githubusercontent.com/firemonster612/ETlauncher/master/.github/assets/screenshots/instances.png"
+								alt="Instances view"
+							/>
+						</div>
+						<div class="screenshot">
+							<img
+								src="https://raw.githubusercontent.com/firemonster612/ETlauncher/master/.github/assets/screenshots/modpacks.png"
+								alt="Modpacks browser"
+							/>
+						</div>
+						<div class="screenshot">
+							<img
+								src="https://raw.githubusercontent.com/firemonster612/ETlauncher/master/.github/assets/screenshots/instance-detail.png"
+								alt="Instance details"
+							/>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section class="features" id="features">
+				<div class="container">
+					<h2>Features</h2>
+					<div class="features-grid">
+						<div class="feature-card">
+							<h3>5 Platforms in One</h3>
+							<p>
+								Browse and install modpacks from CurseForge, Modrinth, ATLauncher, FTB, and Technic
+								without switching apps.
+							</p>
+						</div>
+						<div class="feature-card">
+							<h3>One-Click Install</h3>
+							<p>
+								Install mods with automatic dependency resolution. No more hunting for required
+								libraries.
+							</p>
+						</div>
+						<div class="feature-card">
+							<h3>Smart Java</h3>
+							<p>
+								Automatically detects installed Java versions and selects the right one for each
+								Minecraft version.
+							</p>
+						</div>
+						<div class="feature-card">
+							<h3>Multiple Accounts</h3>
+							<p>Sign in with multiple Microsoft accounts and switch between them instantly.</p>
+						</div>
+						<div class="feature-card">
+							<h3>Instance Management</h3>
+							<p>
+								Create, organize, and manage multiple instances with different versions and mod
+								configurations.
+							</p>
+						</div>
+						<div class="feature-card">
+							<h3>Update Checking</h3>
+							<p>
+								Check for updates to your modpacks and individual mods. Stay current with one click.
+							</p>
+						</div>
+						<div class="feature-card">
+							<h3>Native Performance</h3>
+							<p>
+								Built with Tauri and Rust for fast startup, low memory usage, and native OS
+								integration.
+							</p>
+						</div>
+						<div class="feature-card">
+							<h3>Cross-Platform</h3>
+							<p>
+								Available for Windows, macOS, and Linux with consistent experience across all
+								platforms.
+							</p>
+						</div>
+						<div class="feature-card">
+							<h3>Open Source</h3>
+							<p>
+								MIT licensed and open source. Inspect the code, contribute, or fork it for your own
+								needs.
+							</p>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section class="download" id="download">
+				<div class="container">
+					<h2>Download</h2>
+					<p>Choose your platform and get started</p>
+					<div class="download-cards">
+						<div class="download-card">
+							<h3>Windows</h3>
+							<p>.exe installer</p>
+						</div>
+						<div class="download-card">
+							<h3>macOS</h3>
+							<p>.dmg for Apple Silicon & Intel</p>
+						</div>
+						<div class="download-card">
+							<h3>Linux</h3>
+							<p>.AppImage, .deb, .rpm</p>
+						</div>
+					</div>
+					<a href="https://github.com/firemonster612/ETlauncher/releases" class="btn btn-primary"
+						>Go to Releases</a
+					>
+					<div class="note" style="margin-top: 2rem">
+						Note: The app is unsigned. On Windows, click "More info" then "Run anyway". On macOS,
+						right-click and select "Open" to bypass Gatekeeper.
+					</div>
+				</div>
+			</section>
+
+			<section class="tech">
+				<div class="container">
+					<h2>Built With</h2>
+					<div class="tech-list">
+						<span class="tech-item">Rust</span>
+						<span class="tech-item">Tauri</span>
+						<span class="tech-item">Svelte</span>
+						<span class="tech-item">TypeScript</span>
+						<span class="tech-item">Bun</span>
+					</div>
+				</div>
+			</section>
+		</main>
+
+		<footer>
+			<div class="container">
+				<p>
+					ETlauncher is open source under the
+					<a href="https://github.com/firemonster612/ETlauncher/blob/master/LICENSE">MIT License</a>
+				</p>
+			</div>
+		</footer>
+	</body>
 </html>

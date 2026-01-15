@@ -224,7 +224,7 @@
 					</Button>
 				</div>
 				<p class="text-muted-foreground text-xs">
-					Required to browse and download CurseForge content. Get your free API key at{' '}
+					Required to browse and download CurseForge content. Get your free API key at
 					<a
 						href="https://console.curseforge.com"
 						target="_blank"
@@ -235,8 +235,8 @@
 					</a>
 				</p>
 				<p class="text-muted-foreground text-xs">
-					A built-in API key is planned for a future release. For now, each user needs their own
-					key due to CurseForge's API terms of service.
+					A built-in API key is planned for a future release. For now, each user needs their own key
+					due to CurseForge's API terms of service.
 				</p>
 			</div>
 		</section>
