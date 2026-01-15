@@ -461,9 +461,21 @@ pub async fn install_fabric(
     })
     .await?;
 
+    // Get the correct Java for this MC version (downloads if needed)
+    let required_java = java_service::get_required_java_version(mc_version);
+    let java_path = java_service::ensure_java_with_progress(required_java, |msg| {
+        progress(msg, 35);
+    })
+    .await?;
+
+    eprintln!(
+        "[fabric] Using Java {} at {} for MC {}",
+        required_java, java_path, mc_version
+    );
+
     progress("Running Fabric installer...".to_string(), 40);
 
-    let output = Command::new("java")
+    let output = Command::new(&java_path)
         .arg("-jar")
         .arg(&installer_path)
         .arg("client")
@@ -582,9 +594,21 @@ pub async fn install_quilt(
         AppError::InstallationError(format!("Installer validation task failed: {}", e))
     })??;
 
+    // Get the correct Java for this MC version (downloads if needed)
+    let required_java = java_service::get_required_java_version(mc_version);
+    let java_path = java_service::ensure_java_with_progress(required_java, |msg| {
+        progress(msg, 35);
+    })
+    .await?;
+
+    eprintln!(
+        "[quilt] Using Java {} at {} for MC {}",
+        required_java, java_path, mc_version
+    );
+
     progress("Running Quilt installer...".to_string(), 40);
 
-    let output = Command::new("java")
+    let output = Command::new(&java_path)
         .arg("-jar")
         .arg(&installer_path)
         .arg("install")
@@ -922,20 +946,22 @@ pub async fn install_forge(
     })
     .await?;
 
-    progress("Running Forge installer...".to_string(), 40);
-
     let is_legacy = is_legacy_mc_version(mc_version);
     let is_very_old = is_very_old_mc_version(mc_version);
 
-    // Get the correct Java for this MC version (old Forge needs Java 8)
+    // Get the correct Java for this MC version (downloads if needed)
     let required_java = java_service::get_required_java_version(mc_version);
-    let java_path =
-        java_service::get_installed_java(required_java).unwrap_or_else(|| "java".to_string());
+    let java_path = java_service::ensure_java_with_progress(required_java, |msg| {
+        progress(msg, 35);
+    })
+    .await?;
 
     eprintln!(
         "[forge] Using Java {} at {} for MC {}",
         required_java, java_path, mc_version
     );
+
+    progress("Running Forge installer...".to_string(), 40);
 
     let output = if is_very_old {
         // Very old Forge (pre-1.15) - these installers don't support --installClient
@@ -1141,10 +1167,15 @@ pub async fn install_neoforge(
     })
     .await?;
 
-    progress("Running NeoForge installer...".to_string(), 40);
+    // NeoForge is for modern MC (1.20.1+), needs Java 21 (downloads if needed)
+    let java_path = java_service::ensure_java_with_progress(21, |msg| {
+        progress(msg, 35);
+    })
+    .await?;
 
-    // NeoForge is for modern MC (1.20.1+), needs Java 21
-    let java_path = java_service::get_installed_java(21).unwrap_or_else(|| "java".to_string());
+    eprintln!("[neoforge] Using Java 21 at {}", java_path);
+
+    progress("Running NeoForge installer...".to_string(), 40);
 
     let output = Command::new(&java_path)
         .arg("-jar")
