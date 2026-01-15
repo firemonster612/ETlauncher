@@ -59,7 +59,7 @@ flate2 = "1"
 tar = "0.4"
 
 # Cross-platform directory paths
-dirs = "5"
+dirs = "6"
 
 # Thread-safe state
 parking_lot = "0.12"
