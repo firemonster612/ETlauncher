@@ -1,0 +1,53 @@
+name: Dependabot Auto-fix
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-fix:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Regenerate bun.lock if needed
+        run: |
+          bun install --no-frozen-lockfile
+          if [[ -n $(git status --porcelain bun.lock) ]]; then
+            echo "LOCKFILE_CHANGED=true" >> $GITHUB_ENV
+          fi
+
+      - name: Format Rust code
+        working-directory: src-tauri
+        run: |
+          cargo fmt
+          if [[ -n $(git status --porcelain) ]]; then
+            echo "RUST_FORMATTED=true" >> $GITHUB_ENV
+          fi
+
+      - name: Commit fixes
+        if: env.LOCKFILE_CHANGED == 'true' || env.RUST_FORMATTED == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: auto-fix lockfile and formatting"
+          git push

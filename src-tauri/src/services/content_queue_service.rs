@@ -171,12 +171,12 @@ async fn queue_single_item(
     // Atomically check if already queued and add to queue
     {
         let mut queue = state.content_download_queue.lock().await;
-        
+
         // Check if content is already in the queue
         if queue.iter().any(|item| item.content_id == content_id) {
             return Ok(None);
         }
-        
+
         queue.push_back(queued_item);
     }
 
