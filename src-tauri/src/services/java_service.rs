@@ -138,9 +138,10 @@ pub async fn ensure_java_with_progress(
     let url = get_adoptium_download_url(major_version);
     let client = reqwest::Client::new();
 
-    let response = client.get(&url).send().await.map_err(|e| {
-        AppError::JavaInstallError(format!("Failed to connect to Adoptium: {}", e))
-    })?;
+    let response =
+        client.get(&url).send().await.map_err(|e| {
+            AppError::JavaInstallError(format!("Failed to connect to Adoptium: {}", e))
+        })?;
 
     if !response.status().is_success() {
         return Err(AppError::JavaInstallError(format!(
@@ -174,7 +175,10 @@ pub async fn ensure_java_with_progress(
 
         if total_size > 0 {
             let percent = (downloaded as f64 / total_size as f64 * 100.0) as u32;
-            progress(format!("Downloading Java {}... {}%", major_version, percent));
+            progress(format!(
+                "Downloading Java {}... {}%",
+                major_version, percent
+            ));
         }
     }
 
