@@ -20,6 +20,7 @@
 	import { Button } from '$lib/ui/button';
 	import { Checkbox } from '$lib/ui/checkbox';
 	import { Input } from '$lib/ui/input';
+	import { Skeleton } from '$lib/ui/skeleton';
 	import * as Select from '$lib/ui/select';
 	import { modpacksStore } from '$lib/stores/modpacks.svelte';
 	import { modpackInstallStore } from '$lib/stores/modpackInstall.svelte';
@@ -182,7 +183,10 @@
 		// Clear categories when switching platforms since they're different
 		selectedCategories = [];
 		modpacksStore.setCategory(null);
-		modpacksStore.search();
+		// Only search if cache wasn't used (isSearching means cache miss)
+		if (modpacksStore.isSearching) {
+			modpacksStore.search();
+		}
 	}
 
 	function toggleCategory(category: string) {
@@ -283,7 +287,7 @@
 		}
 	}
 
-	async function handleModpackClick(modpack: Modpack) {
+	function handleModpackClick(modpack: Modpack) {
 		modpackDetailTab = 'about';
 		modpackLightboxIndex = null;
 		descriptionExpanded = false;
@@ -291,10 +295,20 @@
 		isLoadingMods = false;
 		modsError = null;
 		modListCache = {};
+		// Show basic modpack immediately
 		selectedModpackDetail = modpack;
-		selectedModpackDetail = await modpacksStore.selectModpack(modpack);
-		selectedVersionId = modpacksStore.selectedModpackVersions[0]?.id ?? null;
+		// Start loading details + versions in parallel (non-blocking)
+		modpacksStore.selectModpack(modpack).then((detailed) => {
+			selectedModpackDetail = detailed;
+		});
 	}
+
+	// Auto-select first version when versions load
+	$effect(() => {
+		if (modpacksStore.selectedModpackVersions.length > 0 && !selectedVersionId) {
+			selectedVersionId = modpacksStore.selectedModpackVersions[0]?.id ?? null;
+		}
+	});
 
 	function closeModpackDetail() {
 		selectedModpackDetail = null;
@@ -357,11 +371,12 @@
 		}
 	}
 
+	// Preload mod list as soon as a version is selected (don't wait for mods tab)
 	$effect(() => {
-		if (modpackDetailTab !== 'mods') return;
 		// Track dependencies for re-run when selection changes
 		void selectedVersionId;
 		void selectedModpackDetail?.platform;
+		// Load mod list in background - will be ready when user clicks mods tab
 		void loadModList();
 	});
 
@@ -619,8 +634,27 @@
 
 	<!-- Results -->
 	{#if modpacksStore.isSearching && modpacksStore.modpacks.length === 0}
-		<div class="flex items-center justify-center py-12">
-			<Loader2 class="text-muted-foreground h-8 w-8 animate-spin" />
+		<!-- Skeleton loading state -->
+		<div class="text-muted-foreground text-sm">
+			<Skeleton class="h-5 w-40" />
+		</div>
+		<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+			{#each Array.from({ length: 6 }, (_, i) => i) as i (i)}
+				<div class="border-border bg-card border-2 p-4">
+					<div class="flex gap-3">
+						<Skeleton class="h-16 w-16 rounded" />
+						<div class="min-w-0 flex-1 space-y-2">
+							<Skeleton class="h-5 w-3/4" />
+							<Skeleton class="h-4 w-full" />
+							<Skeleton class="h-4 w-2/3" />
+							<div class="flex gap-2 pt-1">
+								<Skeleton class="h-5 w-16 rounded-full" />
+								<Skeleton class="h-5 w-20 rounded-full" />
+							</div>
+						</div>
+					</div>
+				</div>
+			{/each}
 		</div>
 	{:else if modpacksStore.modpacks.length === 0}
 		<div class="border-border bg-card/50 border-2 border-dashed p-12 text-center">

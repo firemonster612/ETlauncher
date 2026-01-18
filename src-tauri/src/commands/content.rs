@@ -1,3 +1,4 @@
+use crate::cache::hash_params;
 use crate::error::CommandError;
 use crate::models::content::QueueInstallRequest;
 use crate::models::{
@@ -51,10 +52,16 @@ pub async fn search_content(
     state: State<'_, AppState>,
     params: ContentSearchParams,
 ) -> Result<ContentSearchResult, CommandError> {
-    // For now, only search the specified platform or default to Modrinth
-    let platform = params.platform.clone().unwrap_or(ContentPlatform::Modrinth);
+    // Check cache first
+    let cache_key = hash_params(&params);
+    if let Some(cached) = state.api_cache.content_search.get(&cache_key) {
+        return Ok(cached);
+    }
 
-    match platform {
+    // For now, only search the specified platform or default to Modrinth
+    let platform = params.platform.unwrap_or(ContentPlatform::Modrinth);
+
+    let result = match platform {
         ContentPlatform::Modrinth => modrinth_service::search_content(&state.http_client, &params)
             .await
             .map_err(CommandError::from),
@@ -71,7 +78,15 @@ pub async fn search_content(
                 .await
                 .map_err(CommandError::from)
         }
-    }
+    }?;
+
+    // Store in cache
+    state
+        .api_cache
+        .content_search
+        .insert(cache_key, result.clone());
+
+    Ok(result)
 }
 
 /// Get content by ID
@@ -81,7 +96,15 @@ pub async fn get_content(
     platform: ContentPlatform,
     id: String,
 ) -> Result<Content, CommandError> {
-    match platform {
+    // Create cache key combining platform and id
+    let cache_key = format!("{}:{}", platform, id);
+
+    // Check cache first
+    if let Some(cached) = state.api_cache.content_details.get(&cache_key) {
+        return Ok(cached);
+    }
+
+    let result = match platform {
         ContentPlatform::Modrinth => modrinth_service::get_content(&state.http_client, &id)
             .await
             .map_err(CommandError::from),
@@ -97,7 +120,15 @@ pub async fn get_content(
                 .await
                 .map_err(CommandError::from)
         }
-    }
+    }?;
+
+    // Store in cache
+    state
+        .api_cache
+        .content_details
+        .insert(cache_key, result.clone());
+
+    Ok(result)
 }
 
 /// Get versions for content
@@ -109,7 +140,24 @@ pub async fn get_content_versions(
     mc_version: Option<String>,
     loader: Option<LoaderType>,
 ) -> Result<Vec<ContentVersion>, CommandError> {
-    match platform {
+    // Build cache key: "platform:id:mc_version:loader"
+    let cache_key = format!(
+        "{}:{}:{}:{}",
+        platform,
+        id,
+        mc_version.as_deref().unwrap_or("any"),
+        loader
+            .as_ref()
+            .map(|l| format!("{:?}", l))
+            .unwrap_or_else(|| "any".to_string())
+    );
+
+    // Check cache first
+    if let Some(cached) = state.api_cache.content_versions.get(&cache_key) {
+        return Ok(cached);
+    }
+
+    let result = match platform {
         ContentPlatform::Modrinth => modrinth_service::get_content_versions(
             &state.http_client,
             &id,
@@ -136,7 +184,15 @@ pub async fn get_content_versions(
             .await
             .map_err(CommandError::from)
         }
-    }
+    }?;
+
+    // Store in cache
+    state
+        .api_cache
+        .content_versions
+        .insert(cache_key, result.clone());
+
+    Ok(result)
 }
 
 /// Get a specific version by ID
@@ -217,7 +273,15 @@ pub async fn resolve_content_dependencies(
     mc_version: String,
     loader: Option<LoaderType>,
 ) -> Result<Vec<ResolvedDependency>, CommandError> {
-    content_install_service::resolve_dependencies(
+    // Build cache key: "version_id:instance_id"
+    let cache_key = format!("{}:{}", version.id, instance_id);
+
+    // Check cache first
+    if let Some(cached) = state.api_cache.resolved_dependencies.get(&cache_key) {
+        return Ok(cached);
+    }
+
+    let result = content_install_service::resolve_dependencies(
         &state,
         &instance_id,
         &platform,
@@ -226,7 +290,15 @@ pub async fn resolve_content_dependencies(
         loader.as_ref(),
     )
     .await
-    .map_err(CommandError::from)
+    .map_err(CommandError::from)?;
+
+    // Store in cache
+    state
+        .api_cache
+        .resolved_dependencies
+        .insert(cache_key, result.clone());
+
+    Ok(result)
 }
 
 /// Install content with its dependencies (queued, non-blocking)

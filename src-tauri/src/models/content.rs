@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Platform that hosts individual content (mods, shaders, resourcepacks)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum ContentPlatform {
     Modrinth,
@@ -34,7 +34,7 @@ impl std::fmt::Display for ContentPlatform {
 }
 
 /// Type of content
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum ContentType {
     Mod,
@@ -53,7 +53,7 @@ impl std::fmt::Display for ContentType {
 }
 
 /// Sort order for content search
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum ContentSortBy {
     #[default]
@@ -88,7 +88,7 @@ pub struct ContentDependency {
 }
 
 /// Search parameters for content queries
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct ContentSearchParams {
     /// Search query (by name)

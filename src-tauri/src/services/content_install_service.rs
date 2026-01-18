@@ -129,11 +129,11 @@ pub async fn install_content(
         } else {
             None
         },
-        installed_from: platform.clone(),
+        installed_from: platform,
         version: version.version_number.clone(),
         version_id: version.id.clone(),
         filename: file.filename.clone(),
-        content_type: content_type.clone(),
+        content_type,
         installed_at: Utc::now().timestamp(),
         is_dependency,
         source: content_source,
@@ -452,11 +452,11 @@ pub async fn install_content_with_dependencies(
             let dep_installed = install_content(
                 state,
                 instance_id,
-                platform.clone(),
+                platform,
                 &dep.content.id,
                 &dep.content.name,
                 &dep.content.slug,
-                dep.content.content_type.clone(),
+                dep.content.content_type,
                 &dep.version,
                 true, // is_dependency = true
                 dep_source.clone(),
@@ -477,7 +477,7 @@ pub async fn install_content_with_dependencies(
         &content.id,
         &content.name,
         &content.slug,
-        content.content_type.clone(),
+        content.content_type,
         version,
         false, // is_dependency = false
         source,

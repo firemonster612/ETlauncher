@@ -295,8 +295,9 @@
 		showQuickInstallProgress = false;
 		quickInstallName = null;
 		quickInstallError = null;
-		if (viewMode === 'browse') {
-			contentStore.search();
+		// Only search if we don't have cached items (isSearching means cache miss)
+		if (viewMode === 'browse' && contentStore.isSearching) {
+			await contentStore.search();
 		}
 	}
 
@@ -1314,8 +1315,26 @@
 		<!-- Results -->
 		<div class="flex-1 overflow-y-auto p-4" onscroll={handleBrowseScroll}>
 			{#if contentStore.isSearching && contentStore.items.length === 0}
-				<div class="flex items-center justify-center py-12">
-					<Loader2 class="text-muted-foreground h-8 w-8 animate-spin" />
+				<!-- Skeleton loading state -->
+				<div class="text-muted-foreground mb-3 text-xs">
+					<Skeleton class="h-4 w-20" />
+				</div>
+				<div class="space-y-2">
+					{#each Array.from({ length: 6 }, (_, i) => i) as i (i)}
+						<div class="border-border bg-background relative w-full border-2 p-3">
+							<div class="flex w-full min-w-0 gap-3">
+								<Skeleton class="h-12 w-12 flex-shrink-0 rounded" />
+								<div class="min-w-0 flex-1 space-y-2">
+									<Skeleton class="h-5 w-48" />
+									<Skeleton class="h-4 w-full" />
+									<div class="flex gap-4">
+										<Skeleton class="h-3 w-16" />
+										<Skeleton class="h-3 w-20" />
+									</div>
+								</div>
+							</div>
+						</div>
+					{/each}
 				</div>
 			{:else if contentStore.items.length === 0}
 				<div class="border-border bg-card/50 border-2 border-dashed p-12 text-center">

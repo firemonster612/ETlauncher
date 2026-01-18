@@ -856,7 +856,7 @@ pub async fn search_content(
         .map(|p| p.total_count)
         .unwrap_or(0);
 
-    let content_type = params.content_type.clone().unwrap_or(ContentType::Mod);
+    let content_type = params.content_type.unwrap_or(ContentType::Mod);
     let url_path = match content_type {
         ContentType::Mod => "mc-mods",
         ContentType::Shader => "shaders",
@@ -896,7 +896,7 @@ pub async fn search_content(
                 icon_url: m.logo.map(|l| l.url),
                 downloads: m.download_count,
                 platform: ContentPlatform::CurseForge,
-                content_type: content_type.clone(),
+                content_type,
                 categories: m.categories.into_iter().map(|c| c.name).collect(),
                 gallery: Vec::new(),
                 mc_versions,

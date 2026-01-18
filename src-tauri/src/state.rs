@@ -1,11 +1,119 @@
 use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
-use crate::models::content::QueuedContentInstall;
+use crate::cache::Cache;
+use crate::models::content::{
+    Content, ContentSearchResult, ContentVersion, QueuedContentInstall, ResolvedDependency,
+};
+use crate::models::instance::LoaderType;
+use crate::models::loader::LoaderVersion;
+use crate::models::modpack::{Modpack, ModpackSearchResult, ModpackVersion};
 use crate::models::{AppSettings, VersionManifest};
+
+/// API cache for reducing redundant API calls.
+/// All caches are thread-safe and automatically expire entries based on TTL.
+pub struct ApiCache {
+    /// Loader versions cache: (LoaderType, mc_version) -> versions
+    /// TTL: 1 hour, max 100 entries
+    pub loader_versions: Cache<(LoaderType, String), Vec<LoaderVersion>>,
+
+    /// Content search results cache: hash of search params -> results
+    /// TTL: 5 minutes, max 50 entries
+    pub content_search: Cache<u64, ContentSearchResult>,
+
+    /// Modpack search results cache: hash of search params -> results
+    /// TTL: 5 minutes, max 50 entries
+    pub modpack_search: Cache<u64, ModpackSearchResult>,
+
+    /// Content details cache: content_id -> content
+    /// TTL: 10 minutes, max 200 entries
+    pub content_details: Cache<String, Content>,
+
+    /// Modpack details cache: "platform:id" -> modpack
+    /// TTL: 10 minutes, max 100 entries
+    pub modpack_details: Cache<String, Modpack>,
+
+    /// Modpack versions cache: "platform:id" -> versions
+    /// TTL: 10 minutes, max 100 entries
+    pub modpack_versions: Cache<String, Vec<ModpackVersion>>,
+
+    /// Content versions cache: "platform:id:mc_version:loader" -> versions
+    /// TTL: 10 minutes, max 100 entries
+    pub content_versions: Cache<String, Vec<ContentVersion>>,
+
+    /// Resolved dependencies cache: "version_id:instance_id" -> resolved deps
+    /// TTL: 5 minutes, max 100 entries
+    pub resolved_dependencies: Cache<String, Vec<ResolvedDependency>>,
+}
+
+impl ApiCache {
+    /// Number of cache types in ApiCache
+    pub const CACHE_COUNT: u32 = 8;
+
+    /// Create a new API cache with default TTLs.
+    pub fn new() -> Self {
+        Self {
+            // 1 hour TTL for loader versions
+            loader_versions: Cache::new(Duration::from_secs(3600), 100),
+            // 5 minute TTL for search results
+            content_search: Cache::new(Duration::from_secs(300), 50),
+            modpack_search: Cache::new(Duration::from_secs(300), 50),
+            // 10 minute TTL for content/modpack details
+            content_details: Cache::new(Duration::from_secs(600), 200),
+            modpack_details: Cache::new(Duration::from_secs(600), 100),
+            modpack_versions: Cache::new(Duration::from_secs(600), 100),
+            // 10 minute TTL for content versions
+            content_versions: Cache::new(Duration::from_secs(600), 100),
+            // 5 minute TTL for resolved dependencies
+            resolved_dependencies: Cache::new(Duration::from_secs(300), 100),
+        }
+    }
+
+    /// Clear all caches.
+    pub fn clear_all(&self) {
+        self.loader_versions.clear();
+        self.content_search.clear();
+        self.modpack_search.clear();
+        self.content_details.clear();
+        self.modpack_details.clear();
+        self.modpack_versions.clear();
+        self.content_versions.clear();
+        self.resolved_dependencies.clear();
+    }
+
+    /// Clear loader versions cache only.
+    pub fn clear_loader_versions(&self) {
+        self.loader_versions.clear();
+    }
+
+    /// Clear search caches only.
+    pub fn clear_search_caches(&self) {
+        self.content_search.clear();
+        self.modpack_search.clear();
+    }
+
+    /// Clean up expired entries from all caches.
+    pub fn cleanup_expired(&self) {
+        self.loader_versions.cleanup_expired();
+        self.content_search.cleanup_expired();
+        self.modpack_search.cleanup_expired();
+        self.content_details.cleanup_expired();
+        self.modpack_details.cleanup_expired();
+        self.modpack_versions.cleanup_expired();
+        self.content_versions.cleanup_expired();
+        self.resolved_dependencies.cleanup_expired();
+    }
+}
+
+impl Default for ApiCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Global application state managed by Tauri
 pub struct AppState {
@@ -25,6 +133,8 @@ pub struct AppState {
     pub active_content_downloads: Arc<Mutex<HashSet<String>>>,
     /// Cancellation tokens for active downloads (queue_id -> token)
     pub content_download_tokens: Arc<Mutex<HashMap<String, CancellationToken>>>,
+    /// API cache for reducing redundant API calls
+    pub api_cache: ApiCache,
 }
 
 /// Cached version manifest with fetch timestamp
@@ -63,6 +173,7 @@ impl AppState {
             content_download_queue: Arc::new(Mutex::new(VecDeque::new())),
             active_content_downloads: Arc::new(Mutex::new(HashSet::new())),
             content_download_tokens: Arc::new(Mutex::new(HashMap::new())),
+            api_cache: ApiCache::new(),
         }
     }
 

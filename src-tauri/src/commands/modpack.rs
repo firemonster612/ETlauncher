@@ -1,3 +1,4 @@
+use crate::cache::hash_params;
 use crate::error::CommandError;
 use crate::models::instance::ModpackPlatform;
 use crate::models::{
@@ -32,52 +33,66 @@ pub async fn search_modpacks(
         params.platform, params.query
     );
 
-    // If no platform specified, search all platforms and aggregate results
-    if params.platform.is_none() {
-        return search_all_platforms(&state, &params).await;
+    // Check cache first
+    let cache_key = hash_params(&params);
+    if let Some(cached) = state.api_cache.modpack_search.get(&cache_key) {
+        return Ok(cached);
     }
 
-    let platform = params.platform.clone().unwrap();
+    // If no platform specified, search all platforms and aggregate results
+    let result = if params.platform.is_none() {
+        search_all_platforms(&state, &params).await?
+    } else {
+        let platform = params.platform.unwrap();
 
-    let result = match platform {
-        ModpackPlatform::Modrinth => modrinth_service::search_modpacks(&state.http_client, &params)
-            .await
-            .map_err(CommandError::from),
-        ModpackPlatform::CurseForge => {
-            let api_key = state
-                .get_settings()
-                .curseforge_api_key
-                .ok_or_else(|| CommandError {
-                    code: "API_KEY_REQUIRED".to_string(),
-                    message: "CurseForge API key not configured. Add it to your settings."
-                        .to_string(),
-                })?;
-            curseforge_service::search_modpacks(&state.http_client, &api_key, &params)
+        match platform {
+            ModpackPlatform::Modrinth => {
+                modrinth_service::search_modpacks(&state.http_client, &params)
+                    .await
+                    .map_err(CommandError::from)?
+            }
+            ModpackPlatform::CurseForge => {
+                let api_key =
+                    state
+                        .get_settings()
+                        .curseforge_api_key
+                        .ok_or_else(|| CommandError {
+                            code: "API_KEY_REQUIRED".to_string(),
+                            message: "CurseForge API key not configured. Add it to your settings."
+                                .to_string(),
+                        })?;
+                curseforge_service::search_modpacks(&state.http_client, &api_key, &params)
+                    .await
+                    .map_err(CommandError::from)?
+            }
+            ModpackPlatform::FTB => ftb_service::search_modpacks(&state.http_client, &params)
                 .await
-                .map_err(CommandError::from)
-        }
-        ModpackPlatform::FTB => ftb_service::search_modpacks(&state.http_client, &params)
-            .await
-            .map_err(CommandError::from),
-        ModpackPlatform::Technic => technic_service::search_modpacks(&state.http_client, &params)
-            .await
-            .map_err(CommandError::from),
-        ModpackPlatform::ATLauncher => {
-            atlauncher_service::search_modpacks(&state.http_client, &params)
-                .await
-                .map_err(CommandError::from)
+                .map_err(CommandError::from)?,
+            ModpackPlatform::Technic => {
+                technic_service::search_modpacks(&state.http_client, &params)
+                    .await
+                    .map_err(CommandError::from)?
+            }
+            ModpackPlatform::ATLauncher => {
+                atlauncher_service::search_modpacks(&state.http_client, &params)
+                    .await
+                    .map_err(CommandError::from)?
+            }
         }
     };
 
-    match &result {
-        Ok(r) => println!(
-            "[modpack_cmd] search_modpacks: success, count={}",
-            r.modpacks.len()
-        ),
-        Err(e) => println!("[modpack_cmd] search_modpacks: error={:?}", e),
-    }
+    println!(
+        "[modpack_cmd] search_modpacks: success, count={}",
+        result.modpacks.len()
+    );
 
-    result
+    // Store in cache
+    state
+        .api_cache
+        .modpack_search
+        .insert(cache_key, result.clone());
+
+    Ok(result)
 }
 
 /// Search all platforms and aggregate results
@@ -167,7 +182,7 @@ async fn search_all_platforms(
         println!("[modpack_cmd] CurseForge error: {:?}", e);
     }
 
-    let sort_by = params.sort_by.clone().unwrap_or_default();
+    let sort_by = params.sort_by.unwrap_or_default();
     let all_modpacks: Vec<Modpack> = match sort_by {
         ModpackSortBy::Relevance => {
             // Best-effort "relevance" across platforms: preserve each platform's native ordering
@@ -255,6 +270,12 @@ pub async fn get_modpack(
     platform: ModpackPlatform,
     id: String,
 ) -> Result<Modpack, CommandError> {
+    // Check cache first
+    let cache_key = format!("{}:{}", platform, id);
+    if let Some(cached) = state.api_cache.modpack_details.get(&cache_key) {
+        return Ok(cached);
+    }
+
     println!(
         "[modpack_cmd] get_modpack: platform={:?}, id={}",
         platform, id
@@ -284,12 +305,17 @@ pub async fn get_modpack(
         ModpackPlatform::ATLauncher => atlauncher_service::get_modpack(&state.http_client, &id)
             .await
             .map_err(CommandError::from),
-    };
-    match &result {
-        Ok(m) => println!("[modpack_cmd] get_modpack: success, name={}", m.name),
-        Err(e) => println!("[modpack_cmd] get_modpack: error={:?}", e),
-    }
-    result
+    }?;
+
+    println!("[modpack_cmd] get_modpack: success, name={}", result.name);
+
+    // Store in cache
+    state
+        .api_cache
+        .modpack_details
+        .insert(cache_key, result.clone());
+
+    Ok(result)
 }
 
 /// Get versions for a modpack
@@ -299,6 +325,12 @@ pub async fn get_modpack_versions(
     platform: ModpackPlatform,
     id: String,
 ) -> Result<Vec<ModpackVersion>, CommandError> {
+    // Check cache first
+    let cache_key = format!("{}:{}", platform, id);
+    if let Some(cached) = state.api_cache.modpack_versions.get(&cache_key) {
+        return Ok(cached);
+    }
+
     println!(
         "[modpack_cmd] get_modpack_versions: platform={:?}, id={}",
         platform, id
@@ -332,15 +364,20 @@ pub async fn get_modpack_versions(
                 .await
                 .map_err(CommandError::from)
         }
-    };
-    match &result {
-        Ok(versions) => println!(
-            "[modpack_cmd] get_modpack_versions: success, count={}",
-            versions.len()
-        ),
-        Err(e) => println!("[modpack_cmd] get_modpack_versions: error={:?}", e),
-    }
-    result
+    }?;
+
+    println!(
+        "[modpack_cmd] get_modpack_versions: success, count={}",
+        result.len()
+    );
+
+    // Store in cache
+    state
+        .api_cache
+        .modpack_versions
+        .insert(cache_key, result.clone());
+
+    Ok(result)
 }
 
 /// Get a mod list for a given modpack version (best-effort)

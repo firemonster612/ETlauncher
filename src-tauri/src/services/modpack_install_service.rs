@@ -175,7 +175,7 @@ pub async fn install_modrinth_modpack(
         id: instance_id.clone(),
         name: instance_name,
         minecraft_version: mc_version.clone(),
-        loader_type: final_loader_type.clone(),
+        loader_type: final_loader_type,
         loader_version: final_loader_version.clone(),
         created_at: Utc::now().timestamp(),
         last_played_at: None,
@@ -270,7 +270,7 @@ pub async fn install_modrinth_modpack(
 
             loader_service::install_loader(
                 &game_dir,
-                instance.loader_type.clone(),
+                instance.loader_type,
                 &mc_version,
                 lv,
                 |msg, pct| {
@@ -429,7 +429,7 @@ pub async fn install_curseforge_modpack(
         id: instance_id.clone(),
         name: instance_name,
         minecraft_version: mc_version.clone(),
-        loader_type: final_loader_type.clone(),
+        loader_type: final_loader_type,
         loader_version: final_loader_version.clone(),
         created_at: Utc::now().timestamp(),
         last_played_at: None,
@@ -507,7 +507,7 @@ pub async fn install_curseforge_modpack(
 
             loader_service::install_loader(
                 &game_dir,
-                instance.loader_type.clone(),
+                instance.loader_type,
                 &mc_version,
                 lv,
                 |msg, pct| {
@@ -922,7 +922,7 @@ pub async fn import_from_mrpack_file(
         id: instance_id.clone(),
         name: instance_name,
         minecraft_version: mc_version.clone(),
-        loader_type: final_loader_type.clone(),
+        loader_type: final_loader_type,
         loader_version: final_loader_version.clone(),
         created_at: Utc::now().timestamp(),
         last_played_at: None,
@@ -1011,7 +1011,7 @@ pub async fn import_from_mrpack_file(
 
             loader_service::install_loader(
                 &game_dir,
-                instance.loader_type.clone(),
+                instance.loader_type,
                 &mc_version,
                 lv,
                 |msg, pct| {
@@ -1160,7 +1160,7 @@ fn scan_content_folder(
             version: "unknown".to_string(),
             version_id: "unknown".to_string(),
             filename: filename.clone(),
-            content_type: content_type.clone(),
+            content_type,
             installed_at: Utc::now().timestamp(),
             is_dependency: false,
             source: ContentSource::ModpackOriginal,
@@ -1443,7 +1443,7 @@ where
     let has_mods = version.files.iter().any(|f| f.path.starts_with("mods/"));
     let (final_loader_type, final_loader_version) = resolve_loader_for_pack(
         &version.mc_version,
-        version.loader_type.clone(),
+        version.loader_type,
         version.loader_version.clone(),
         has_mods,
     )
@@ -1510,7 +1510,7 @@ where
     let has_mods = version.files.iter().any(|f| f.path.starts_with("mods/"));
     let (final_loader_type, final_loader_version) = resolve_loader_for_pack(
         &version.mc_version,
-        version.loader_type.clone(),
+        version.loader_type,
         version.loader_version.clone(),
         has_mods,
     )
@@ -1575,7 +1575,7 @@ where
     let has_mods = version.files.iter().any(|f| f.path.starts_with("mods/"));
     let (final_loader_type, final_loader_version) = resolve_loader_for_pack(
         &version.mc_version,
-        version.loader_type.clone(),
+        version.loader_type,
         version.loader_version.clone(),
         has_mods,
     )
@@ -1696,7 +1696,7 @@ pub async fn install_ftb_modpack(
         } else {
             version.mc_version.clone()
         },
-        loader_type: version.loader_type.clone(),
+        loader_type: version.loader_type,
         loader_version: version.loader_version.clone(),
         created_at: Utc::now().timestamp(),
         last_played_at: None,
@@ -1785,12 +1785,12 @@ pub async fn install_ftb_modpack(
                     if needs_loader_detection && detected_loader != LoaderType::Vanilla {
                         (detected_loader, detected_loader_ver)
                     } else {
-                        (version.loader_type.clone(), version.loader_version.clone())
+                        (version.loader_type, version.loader_version.clone())
                     };
 
                 // Update instance with detected values
                 instance.minecraft_version = mc.clone();
-                instance.loader_type = loader.clone();
+                instance.loader_type = loader;
                 instance.loader_version = loader_ver.clone();
                 instance_service::save_instance(state, &instance)?;
 
@@ -1811,7 +1811,7 @@ pub async fn install_ftb_modpack(
                     );
                     (
                         version.mc_version.clone(),
-                        version.loader_type.clone(),
+                        version.loader_type,
                         version.loader_version.clone(),
                     )
                 }
@@ -1820,7 +1820,7 @@ pub async fn install_ftb_modpack(
     } else {
         (
             version.mc_version.clone(),
-            version.loader_type.clone(),
+            version.loader_type,
             version.loader_version.clone(),
         )
     };
@@ -1844,7 +1844,7 @@ pub async fn install_ftb_modpack(
     };
 
     // Update instance with resolved loader info
-    instance.loader_type = final_loader_type.clone();
+    instance.loader_type = final_loader_type;
     instance.loader_version = final_loader_version.clone();
     instance_service::save_instance(state, &instance)?;
 
@@ -1862,7 +1862,7 @@ pub async fn install_ftb_modpack(
 
             loader_service::install_loader(
                 &game_dir,
-                final_loader_type.clone(),
+                final_loader_type,
                 &final_mc_version,
                 lv,
                 |msg, pct| {
@@ -2023,7 +2023,7 @@ pub async fn install_technic_modpack(
         } else {
             mc_version.clone()
         },
-        loader_type: loader_type.clone(),
+        loader_type,
         loader_version: loader_version.clone(),
         created_at: Utc::now().timestamp(),
         last_played_at: None,
@@ -2188,7 +2188,7 @@ pub async fn install_technic_modpack(
 
                 // Update instance with detected values
                 instance.minecraft_version = mc_version.clone();
-                instance.loader_type = loader_type.clone();
+                instance.loader_type = loader_type;
                 instance.loader_version = loader_version.clone();
                 instance_service::save_instance(state, &instance)?;
             }
@@ -2223,7 +2223,7 @@ pub async fn install_technic_modpack(
         };
 
     // Update instance with resolved loader info
-    instance.loader_type = loader_type.clone();
+    instance.loader_type = loader_type;
     instance.loader_version = loader_version.clone();
     instance_service::save_instance(state, &instance)?;
 
@@ -2239,22 +2239,16 @@ pub async fn install_technic_modpack(
                 0,
             );
 
-            loader_service::install_loader(
-                &game_dir,
-                loader_type.clone(),
-                &mc_version,
-                lv,
-                |msg, pct| {
-                    emit_progress(
-                        app_handle,
-                        &format!("Loader: {}", msg),
-                        90 + (pct / 20),
-                        None,
-                        0,
-                        0,
-                    );
-                },
-            )
+            loader_service::install_loader(&game_dir, loader_type, &mc_version, lv, |msg, pct| {
+                emit_progress(
+                    app_handle,
+                    &format!("Loader: {}", msg),
+                    90 + (pct / 20),
+                    None,
+                    0,
+                    0,
+                );
+            })
             .await?;
         }
     }
@@ -2368,7 +2362,7 @@ pub async fn install_atlauncher_modpack(
         } else {
             mc_version.clone()
         },
-        loader_type: loader_type.clone(),
+        loader_type,
         loader_version: loader_version.clone(),
         created_at: Utc::now().timestamp(),
         last_played_at: None,
@@ -2557,7 +2551,7 @@ pub async fn install_atlauncher_modpack(
 
                 // Update instance with detected values
                 instance.minecraft_version = mc_version.clone();
-                instance.loader_type = loader_type.clone();
+                instance.loader_type = loader_type;
                 instance.loader_version = loader_version.clone();
                 instance_service::save_instance(state, &instance)?;
             }
@@ -2592,7 +2586,7 @@ pub async fn install_atlauncher_modpack(
         };
 
     // Update instance with resolved loader info
-    instance.loader_type = loader_type.clone();
+    instance.loader_type = loader_type;
     instance.loader_version = loader_version.clone();
     instance_service::save_instance(state, &instance)?;
 
@@ -2608,22 +2602,16 @@ pub async fn install_atlauncher_modpack(
                 0,
             );
 
-            loader_service::install_loader(
-                &game_dir,
-                loader_type.clone(),
-                &mc_version,
-                lv,
-                |msg, pct| {
-                    emit_progress(
-                        app_handle,
-                        &format!("Loader: {}", msg),
-                        90 + (pct / 20),
-                        None,
-                        0,
-                        0,
-                    );
-                },
-            )
+            loader_service::install_loader(&game_dir, loader_type, &mc_version, lv, |msg, pct| {
+                emit_progress(
+                    app_handle,
+                    &format!("Loader: {}", msg),
+                    90 + (pct / 20),
+                    None,
+                    0,
+                    0,
+                );
+            })
             .await?;
         }
     }
@@ -2791,7 +2779,7 @@ async fn resolve_loader_for_pack(
             mc_version, current_loader
         );
 
-        match loader_service::get_loader_versions(current_loader.clone(), mc_version).await {
+        match loader_service::get_loader_versions(current_loader, mc_version).await {
             Ok(versions) => {
                 if let Some(loader_ver) = versions.first() {
                     eprintln!("[resolve_loader] Found {:?} version: {}", current_loader, loader_ver.version);
