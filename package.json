@@ -19,7 +19,7 @@
 	"dependencies": {
 		"@lucide/svelte": "^0.562.0",
 		"@tauri-apps/api": "^2",
-		"@tauri-apps/plugin-dialog": "2.5.0",
+		"@tauri-apps/plugin-dialog": "2.6.0",
 		"@tauri-apps/plugin-opener": "^2",
 		"bits-ui": "^2.15.1",
 		"clsx": "^2.1.1",
