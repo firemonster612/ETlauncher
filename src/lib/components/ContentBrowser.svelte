@@ -13,7 +13,6 @@
 		X,
 		ChevronDown,
 		ChevronLeft,
-		Check,
 		AlertTriangle,
 		CheckCircle,
 		Trash2,
@@ -60,7 +59,7 @@
 	let selectedContentDetail = $state<Content | null>(null);
 	let isLoadingDetail = $state(false);
 	let detailError = $state<string | null>(null);
-	let detailTab = $state<'about' | 'gallery'>('about');
+	let detailTab = $state<'about' | 'gallery' | 'changelog'>('about');
 	let galleryLightboxIndex = $state<number | null>(null);
 	let descriptionExpanded = $state(false);
 	let currentGallery = $derived(selectedContentDetail?.gallery ?? []);
@@ -1808,14 +1807,20 @@
 
 <!-- Content Detail Modal -->
 {#if selectedContentDetail}
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="fixed inset-x-0 top-[var(--titlebar-height)] z-[60] flex h-[calc(100vh-var(--titlebar-height))] items-center justify-center bg-black/50 p-4"
+		class="fixed inset-x-0 top-[var(--titlebar-height)] z-[60] flex h-[calc(100vh-var(--titlebar-height))] items-center justify-center overflow-hidden bg-black/50 p-4"
+		onclick={closeContentDetail}
 	>
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="bg-card border-border flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border-2 shadow-2xl"
+			onclick={(e) => e.stopPropagation()}
 		>
 			<!-- Header -->
-			<div class="border-border border-b p-5">
+			<div class="border-border flex-shrink-0 border-b p-5">
 				<div class="flex items-start gap-4">
 					{#if contentHistory.length > 0}
 						<button
@@ -1848,52 +1853,116 @@
 							</button>
 						</div>
 						<p class="text-muted-foreground text-sm">{selectedContentDetail.author}</p>
-						<div class="mt-1 flex flex-wrap items-center gap-2">
-							<span
-								class="rounded border px-1.5 py-0.5 text-xs {getPlatformColor(
-									selectedContentDetail.platform
-								)}"
-							>
-								{selectedContentDetail.platform}
-							</span>
-							<span class="text-muted-foreground flex items-center gap-1 text-xs">
-								<Download class="h-3 w-3" />
-								{formatDownloads(selectedContentDetail.downloads)}
-							</span>
-							{#if contentStore.isContentInstalled(selectedContentDetail)}
+						<div class="mt-1 flex items-center justify-between gap-4">
+							<div class="flex flex-wrap items-center gap-2">
 								<span
-									class="flex items-center gap-1 rounded bg-green-500/20 px-1.5 py-0.5 text-xs text-green-500"
+									class="rounded border px-1.5 py-0.5 text-xs {getPlatformColor(
+										selectedContentDetail.platform
+									)}"
 								>
-									<CheckCircle class="h-3 w-3" />
-									Already Installed
+									{selectedContentDetail.platform}
 								</span>
-							{:else if contentStore.isContentDownloading(selectedContentDetail.id)}
-								<span
-									class="flex items-center gap-1 rounded bg-yellow-500/20 px-1.5 py-0.5 text-xs text-yellow-500"
-								>
-									<Loader2 class="h-3 w-3 animate-spin" />
-									Installing
+								<span class="text-muted-foreground flex items-center gap-1 text-xs">
+									<Download class="h-3 w-3" />
+									{formatDownloads(selectedContentDetail.downloads)}
 								</span>
-							{:else if contentStore.isContentQueued(selectedContentDetail.id)}
-								<span
-									class="flex items-center gap-1 rounded bg-yellow-500/20 px-1.5 py-0.5 text-xs text-yellow-500"
-								>
-									<Loader2 class="h-3 w-3 animate-spin" />
-									Pending
-								</span>
-							{/if}
+								{#if contentStore.isContentInstalled(selectedContentDetail)}
+									<span
+										class="flex items-center gap-1 rounded bg-green-500/20 px-1.5 py-0.5 text-xs text-green-500"
+									>
+										<CheckCircle class="h-3 w-3" />
+										Already Installed
+									</span>
+								{:else if contentStore.isContentDownloading(selectedContentDetail.id)}
+									<span
+										class="flex items-center gap-1 rounded bg-yellow-500/20 px-1.5 py-0.5 text-xs text-yellow-500"
+									>
+										<Loader2 class="h-3 w-3 animate-spin" />
+										Installing
+									</span>
+								{:else if contentStore.isContentQueued(selectedContentDetail.id)}
+									<span
+										class="flex items-center gap-1 rounded bg-yellow-500/20 px-1.5 py-0.5 text-xs text-yellow-500"
+									>
+										<Loader2 class="h-3 w-3 animate-spin" />
+										Pending
+									</span>
+								{/if}
+							</div>
+							<!-- Version Dropdown -->
+							<div class="flex-shrink-0">
+								{#if contentStore.isLoadingVersions}
+									<span class="text-muted-foreground flex items-center gap-1 text-xs">
+										<Loader2 class="h-3 w-3 animate-spin" />
+										Loading...
+									</span>
+								{:else if contentStore.selectedContentVersions.length > 0}
+									<Select.Root
+										type="single"
+										value={contentStore.selectedVersion?.id ?? ''}
+										onValueChange={(v) => {
+											const version = contentStore.selectedContentVersions.find(
+												(ver) => ver.id === v
+											);
+											if (version && selectedContentDetail) {
+												handleVersionSelect(version);
+											}
+										}}
+									>
+										<Select.Trigger
+											class="border-border bg-background h-7 w-auto min-w-[140px] border-2 px-2 text-xs"
+										>
+											{#if contentStore.selectedVersion}
+												{contentStore.selectedVersion.versionNumber}
+											{:else}
+												Select version
+											{/if}
+										</Select.Trigger>
+										<Select.Content class="border-border bg-card z-[70] max-h-[300px] border-2">
+											{#each contentStore.selectedContentVersions as version (version.id)}
+												<Select.Item value={version.id} label={version.versionNumber}>
+													<div class="flex flex-col">
+														<span class="text-sm">{version.versionNumber}</span>
+														<span class="text-muted-foreground text-xs">
+															{version.mcVersions.slice(0, 3).join(', ')}
+															{#if version.mcVersions.length > 3}+{version.mcVersions.length - 3} more{/if}
+															{#if version.releasedAt}
+																&bull; {new Date(version.releasedAt * 1000).toLocaleDateString()}
+															{/if}
+														</span>
+													</div>
+												</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
+								{:else}
+									<span class="text-muted-foreground text-xs">No versions</span>
+								{/if}
+							</div>
 						</div>
-						<p class="text-muted-foreground line-clamp-3 text-sm">
+						<p class="text-muted-foreground line-clamp-2 text-sm">
 							{selectedContentDetail.description}
 						</p>
+						{#if selectedContentDetail.categories?.length > 0}
+							<div class="flex flex-wrap gap-1.5 pt-1">
+								{#each selectedContentDetail.categories.slice(0, 8) as category (category)}
+									<span class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-xs">
+										{category}
+									</span>
+								{/each}
+								{#if selectedContentDetail.categories.length > 8}
+									<span class="text-muted-foreground text-xs"
+										>+{selectedContentDetail.categories.length - 8} more</span
+									>
+								{/if}
+							</div>
+						{/if}
 					</div>
 				</div>
 			</div>
 
-			<div
-				class="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden p-5 md:grid-cols-[2.5fr_1fr] xl:grid-cols-[3fr_1fr]"
-			>
-				<div class="min-h-0 space-y-4 overflow-y-auto pr-1">
+			<div class="min-h-0 flex-1 overflow-y-auto p-5">
+				<div class="space-y-4">
 					{#if detailError}
 						<div
 							class="bg-destructive/10 border-destructive text-destructive rounded border-2 p-3 text-sm"
@@ -1918,6 +1987,14 @@
 							onclick={() => (detailTab = 'gallery')}
 						>
 							Gallery
+						</Button>
+						<Button
+							size="sm"
+							variant={detailTab === 'changelog' ? 'default' : 'secondary'}
+							disabled={isLoadingDetail || contentStore.selectedContentVersions.length === 0}
+							onclick={() => (detailTab = 'changelog')}
+						>
+							Changelog
 						</Button>
 					</div>
 
@@ -1976,6 +2053,44 @@
 						{:else}
 							<p class="text-muted-foreground text-sm">No gallery available.</p>
 						{/if}
+					{:else if detailTab === 'changelog'}
+						<div class="border-border bg-background/70 space-y-4 rounded-lg border-2 p-4">
+							<h3 class="text-sm font-semibold">Changelog</h3>
+							{#if contentStore.selectedContentVersions.length === 0}
+								<p class="text-muted-foreground text-sm">No versions available.</p>
+							{:else}
+								<div class="space-y-4">
+									{#each contentStore.selectedContentVersions as version (version.id)}
+										<div class="border-border border-b pb-4 last:border-b-0 last:pb-0">
+											<div class="mb-2 flex flex-wrap items-center gap-2">
+												<span class="font-medium">{version.versionNumber}</span>
+												<span class="text-muted-foreground text-xs">
+													{version.mcVersions.slice(0, 3).join(', ')}
+													{#if version.mcVersions.length > 3}+{version.mcVersions.length - 3} more{/if}
+												</span>
+												{#if version.releasedAt}
+													<span class="text-muted-foreground text-xs">
+														&bull; {new Date(version.releasedAt * 1000).toLocaleDateString()}
+													</span>
+												{/if}
+											</div>
+											{#if version.changelog}
+												<!-- svelte-ignore a11y_click_events_have_key_events -->
+												<!-- svelte-ignore a11y_no_static_element_interactions -->
+												<div class="prose-markdown text-sm" onclick={handleDescriptionLinkClick}>
+													<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+													{@html renderMarkdown(version.changelog)}
+												</div>
+											{:else}
+												<p class="text-muted-foreground text-sm italic">
+													No changelog available for this version.
+												</p>
+											{/if}
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</div>
 					{:else}
 						<div class="border-border bg-background/70 space-y-2 rounded-lg border-2 p-4">
 							<div class="flex items-center justify-between gap-2">
@@ -2006,10 +2121,7 @@
 							{#if selectedContentDetail.body || selectedContentDetail.description}
 								<!-- svelte-ignore a11y_click_events_have_key_events -->
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
-								<div
-									class="[&_a]:text-primary text-sm leading-relaxed [&_a]:underline [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5"
-									onclick={handleDescriptionLinkClick}
-								>
+								<div class="prose-markdown" onclick={handleDescriptionLinkClick}>
 									<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 									{@html renderMarkdown(
 										selectedContentDetail.body || selectedContentDetail.description
@@ -2020,144 +2132,125 @@
 							{/if}
 						</div>
 					{/if}
-				</div>
 
-				<div class="min-h-0 space-y-3 overflow-y-auto pr-1">
-					<div class="border-border bg-background/70 max-w-sm rounded-lg border-2 p-3">
-						<h3 class="mb-2 text-sm font-semibold">Select Version</h3>
-						{#if contentStore.isLoadingVersions}
-							<div class="space-y-2">
-								<div class="text-muted-foreground flex items-center gap-2 text-sm">
-									<Loader2 class="h-4 w-4 animate-spin" />
-									Loading versions...
+					<!-- Version Info Section -->
+					{#if contentStore.selectedVersion}
+						{@const primaryFile =
+							contentStore.selectedVersion.files.find((f) => f.primary) ??
+							contentStore.selectedVersion.files[0]}
+						<div class="border-border bg-background/70 rounded-lg border-2 p-4">
+							<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+								<span class="text-muted-foreground">Version:</span>
+								<span class="font-medium">{contentStore.selectedVersion.versionNumber}</span>
+								{#if contentStore.selectedVersion.releasedAt}
+									<span class="text-muted-foreground">Released:</span>
+									<span
+										>{new Date(
+											contentStore.selectedVersion.releasedAt * 1000
+										).toLocaleDateString()}</span
+									>
+								{/if}
+								{#if primaryFile?.size}
+									<span class="text-muted-foreground">Size:</span>
+									<span>{formatBytes(primaryFile.size)}</span>
+								{/if}
+							</div>
+						</div>
+					{/if}
+
+					<!-- Dependencies Section -->
+					{#if selectedContentDetail && contentStore.selectedVersion}
+						{@const hasRequiredDeps = contentStore.selectedVersion.dependencies.some(
+							(d) => d.dependencyType === 'required'
+						)}
+
+						{#if hasRequiredDeps}
+							{#if contentStore.isResolvingDeps}
+								<div class="bg-muted/50 border-border rounded border-2 p-3">
+									<div class="text-muted-foreground flex items-center gap-2 text-sm">
+										<Loader2 class="h-4 w-4 animate-spin" />
+										Loading dependencies...
+									</div>
 								</div>
-								<Skeleton class="h-9 w-full" />
-								<Skeleton class="h-9 w-full" />
-								<Skeleton class="h-9 w-full" />
-							</div>
-						{:else if contentStore.selectedContentVersions.length === 0}
-							<p class="text-muted-foreground text-sm">No compatible versions found</p>
-						{:else}
-							<div class="space-y-1">
-								{#each contentStore.selectedContentVersions.slice(0, 15) as version (version.id)}
-									{@const isSelected = contentStore.selectedVersion?.id === version.id}
-									<button
-										class="w-full rounded border-2 p-2 text-left transition-colors {isSelected
-											? 'border-primary bg-primary/10'
-											: 'border-border hover:border-primary/50'}"
-										onclick={() => handleVersionSelect(version)}
-									>
-										<div class="flex items-center gap-2">
-											{#if isSelected}
-												<Check class="text-primary h-4 w-4" />
-											{/if}
-											<span class="text-sm font-medium">{version.versionNumber}</span>
-										</div>
-										<div class="text-muted-foreground mt-0.5 text-xs">
-											{version.mcVersions.slice(0, 3).join(', ')}
-											{#if version.mcVersions.length > 3}+{version.mcVersions.length - 3} more{/if}
-											{#if version.releasedAt}
-												&bull; {new Date(version.releasedAt * 1000).toLocaleDateString()}
-											{/if}
-										</div>
-									</button>
-								{/each}
-							</div>
-						{/if}
-
-						{#if selectedContentDetail && contentStore.selectedVersion}
-							{@const hasRequiredDeps = contentStore.selectedVersion.dependencies.some(
-								(d) => d.dependencyType === 'required'
-							)}
-
-							{#if hasRequiredDeps}
-								{#if contentStore.isResolvingDeps}
-									<div class="bg-muted/50 border-border mt-4 rounded border-2 p-3">
-										<div class="text-muted-foreground flex items-center gap-2 text-sm">
-											<Loader2 class="h-4 w-4 animate-spin" />
-											Loading dependencies...
-										</div>
-									</div>
-								{:else if contentStore.resolvedDependencies.length > 0}
-									{@const allDepsInstalled = contentStore.resolvedDependencies.every(
-										(d) => d.alreadyInstalled
-									)}
+							{:else if contentStore.resolvedDependencies.length > 0}
+								{@const allDepsInstalled = contentStore.resolvedDependencies.every(
+									(d) => d.alreadyInstalled
+								)}
+								<div
+									class="rounded border-2 p-3 {allDepsInstalled
+										? 'border-green-500/50 bg-green-500/10'
+										: 'border-amber-500/50 bg-amber-500/10'}"
+								>
 									<div
-										class="mt-4 rounded border-2 p-3 {allDepsInstalled
-											? 'border-green-500/50 bg-green-500/10'
-											: 'border-amber-500/50 bg-amber-500/10'}"
+										class="flex items-center gap-2 text-sm font-medium {allDepsInstalled
+											? 'text-green-500'
+											: 'text-amber-500'}"
 									>
-										<div
-											class="flex items-center gap-2 text-sm font-medium {allDepsInstalled
-												? 'text-green-500'
-												: 'text-amber-500'}"
-										>
-											{#if allDepsInstalled}
-												<CheckCircle class="h-4 w-4" />
-												Dependencies Installed
-											{:else}
-												<AlertTriangle class="h-4 w-4" />
-												Required Dependencies
-											{/if}
-										</div>
-										<p class="text-muted-foreground mt-1 text-xs">
-											{#if allDepsInstalled}
-												All required dependencies are already installed.
-											{:else}
-												This {selectedContentDetail.contentType} requires the following (will be auto-installed):
-											{/if}
-										</p>
-										<ul class="mt-2 space-y-1 text-xs">
-											{#each contentStore.resolvedDependencies as resolved (resolved.content.id)}
-												<li class="flex items-center gap-2">
-													{#if resolved.alreadyInstalled}
-														<CheckCircle class="h-3 w-3 text-green-500" />
-													{:else}
-														<span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
-													{/if}
-													<button
-														type="button"
-														class="text-primary hover:text-primary/80 flex items-center gap-1 text-left underline transition-colors {resolved.alreadyInstalled
-															? 'text-green-500/80 hover:text-green-500'
-															: ''}"
-														onclick={() => handleDependencyClick(resolved.content)}
-													>
-														{resolved.content.name}
-														<ExternalLink class="h-2.5 w-2.5" />
-													</button>
-													{#if resolved.alreadyInstalled}
-														<span class="text-[10px] text-green-500">installed</span>
-													{/if}
-												</li>
-											{/each}
-										</ul>
-									</div>
-								{:else}
-									{@const requiredDeps = contentStore.selectedVersion.dependencies.filter(
-										(d) => d.dependencyType === 'required'
-									)}
-									<div class="mt-4 rounded border-2 border-amber-500/50 bg-amber-500/10 p-3">
-										<div class="flex items-center gap-2 text-sm font-medium text-amber-500">
+										{#if allDepsInstalled}
+											<CheckCircle class="h-4 w-4" />
+											Dependencies Installed
+										{:else}
 											<AlertTriangle class="h-4 w-4" />
 											Required Dependencies
-										</div>
-										<ul class="mt-2 space-y-1 text-xs">
-											{#each requiredDeps as dep (dep.id)}
-												<li class="flex items-center gap-2">
-													<span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
-													<span class="text-muted-foreground italic">{dep.id}</span>
-												</li>
-											{/each}
-										</ul>
+										{/if}
 									</div>
-								{/if}
+									<p class="text-muted-foreground mt-1 text-xs">
+										{#if allDepsInstalled}
+											All required dependencies are already installed.
+										{:else}
+											This {selectedContentDetail.contentType} requires the following (will be auto-installed):
+										{/if}
+									</p>
+									<ul class="mt-2 space-y-1 text-xs">
+										{#each contentStore.resolvedDependencies as resolved (resolved.content.id)}
+											<li class="flex items-center gap-2">
+												{#if resolved.alreadyInstalled}
+													<CheckCircle class="h-3 w-3 text-green-500" />
+												{:else}
+													<span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+												{/if}
+												<button
+													type="button"
+													class="text-primary hover:text-primary/80 flex items-center gap-1 text-left underline transition-colors {resolved.alreadyInstalled
+														? 'text-green-500/80 hover:text-green-500'
+														: ''}"
+													onclick={() => handleDependencyClick(resolved.content)}
+												>
+													{resolved.content.name}
+													<ExternalLink class="h-2.5 w-2.5" />
+												</button>
+												{#if resolved.alreadyInstalled}
+													<span class="text-[10px] text-green-500">installed</span>
+												{/if}
+											</li>
+										{/each}
+									</ul>
+								</div>
+							{:else}
+								{@const requiredDeps = contentStore.selectedVersion.dependencies.filter(
+									(d) => d.dependencyType === 'required'
+								)}
+								<div class="rounded border-2 border-amber-500/50 bg-amber-500/10 p-3">
+									<div class="flex items-center gap-2 text-sm font-medium text-amber-500">
+										<AlertTriangle class="h-4 w-4" />
+										Required Dependencies
+									</div>
+									<ul class="mt-2 space-y-1 text-xs">
+										{#each requiredDeps as dep (dep.id)}
+											<li class="flex items-center gap-2">
+												<span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+												<span class="text-muted-foreground italic">{dep.id}</span>
+											</li>
+										{/each}
+									</ul>
+								</div>
 							{/if}
 						{/if}
-					</div>
+					{/if}
 				</div>
 			</div>
 
-			<div class="border-border space-y-3 border-t p-4">
+			<div class="border-border flex-shrink-0 space-y-3 border-t p-4">
 				{#if installSuccess}
 					<div
 						class="flex items-center gap-2 rounded border-2 border-green-500/50 bg-green-500/10 p-3 text-sm text-green-500"

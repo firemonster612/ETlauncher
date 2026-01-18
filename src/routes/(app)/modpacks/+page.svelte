@@ -12,7 +12,6 @@
 		ChevronDown,
 		Maximize2,
 		StopCircle,
-		Check,
 	} from '@lucide/svelte';
 	import { renderMarkdown } from '$lib/utils/markdown';
 	import { openUrl } from '@tauri-apps/plugin-opener';
@@ -68,7 +67,7 @@
 	let searchInput = $state('');
 	let showFilters = $state(false);
 	let selectedModpackDetail = $state<Modpack | null>(null);
-	let modpackDetailTab = $state<'about' | 'gallery' | 'mods'>('about');
+	let modpackDetailTab = $state<'about' | 'gallery' | 'mods' | 'changelog'>('about');
 	let modpackLightboxIndex = $state<number | null>(null);
 	let descriptionExpanded = $state(false);
 	let selectedVersionId = $state<string | null>(null);
@@ -232,6 +231,12 @@
 			return `${(downloads / 1_000).toFixed(1)}K`;
 		}
 		return downloads.toString();
+	}
+
+	function formatBytes(bytes: number): string {
+		if (bytes < 1024) return `${bytes} B`;
+		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 	}
 
 	function getPlatformColor(platform: ModpackPlatform): string {
@@ -703,14 +708,32 @@
 
 <!-- Modpack Detail Modal -->
 {#if selectedModpackDetail}
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="fixed inset-x-0 top-[var(--titlebar-height)] z-50 flex h-[calc(100vh-var(--titlebar-height))] items-center justify-center bg-black/50 p-4"
+		class="fixed inset-x-0 top-[var(--titlebar-height)] z-50 flex h-[calc(100vh-var(--titlebar-height))] items-center justify-center overflow-hidden bg-black/50 p-4"
+		onclick={closeModpackDetail}
 	>
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
-			class="bg-card border-border flex max-h-[90vh] w-full max-w-6xl flex-col rounded-lg border-2 shadow-2xl"
+			class="bg-card border-border flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border-2 shadow-2xl"
+			onclick={(e) => e.stopPropagation()}
 		>
+			<!-- Banner Image -->
+			{#if selectedModpackDetail.bannerUrl}
+				<div class="relative h-32 flex-shrink-0 overflow-hidden">
+					<img src={selectedModpackDetail.bannerUrl} alt="" class="h-full w-full object-cover" />
+					<div class="from-card absolute inset-0 bg-gradient-to-t via-transparent to-transparent" />
+				</div>
+			{/if}
+
 			<!-- Header -->
-			<div class="border-border flex-shrink-0 border-b p-6">
+			<div
+				class="border-border flex-shrink-0 border-b p-6 {selectedModpackDetail.bannerUrl
+					? 'relative -mt-12'
+					: ''}"
+			>
 				<div class="flex gap-4">
 					{#if selectedModpackDetail.iconUrl}
 						<img
@@ -734,32 +757,92 @@
 							</button>
 						</div>
 						<p class="text-muted-foreground">{selectedModpackDetail.author}</p>
-						<div class="mt-2 flex flex-wrap items-center gap-2">
-							<span
-								class="rounded border px-1.5 py-0.5 text-xs {getPlatformColor(
-									selectedModpackDetail.platform
-								)}"
-							>
-								{selectedModpackDetail.platform}
-							</span>
-							{#each (selectedModpackDetail.loaders || []).filter((l) => l && l !== 'unknown' && l !== 'vanilla') as loader (loader)}
-								<span class="rounded px-1.5 py-0.5 text-xs {getLoaderColor(loader)}">
-									{loader}
+						<div class="mt-2 flex items-center justify-between gap-4">
+							<div class="flex flex-wrap items-center gap-2">
+								<span
+									class="rounded border px-1.5 py-0.5 text-xs {getPlatformColor(
+										selectedModpackDetail.platform
+									)}"
+								>
+									{selectedModpackDetail.platform}
 								</span>
-							{/each}
-							<span class="text-muted-foreground flex items-center gap-1 text-xs">
-								<Download class="h-3 w-3" />
-								{formatDownloads(selectedModpackDetail.downloads)}
-							</span>
+								{#each (selectedModpackDetail.loaders || []).filter((l) => l && l !== 'unknown' && l !== 'vanilla') as loader (loader)}
+									<span class="rounded px-1.5 py-0.5 text-xs {getLoaderColor(loader)}">
+										{loader}
+									</span>
+								{/each}
+								<span class="text-muted-foreground flex items-center gap-1 text-xs">
+									<Download class="h-3 w-3" />
+									{formatDownloads(selectedModpackDetail.downloads)}
+								</span>
+							</div>
+							<!-- Version Dropdown -->
+							<div class="flex-shrink-0">
+								{#if modpacksStore.isLoadingVersions}
+									<span class="text-muted-foreground flex items-center gap-1 text-xs">
+										<Loader2 class="h-3 w-3 animate-spin" />
+										Loading...
+									</span>
+								{:else if modpacksStore.selectedModpackVersions.length > 0}
+									<Select.Root
+										type="single"
+										value={selectedVersionId ?? ''}
+										onValueChange={(v) => (selectedVersionId = v)}
+									>
+										<Select.Trigger
+											class="border-border bg-background h-7 w-auto min-w-[140px] border-2 px-2 text-xs"
+											data-tutorial="modpack-install"
+										>
+											{@const selectedVersion = modpacksStore.selectedModpackVersions.find(
+												(v) => v.id === selectedVersionId
+											)}
+											{#if selectedVersion}
+												{selectedVersion.name}
+											{:else}
+												Select version
+											{/if}
+										</Select.Trigger>
+										<Select.Content class="border-border bg-card z-[70] max-h-[300px] border-2">
+											{#each modpacksStore.selectedModpackVersions as version (version.id)}
+												<Select.Item value={version.id} label={version.name}>
+													<div class="flex flex-col">
+														<span class="text-sm">{version.name}</span>
+														<span class="text-muted-foreground text-xs">
+															MC {version.mcVersion} &bull; {version.loaderType}
+															{#if version.releasedAt}
+																&bull; {new Date(version.releasedAt * 1000).toLocaleDateString()}
+															{/if}
+														</span>
+													</div>
+												</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
+								{:else}
+									<span class="text-muted-foreground text-xs">No versions</span>
+								{/if}
+							</div>
 						</div>
+						{#if selectedModpackDetail.categories?.length > 0}
+							<div class="mt-2 flex flex-wrap gap-1.5">
+								{#each selectedModpackDetail.categories.slice(0, 8) as category (category)}
+									<span class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-xs">
+										{category}
+									</span>
+								{/each}
+								{#if selectedModpackDetail.categories.length > 8}
+									<span class="text-muted-foreground text-xs"
+										>+{selectedModpackDetail.categories.length - 8} more</span
+									>
+								{/if}
+							</div>
+						{/if}
 					</div>
 				</div>
 			</div>
 
-			<div
-				class="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden p-5 md:grid-cols-[2.5fr_1fr] xl:grid-cols-[3fr_1fr]"
-			>
-				<div class="min-h-0 space-y-4 overflow-y-auto pr-1">
+			<div class="min-h-0 flex-1 overflow-y-auto p-5">
+				<div class="space-y-4">
 					<div class="flex items-center gap-2">
 						<Button
 							size="sm"
@@ -783,6 +866,14 @@
 							onclick={() => (modpackDetailTab = 'mods')}
 						>
 							Mods
+						</Button>
+						<Button
+							size="sm"
+							variant={modpackDetailTab === 'changelog' ? 'default' : 'secondary'}
+							disabled={modpacksStore.selectedModpackVersions.length === 0}
+							onclick={() => (modpackDetailTab = 'changelog')}
+						>
+							Changelog
 						</Button>
 					</div>
 
@@ -892,6 +983,43 @@
 						{:else}
 							<p class="text-muted-foreground text-sm">No gallery available.</p>
 						{/if}
+					{:else if modpackDetailTab === 'changelog'}
+						<div class="border-border bg-background/70 space-y-4 rounded-lg border-2 p-4">
+							<h3 class="text-sm font-semibold">Changelog</h3>
+							{#if modpacksStore.selectedModpackVersions.length === 0}
+								<p class="text-muted-foreground text-sm">No versions available.</p>
+							{:else}
+								<div class="space-y-4">
+									{#each modpacksStore.selectedModpackVersions as version (version.id)}
+										<div class="border-border border-b pb-4 last:border-b-0 last:pb-0">
+											<div class="mb-2 flex flex-wrap items-center gap-2">
+												<span class="font-medium">{version.name}</span>
+												<span class="text-muted-foreground text-xs">
+													MC {version.mcVersion} &bull; {version.loaderType}
+												</span>
+												{#if version.releasedAt}
+													<span class="text-muted-foreground text-xs">
+														&bull; {new Date(version.releasedAt * 1000).toLocaleDateString()}
+													</span>
+												{/if}
+											</div>
+											{#if version.changelog}
+												<!-- svelte-ignore a11y_click_events_have_key_events -->
+												<!-- svelte-ignore a11y_no_static_element_interactions -->
+												<div class="prose-markdown text-sm" onclick={handleDescriptionLinkClick}>
+													<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+													{@html renderMarkdown(version.changelog)}
+												</div>
+											{:else}
+												<p class="text-muted-foreground text-sm italic">
+													No changelog available for this version.
+												</p>
+											{/if}
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</div>
 					{:else}
 						<div class="border-border bg-background/70 space-y-2 rounded-lg border-2 p-4">
 							<div class="flex items-center justify-between gap-2">
@@ -936,10 +1064,7 @@
 								{#if selectedModpackDetail.body || selectedModpackDetail.description}
 									<!-- svelte-ignore a11y_click_events_have_key_events -->
 									<!-- svelte-ignore a11y_no_static_element_interactions -->
-									<div
-										class="[&_a]:text-primary text-sm leading-relaxed [&_a]:underline [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5"
-										onclick={handleDescriptionLinkClick}
-									>
+									<div class="prose-markdown" onclick={handleDescriptionLinkClick}>
 										<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 										{@html renderMarkdown(
 											selectedModpackDetail.body,
@@ -952,47 +1077,34 @@
 							{/if}
 						</div>
 					{/if}
-				</div>
 
-				<div class="min-h-0 space-y-3 overflow-y-auto pr-1">
-					<div class="border-border bg-background/70 rounded-lg border-2 p-3">
-						<h3 class="mb-2 text-sm font-semibold">Select Version</h3>
-						{#if modpacksStore.isLoadingVersions}
-							<div class="text-muted-foreground flex items-center gap-2 text-sm">
-								<Loader2 class="h-4 w-4 animate-spin" />
-								Loading versions...
-							</div>
-						{:else if modpacksStore.selectedModpackVersions.length === 0}
-							<p class="text-muted-foreground text-sm">No versions available</p>
-						{:else}
-							<div class="space-y-1">
-								{#each modpacksStore.selectedModpackVersions.slice(0, 15) as version, versionIndex (version.id)}
-									{@const isSelected = selectedVersionId === version.id}
-									<button
-										type="button"
-										class="w-full rounded border-2 p-2 text-left transition-colors {isSelected
-											? 'border-primary bg-primary/10'
-											: 'border-border hover:border-primary/50'}"
-										onclick={() => (selectedVersionId = version.id)}
-										data-tutorial={versionIndex === 0 ? 'modpack-install' : undefined}
-									>
-										<div class="flex items-center gap-2">
-											{#if isSelected}
-												<Check class="text-primary h-4 w-4" />
-											{/if}
-											<span class="text-sm font-medium">{version.name}</span>
-										</div>
-										<div class="text-muted-foreground mt-0.5 text-xs">
-											MC {version.mcVersion} &bull; {version.loaderType}
-											{#if version.releasedAt}
-												&bull; {new Date(version.releasedAt * 1000).toLocaleDateString()}
-											{/if}
-										</div>
-									</button>
-								{/each}
+					<!-- Version Info Section -->
+					{#if selectedVersionId}
+						{@const selectedVersion = modpacksStore.selectedModpackVersions.find(
+							(v) => v.id === selectedVersionId
+						)}
+						{#if selectedVersion}
+							{@const totalSize = selectedVersion.files.reduce((sum, f) => sum + f.size, 0)}
+							<div class="border-border bg-background/70 rounded-lg border-2 p-4">
+								<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+									<span class="text-muted-foreground">Version:</span>
+									<span class="font-medium">{selectedVersion.name}</span>
+									{#if selectedVersion.releasedAt}
+										<span class="text-muted-foreground">Released:</span>
+										<span>{new Date(selectedVersion.releasedAt * 1000).toLocaleDateString()}</span>
+									{/if}
+									{#if totalSize > 0}
+										<span class="text-muted-foreground">Size:</span>
+										<span>{formatBytes(totalSize)}</span>
+									{/if}
+									{#if selectedVersion.loaderVersion}
+										<span class="text-muted-foreground">Loader:</span>
+										<span>{selectedVersion.loaderType} {selectedVersion.loaderVersion}</span>
+									{/if}
+								</div>
 							</div>
 						{/if}
-					</div>
+					{/if}
 				</div>
 			</div>
 
