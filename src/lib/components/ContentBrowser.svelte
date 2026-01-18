@@ -3,7 +3,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { listen } from '@tauri-apps/api/event';
 	import { openUrl } from '@tauri-apps/plugin-opener';
-	import { marked } from 'marked';
+	import { renderMarkdown } from '$lib/utils/markdown';
 	import {
 		Package,
 		Search,
@@ -681,18 +681,6 @@
 				return 'bg-purple-500/20 text-purple-500';
 			default:
 				return 'bg-muted/50 text-muted-foreground';
-		}
-	}
-
-	function renderDescription(body?: string | null, fallback?: string): string {
-		const source = (body && body.trim()) || fallback || '';
-		if (!source) return '';
-
-		try {
-			return marked.parse(source) as string;
-		} catch (e) {
-			console.error('Failed to render description', e);
-			return source.replace(/\n/g, '<br/>');
 		}
 	}
 
@@ -2023,7 +2011,7 @@
 									onclick={handleDescriptionLinkClick}
 								>
 									<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-									{@html renderDescription(
+									{@html renderMarkdown(
 										selectedContentDetail.body || selectedContentDetail.description
 									)}
 								</div>
@@ -2307,7 +2295,7 @@
 	open={descriptionExpanded && !!selectedContentDetail}
 	title={selectedContentDetail ? `${selectedContentDetail.name} — Description` : 'Description'}
 	html={selectedContentDetail
-		? renderDescription(selectedContentDetail.body || selectedContentDetail.description)
+		? renderMarkdown(selectedContentDetail.body || selectedContentDetail.description)
 		: ''}
 	onClose={() => (descriptionExpanded = false)}
 />

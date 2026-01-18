@@ -342,7 +342,7 @@
 			<!-- Spotlight element with box-shadow effect -->
 			{#if tutorialStore.targetRect}
 				<div
-					class="spotlight absolute rounded-lg transition-all duration-400 ease-out"
+					class="spotlight absolute rounded-lg transition-all duration-[400ms] ease-out"
 					style:left={spotlightStyle.left}
 					style:top={spotlightStyle.top}
 					style:width={spotlightStyle.width}
@@ -469,10 +469,5 @@
 
 	.tooltip-center {
 		transform: translate(-50%, -50%);
-	}
-
-	/* Smooth transitions */
-	.duration-400 {
-		transition-duration: 400ms;
 	}
 </style>
