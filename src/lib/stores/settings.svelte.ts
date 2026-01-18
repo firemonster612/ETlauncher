@@ -37,7 +37,6 @@ function createSettingsStore() {
 
 		/** Update settings */
 		async update(updates: Partial<AppSettings>) {
-			isLoading = true;
 			error = null;
 
 			try {
@@ -46,8 +45,6 @@ function createSettingsStore() {
 				error = getErrorMessage(e);
 				console.error('Failed to update settings:', e);
 				throw e;
-			} finally {
-				isLoading = false;
 			}
 		},
 

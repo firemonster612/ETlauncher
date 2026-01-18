@@ -134,6 +134,7 @@
 	}
 
 	let connectingServer = $state<string | null>(null);
+	let launchingWorld = $state<string | null>(null);
 	const supportsQuickPlay = $derived(
 		instance ? checkQuickPlaySupport(instance.minecraftVersion) : false
 	);
@@ -159,6 +160,30 @@
 			console.error('Failed to quick-connect:', e);
 		} finally {
 			connectingServer = null;
+		}
+	}
+
+	async function handleLaunchWorld(world: { folderName: string }) {
+		if (!instance) return;
+		if (!supportsQuickPlay) {
+			error = 'Quick Play is only available on Minecraft 1.20+.';
+			return;
+		}
+		if (!activeAccountId) {
+			error = 'Select an active account before launching.';
+			return;
+		}
+
+		launchingWorld = world.folderName;
+		error = null;
+
+		try {
+			await instanceDetailService.launchIntoWorld(instance.id, activeAccountId, world.folderName);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to launch world';
+			console.error('Failed to launch world:', e);
+		} finally {
+			launchingWorld = null;
 		}
 	}
 
@@ -360,9 +385,14 @@
 												variant="secondary"
 												size="sm"
 												class="justify-center"
-												onclick={() => (currentView = 'worlds')}
+												onclick={() => handleLaunchWorld(world)}
+												disabled={!!launchingWorld}
 											>
-												<Play class="mr-1 h-4 w-4" /> Launch
+												{#if launchingWorld === world.folderName}
+													<Loader2 class="mr-1 h-4 w-4 animate-spin" /> Launching...
+												{:else}
+													<Play class="mr-1 h-4 w-4" /> Launch
+												{/if}
 											</Button>
 										{/if}
 									</div>

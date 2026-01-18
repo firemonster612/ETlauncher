@@ -6,6 +6,12 @@ use std::path::PathBuf;
 use std::process::Command;
 use tauri::State;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 /// Get all instances
 #[tauri::command]
 pub fn get_instances(state: State<'_, AppState>) -> Result<Vec<Instance>, CommandError> {
@@ -100,13 +106,12 @@ pub fn open_instance_folder(
 
     #[cfg(target_os = "windows")]
     {
-        Command::new("explorer")
-            .arg(&game_dir)
-            .spawn()
-            .map_err(|e| CommandError {
-                code: "OPEN_FOLDER_FAILED".to_string(),
-                message: format!("Failed to open folder: {}", e),
-            })?;
+        let mut cmd = Command::new("explorer");
+        cmd.arg(&game_dir).creation_flags(CREATE_NO_WINDOW);
+        cmd.spawn().map_err(|e| CommandError {
+            code: "OPEN_FOLDER_FAILED".to_string(),
+            message: format!("Failed to open folder: {}", e),
+        })?;
     }
 
     Ok(())
