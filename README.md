@@ -6,17 +6,17 @@
 
 <div align="center" style="line-height: 1;">
   
- <a href="https://rust-lang.org"><img 
-    src="https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white"> 
-  <a href="https://bun.com"><img 
+ <a href="https://rust-lang.org"><img
+    src="https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white">
+  <a href="https://bun.com"><img
     src="https://img.shields.io/badge/Bun-%23000000.svg?style=for-the-badge&logo=bun&logoColor=white">
-  <a href="https://svelte.com/"><img 
-    src="https://img.shields.io/badge/svelte-%23f1413d.svg?style=for-the-badge&logo=svelte&logoColor=white"> 
+  <a href="https://svelte.com/"><img
+    src="https://img.shields.io/badge/svelte-%23f1413d.svg?style=for-the-badge&logo=svelte&logoColor=white">
   <br>
-  <a href="https://v2.tauri.app"><img 
-    src="https://img.shields.io/badge/tauri-%2324C8DB.svg?style=for-the-badge&logo=tauri&logoColor=%23FFFFFF"> 
-  <a href="https://typescriptlang.org"><img 
-    src="https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white"> 
+  <a href="https://v2.tauri.app"><img
+    src="https://img.shields.io/badge/tauri-%2324C8DB.svg?style=for-the-badge&logo=tauri&logoColor=%23FFFFFF">
+  <a href="https://typescriptlang.org"><img
+    src="https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white">
     <br>
   <a href="https://github.com/firemonster612/ETlauncher/blob/master/LICENSE"><img alt="License"
     src="https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge"/></a>
@@ -61,7 +61,9 @@ Download and run `ETlauncher_x.x.x_x64-setup.exe`.
 
 Download `ETlauncher_x.x.x_aarch64.dmg` (Apple Silicon) or `ETlauncher_x.x.x_x64.dmg` (Intel).
 
-> **Note:** The app is unsigned. Right-click the app and select "Open" to bypass Gatekeeper on first launch.
+> **Note:** The app is unsigned. Right-click the app and select "Open" to bypass Gatekeeper on first launch, then you have to go to privacy & security settings, scroll down and click "run anyway" on ETlauncher.
+
+> **Another Note:** The app is less tested on MacOS (cross-platform testing is hard) so there may be strange unseen behaviours & bugs.
 
 ### Linux
 
