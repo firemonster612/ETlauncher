@@ -1,3 +1,4 @@
+import { SvelteMap } from 'svelte/reactivity';
 import type {
 	Content,
 	ContentDownloadProgress,
@@ -14,6 +15,14 @@ import type {
 } from '$lib/types';
 import * as contentService from '$lib/services/content';
 
+/** Cached results for a content type */
+interface ContentTypeCache {
+	items: Content[];
+	totalCount: number;
+	scanResult: ScanResult | null;
+	cachedAt: number;
+}
+
 /** Create the content store */
 function createContentStore() {
 	// Search state
@@ -23,6 +32,16 @@ function createContentStore() {
 	let totalCount = $state(0);
 	let currentPage = $state(0);
 	const pageSize = $state(20);
+
+	// Cache per platform + content type (persists across tab/platform switches)
+	// Key format: "platform:contentType" e.g. "modrinth:mod"
+	const contentCache = new SvelteMap<string, ContentTypeCache>();
+	const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+	/** Get cache key for current platform and content type */
+	function getCacheKey(p: ContentPlatform, ct: ContentType): string {
+		return `${p}:${ct}`;
+	}
 
 	// Filter state (can be set from instance context)
 	let query = $state('');
@@ -40,6 +59,7 @@ function createContentStore() {
 	let selectedContent = $state<Content | null>(null);
 	let selectedContentVersions = $state<ContentVersion[]>([]);
 	let selectedVersion = $state<ContentVersion | null>(null);
+	let isLoadingDetails = $state(false);
 	let isLoadingVersions = $state(false);
 
 	// Installed content tracking (scan-based)
@@ -59,6 +79,9 @@ function createContentStore() {
 	// Resolved dependencies state
 	let resolvedDependencies = $state<ResolvedDependency[]>([]);
 	let isResolvingDeps = $state(false);
+
+	// Selection tracking to prevent race conditions
+	let currentSelectionId: string | null = null;
 
 	return {
 		// Search state getters
@@ -121,6 +144,9 @@ function createContentStore() {
 		},
 		get selectedVersion() {
 			return selectedVersion;
+		},
+		get isLoadingDetails() {
+			return isLoadingDetails;
 		},
 		get isLoadingVersions() {
 			return isLoadingVersions;
@@ -312,6 +338,8 @@ function createContentStore() {
 			instanceId = id;
 			mcVersion = mcVer;
 			loader = loaderType === 'vanilla' ? null : loaderType;
+			// Clear content type cache since filters changed
+			contentCache.clear();
 			// Scan installed content for this instance
 			await this.scanInstalledContent();
 		},
@@ -510,16 +538,67 @@ function createContentStore() {
 
 		/** Set platform filter */
 		setPlatform(newPlatform: ContentPlatform) {
-			platform = newPlatform;
+			if (platform !== newPlatform) {
+				// Save current results to cache before switching
+				if (items.length > 0) {
+					contentCache.set(getCacheKey(platform, contentType), {
+						items: [...items],
+						totalCount,
+						scanResult,
+						cachedAt: Date.now(),
+					});
+				}
+
+				platform = newPlatform;
+
+				// Check if we have cached data for the new platform
+				const cached = contentCache.get(getCacheKey(newPlatform, contentType));
+				if (cached && Date.now() - cached.cachedAt < CACHE_TTL) {
+					items = cached.items;
+					totalCount = cached.totalCount;
+					// Keep scanResult as-is (it's per-instance, not per-platform)
+					isSearching = false;
+				} else {
+					// No cache - will need to search
+					items = [];
+					totalCount = 0;
+					isSearching = true;
+				}
+			}
 		},
 
 		/** Set content type filter and trigger scan */
 		async setContentType(type: ContentType) {
+			// Save current results to cache before switching
+			if (items.length > 0) {
+				contentCache.set(getCacheKey(platform, contentType), {
+					items: [...items],
+					totalCount,
+					scanResult,
+					cachedAt: Date.now(),
+				});
+			}
+
 			contentType = type;
-			// Clear scan result when switching content types
-			scanResult = null;
-			// Trigger a new scan for this content type (silent to avoid flickering)
-			await this.scanInstalledContent(true);
+			currentPage = 0;
+
+			// Check if we have valid cached data for the new content type
+			const cached = contentCache.get(getCacheKey(platform, type));
+			if (cached && Date.now() - cached.cachedAt < CACHE_TTL) {
+				// Restore from cache - instant switch!
+				items = cached.items;
+				totalCount = cached.totalCount;
+				scanResult = cached.scanResult;
+				isSearching = false;
+			} else {
+				// No cache - show loading state
+				items = [];
+				scanResult = null;
+				totalCount = 0;
+				isSearching = true;
+				// Trigger a new scan for this content type (silent to avoid flickering)
+				await this.scanInstalledContent(true);
+			}
 		},
 
 		/** Set category filter */
@@ -542,52 +621,79 @@ function createContentStore() {
 			// Keep mcVersion and loader from instance context
 		},
 
-		/** Select content and load its versions */
+		/** Select content and load its versions/details in parallel */
 		async selectContent(content: Content) {
+			// Track this selection to prevent race conditions
+			const selectionId = content.id;
+			currentSelectionId = selectionId;
+
+			// Show basic content immediately
 			selectedContent = content;
 			selectedContentVersions = [];
 			selectedVersion = null;
+			resolvedDependencies = [];
+			isLoadingDetails = true;
 			isLoadingVersions = true;
 
-			try {
-				// Pull full project details so the UI can show long descriptions and gallery
-				try {
-					const detailed = await contentService.getContent(content.platform, content.id);
-					selectedContent = { ...content, ...detailed };
-				} catch (e) {
+			const shouldFilterByLoader = content.contentType === 'mod';
+
+			// Load details and versions in parallel
+			const detailsPromise = contentService
+				.getContent(content.platform, content.id)
+				.then((detailed) => {
+					// Only update if this is still the current selection
+					if (currentSelectionId === selectionId) {
+						selectedContent = { ...content, ...detailed };
+						isLoadingDetails = false;
+					}
+				})
+				.catch((e) => {
 					console.error('Failed to load detailed content info:', e);
-					selectedContent = content;
-				}
+					if (currentSelectionId === selectionId) {
+						isLoadingDetails = false;
+					}
+				});
 
-				// Only apply loader filter for mods - shaders/resourcepacks use different loader
-				// identifiers (like "iris", "optifine") or none at all
-				const shouldFilterByLoader = selectedContent.contentType === 'mod';
-
-				selectedContentVersions = await contentService.getContentVersions(
-					selectedContent.platform,
-					selectedContent.id,
+			const versionsPromise = contentService
+				.getContentVersions(
+					content.platform,
+					content.id,
 					mcVersion || undefined,
 					shouldFilterByLoader ? loader || undefined : undefined
-				);
-				// Auto-select the first version (already filtered & sorted by backend)
-				if (selectedContentVersions.length > 0) {
-					await this.setSelectedVersion(selectedContentVersions[0], selectedContent.platform);
-				}
-			} catch (e: unknown) {
-				console.error('Failed to load content versions:', e);
-			} finally {
-				isLoadingVersions = false;
-			}
+				)
+				.then((versions) => {
+					// Only update if this is still the current selection
+					if (currentSelectionId === selectionId) {
+						selectedContentVersions = versions;
+						isLoadingVersions = false;
+						// Auto-select first version and resolve dependencies (non-blocking)
+						if (versions.length > 0) {
+							this.setSelectedVersion(versions[0], content.platform);
+						}
+					}
+				})
+				.catch((e) => {
+					console.error('Failed to load content versions:', e);
+					if (currentSelectionId === selectionId) {
+						isLoadingVersions = false;
+					}
+				});
+
+			// Wait for both to complete (but they update UI as they finish)
+			await Promise.all([detailsPromise, versionsPromise]);
 
 			return selectedContent;
 		},
 
 		/** Clear selected content */
 		clearSelection() {
+			currentSelectionId = null;
 			selectedContent = null;
 			selectedContentVersions = [];
 			selectedVersion = null;
 			resolvedDependencies = [];
+			isLoadingDetails = false;
+			isLoadingVersions = false;
 		},
 
 		/** Clear search error */
@@ -615,9 +721,11 @@ function createContentStore() {
 			category = null;
 			sortBy = 'relevance';
 			instanceId = null;
+			currentSelectionId = null;
 			selectedContent = null;
 			selectedContentVersions = [];
 			selectedVersion = null;
+			isLoadingDetails = false;
 			isLoadingVersions = false;
 			scanResult = null;
 			isScanning = false;
@@ -627,6 +735,7 @@ function createContentStore() {
 			downloadQueue = [];
 			resolvedDependencies = [];
 			isResolvingDeps = false;
+			contentCache.clear();
 		},
 	};
 }

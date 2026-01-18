@@ -3,7 +3,7 @@ use crate::models::instance::{LoaderType, ModpackPlatform};
 use serde::{Deserialize, Serialize};
 
 /// Sort order for modpack search
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum ModpackSortBy {
     #[default]
@@ -49,7 +49,7 @@ impl std::fmt::Display for ModpackCategory {
 }
 
 /// Search parameters for modpack queries
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct ModpackSearchParams {
     /// Search query (by name)
