@@ -3,6 +3,12 @@ use crate::services::{instance_service, launch_service};
 use crate::state::AppState;
 use tauri::{AppHandle, State};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 /// Launch a Minecraft instance
 #[tauri::command]
 pub async fn launch_instance(
@@ -61,9 +67,10 @@ pub fn kill_instance(instance_id: String, state: State<'_, AppState>) -> Result<
         #[cfg(windows)]
         {
             use std::process::Command;
-            let _ = Command::new("taskkill")
-                .args(["/F", "/PID", &pid.to_string()])
-                .output();
+            let mut cmd = Command::new("taskkill");
+            cmd.args(["/F", "/PID", &pid.to_string()])
+                .creation_flags(CREATE_NO_WINDOW);
+            let _ = cmd.output();
         }
 
         // Unregister the instance

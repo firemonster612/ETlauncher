@@ -9,6 +9,12 @@ use serde::Deserialize;
 use std::path::Path;
 use tokio::process::Command;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 /// Fabric meta API base URL
 const FABRIC_META_URL: &str = "https://meta.fabricmc.net/v2";
 
@@ -475,8 +481,8 @@ pub async fn install_fabric(
 
     progress("Running Fabric installer...".to_string(), 40);
 
-    let output = Command::new(&java_path)
-        .arg("-jar")
+    let mut cmd = Command::new(&java_path);
+    cmd.arg("-jar")
         .arg(&installer_path)
         .arg("client")
         .arg("-dir")
@@ -486,7 +492,12 @@ pub async fn install_fabric(
         .arg("-loader")
         .arg(loader_version)
         .arg("-noprofile") // Don't modify launcher profiles
-        .current_dir(game_dir)
+        .current_dir(game_dir);
+
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = cmd
         .output()
         .await
         .map_err(|e| AppError::ProcessError(format!("Failed to run Fabric installer: {}", e)))?;
@@ -608,8 +619,8 @@ pub async fn install_quilt(
 
     progress("Running Quilt installer...".to_string(), 40);
 
-    let output = Command::new(&java_path)
-        .arg("-jar")
+    let mut cmd = Command::new(&java_path);
+    cmd.arg("-jar")
         .arg(&installer_path)
         .arg("install")
         .arg("client")
@@ -617,7 +628,12 @@ pub async fn install_quilt(
         .arg(&resolved_loader_version)
         .arg(format!("--install-dir={}", game_dir.display()))
         .arg("--no-profile")
-        .current_dir(game_dir)
+        .current_dir(game_dir);
+
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = cmd
         .output()
         .await
         .map_err(|e| AppError::ProcessError(format!("Failed to run Quilt installer: {}", e)))?;
@@ -993,26 +1009,34 @@ pub async fn install_forge(
             tokio::fs::copy(&profiles_src, &profiles_dst).await.ok();
         }
 
-        Command::new(&java_path)
-            .arg("-Djava.awt.headless=true")
+        let mut cmd = Command::new(&java_path);
+        cmd.arg("-Djava.awt.headless=true")
             .arg("-jar")
             .arg(&installer_path)
             .arg("--installClient")
             .arg(&dot_minecraft)
-            .current_dir(&dot_minecraft)
-            .output()
+            .current_dir(&dot_minecraft);
+
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        cmd.output()
             .await
             .map_err(|e| AppError::ProcessError(format!("Failed to run Forge installer: {}", e)))?
     } else {
         // Modern Forge (1.13+) - use --installClient
-        Command::new(&java_path)
-            .arg("-Djava.awt.headless=true")
+        let mut cmd = Command::new(&java_path);
+        cmd.arg("-Djava.awt.headless=true")
             .arg("-jar")
             .arg(&installer_path)
             .arg("--installClient")
             .arg(game_dir)
-            .current_dir(game_dir)
-            .output()
+            .current_dir(game_dir);
+
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        cmd.output()
             .await
             .map_err(|e| AppError::ProcessError(format!("Failed to run Forge installer: {}", e)))?
     };
@@ -1177,12 +1201,17 @@ pub async fn install_neoforge(
 
     progress("Running NeoForge installer...".to_string(), 40);
 
-    let output = Command::new(&java_path)
-        .arg("-jar")
+    let mut cmd = Command::new(&java_path);
+    cmd.arg("-jar")
         .arg(&installer_path)
         .arg("--installClient")
         .arg(game_dir)
-        .current_dir(game_dir)
+        .current_dir(game_dir);
+
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = cmd
         .output()
         .await
         .map_err(|e| AppError::ProcessError(format!("Failed to run NeoForge installer: {}", e)))?;

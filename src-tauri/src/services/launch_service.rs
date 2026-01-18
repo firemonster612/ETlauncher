@@ -12,6 +12,12 @@ use std::process::{Command, Stdio};
 use std::thread;
 use tauri::{AppHandle, Emitter, Manager};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 #[derive(Debug, Clone)]
 pub enum QuickPlayTarget {
     World(String),
@@ -336,11 +342,16 @@ pub async fn launch_instance(
     eprintln!("[launch] =========================");
 
     // Spawn the process
-    let mut child = Command::new(&java_path)
-        .args(&all_args)
+    let mut cmd = Command::new(&java_path);
+    cmd.args(&all_args)
         .current_dir(&game_dir)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let mut child = cmd
         .spawn()
         .map_err(|e| AppError::LaunchError(format!("Failed to spawn Java: {}", e)))?;
 
