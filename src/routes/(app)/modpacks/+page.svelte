@@ -14,7 +14,7 @@
 		StopCircle,
 		Check,
 	} from '@lucide/svelte';
-	import { marked } from 'marked';
+	import { renderMarkdown } from '$lib/utils/markdown';
 	import { openUrl } from '@tauri-apps/plugin-opener';
 	import { ask } from '@tauri-apps/plugin-dialog';
 	import { Button } from '$lib/ui/button';
@@ -263,21 +263,6 @@
 				return 'bg-purple-500/20 text-purple-500';
 			default:
 				return 'bg-muted/50 text-muted-foreground';
-		}
-	}
-
-	function renderDescription(body?: string | null, fallback?: string): string {
-		const source = (body && body.trim()) || fallback || '';
-		if (!source) return '';
-
-		const trimmed = source.trim();
-		const looksLikeHtml = /^</.test(trimmed) && /<\/?[a-z][\s\S]*>/i.test(trimmed);
-
-		try {
-			return looksLikeHtml ? trimmed : (marked.parse(trimmed) as string);
-		} catch (e) {
-			console.error('Failed to render description', e);
-			return trimmed.replace(/\n/g, '<br/>');
 		}
 	}
 
@@ -956,7 +941,7 @@
 										onclick={handleDescriptionLinkClick}
 									>
 										<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-										{@html renderDescription(
+										{@html renderMarkdown(
 											selectedModpackDetail.body,
 											selectedModpackDetail.description
 										)}
@@ -1084,7 +1069,7 @@
 	open={descriptionExpanded && !!selectedModpackDetail}
 	title={selectedModpackDetail ? `${selectedModpackDetail.name} — Description` : 'Description'}
 	html={selectedModpackDetail
-		? renderDescription(selectedModpackDetail.body, selectedModpackDetail.description)
+		? renderMarkdown(selectedModpackDetail.body, selectedModpackDetail.description)
 		: ''}
 	onClose={() => (descriptionExpanded = false)}
 />
