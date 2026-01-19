@@ -9,7 +9,7 @@
 		Calendar,
 		Loader2,
 		PackagePlus,
-		ExternalLink,
+		ChevronRight,
 	} from '@lucide/svelte';
 	import { Button } from '$lib/ui/button';
 	import DownloadProgress from '$lib/components/DownloadProgress.svelte';
@@ -95,66 +95,81 @@
 </script>
 
 <div
-	class="border-border bg-card hover:border-primary/50 group relative cursor-pointer border-2 p-4 transition-colors"
+	class="border-border bg-card group hover:border-primary/60 relative w-[320px] cursor-pointer border-2 transition-all duration-200 hover:shadow-[0_0_20px_rgba(20,184,166,0.25)]"
 	onclick={handleCardClick}
 	onkeydown={(e) => e.key === 'Enter' && onCardClick(instance)}
 	role="button"
 	tabindex="0"
 >
-	<!-- Open detail indicator - top right -->
-	<div
-		class="bg-muted/50 group-hover:bg-primary/20 absolute top-3 right-3 rounded p-1.5 transition-colors"
-		title="View details"
-	>
-		<ExternalLink
-			class="text-muted-foreground group-hover:text-primary h-4 w-4 transition-colors"
-		/>
-	</div>
-
-	<!-- Main content area -->
-	<div class="flex gap-4">
-		<!-- Icon -->
-		<div class="flex-shrink-0">
+	<!-- Icon Banner Section -->
+	<div class="from-muted/50 to-muted relative h-24 overflow-hidden bg-gradient-to-br">
+		<!-- Blurred background icon -->
+		<div class="absolute inset-0 flex items-center justify-center opacity-20 blur-xl">
+			<img
+				src={getIconSrc(instance.iconPath)}
+				alt=""
+				class="pixelated h-32 w-32"
+				aria-hidden="true"
+			/>
+		</div>
+		<!-- Main icon -->
+		<div class="absolute inset-0 flex items-center justify-center">
 			<img
 				src={getIconSrc(instance.iconPath)}
 				alt="{instance.name} icon"
-				class="pixelated h-16 w-16"
+				class="pixelated h-16 w-16 drop-shadow-lg"
 			/>
 		</div>
+		<!-- Expand indicator - top right -->
+		<div
+			class="group-hover:bg-primary/30 absolute top-2 right-2 rounded bg-black/30 p-1 transition-all duration-200"
+			title="View details"
+		>
+			<ChevronRight
+				class="h-4 w-4 text-white/70 transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-white"
+			/>
+		</div>
+	</div>
 
-		<!-- Info -->
-		<div class="min-w-0 flex-1">
-			<h3 class="truncate pr-8 text-lg font-bold">{instance.name}</h3>
-			<div class="mt-1 flex flex-col items-start gap-1">
-				<span class="text-muted-foreground text-sm">{instance.minecraftVersion}</span>
-				<span
-					class="rounded border px-1.5 py-0.5 text-xs capitalize {getLoaderColor(
-						instance.loaderType
-					)}"
-				>
-					{instance.loaderType}
-					{#if instance.loaderVersion}
-						<span class="ml-1 opacity-75">{instance.loaderVersion}</span>
-					{/if}
-				</span>
-			</div>
+	<!-- Info Section -->
+	<div class="p-4">
+		<!-- Title - 2 lines max -->
+		<h3 class="line-clamp-2 text-lg leading-tight font-bold" title={instance.name}>
+			{instance.name}
+		</h3>
 
-			<div class="text-muted-foreground mt-3 flex items-center gap-4 text-xs">
-				<span class="flex items-center gap-1">
-					<Clock class="h-3 w-3" />
-					{formatPlayTime(instance.totalPlayTime)}
-				</span>
-				<span class="flex items-center gap-1">
-					<Calendar class="h-3 w-3" />
-					{formatDate(instance.createdAt)}
-				</span>
-			</div>
+		<!-- Version and Loader -->
+		<div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+			<span class="text-muted-foreground text-sm">{instance.minecraftVersion}</span>
+			<span
+				class="max-w-[140px] truncate rounded border px-1.5 py-0.5 text-xs whitespace-nowrap capitalize {getLoaderColor(
+					instance.loaderType
+				)}"
+				title="{instance.loaderType}{instance.loaderVersion ? ` ${instance.loaderVersion}` : ''}"
+			>
+				{instance.loaderType}
+				{#if instance.loaderVersion}
+					<span class="ml-1 opacity-75">{instance.loaderVersion}</span>
+				{/if}
+			</span>
+		</div>
+
+		<!-- Play time and date -->
+		<div class="text-muted-foreground mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+			<span class="flex items-center gap-1 whitespace-nowrap">
+				<Clock class="h-3 w-3 flex-shrink-0" />
+				{formatPlayTime(instance.totalPlayTime)}
+			</span>
+			<span class="flex items-center gap-1 whitespace-nowrap">
+				<Calendar class="h-3 w-3 flex-shrink-0" />
+				{formatDate(instance.createdAt)}
+			</span>
 		</div>
 	</div>
 
 	<!-- Bottom bar with play button and actions -->
-	<div class="border-border mt-4 flex items-center justify-between gap-2 border-t pt-3">
-		<!-- Play button - always visible -->
+	<div class="border-border flex items-center justify-between gap-2 border-t px-4 py-3">
+		<!-- Play button -->
 		<Button
 			variant="default"
 			size="sm"
@@ -226,7 +241,7 @@
 	<!-- Download Progress -->
 	{#if launchStatus?.status === 'downloading'}
 		{@const progress = launchStatus.progress}
-		<div class="border-border mt-3 border-t pt-3">
+		<div class="border-border border-t px-4 py-3">
 			<DownloadProgress
 				stage="Downloading game files"
 				progress={progress.totalBytes > 0

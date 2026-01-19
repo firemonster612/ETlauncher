@@ -303,7 +303,10 @@
 		</div>
 	{:else}
 		<!-- Instance Grid -->
-		<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+		<div
+			class="grid gap-4"
+			style="grid-template-columns: repeat(auto-fill, 320px); justify-content: start;"
+		>
 			{#each filteredInstances as instance (instance.id)}
 				{@const status = getInstanceStatus(instance.id)}
 				{@const launchStatus = launchStore.launchStates.get(instance.id)?.status}
