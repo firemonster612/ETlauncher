@@ -36,6 +36,7 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if open}
+	<!-- svelte-ignore a11y_click_events_have_key_events a11y_interactive_supports_focus -->
 	<div
 		class="fixed top-[var(--titlebar-height)] right-0 bottom-0 left-0 z-50 flex items-center justify-center bg-black/50 p-6"
 		onclick={handleBackdropClick}

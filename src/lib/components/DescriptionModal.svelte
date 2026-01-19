@@ -55,7 +55,7 @@
 		onkeydown={handleKeydown}
 	>
 		<div
-			class="bg-card border-border relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border-2 shadow-2xl"
+			class="bg-card border-border relative flex max-h-[90vh] w-full max-w-7xl flex-col overflow-hidden rounded-lg border-2 shadow-2xl"
 			onclick={stopClickPropagation}
 			role="presentation"
 			tabindex="-1"
@@ -70,9 +70,7 @@
 			<!-- svelte-ignore a11y_click_events_have_key_events -->
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="min-h-0 flex-1 overflow-y-auto p-5" onclick={handleLinkClick}>
-				<div
-					class="[&_a]:text-primary text-sm leading-relaxed [&_a]:underline [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5"
-				>
+				<div class="prose-markdown">
 					<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 					{@html html}
 				</div>
