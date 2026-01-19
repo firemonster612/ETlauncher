@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { Package, Download, Calendar } from '@lucide/svelte';
-	import { onDestroy } from 'svelte';
 	import type { Modpack, ModpackPlatform, LoaderType } from '$lib/types';
 
 	interface Props {
@@ -10,55 +9,13 @@
 
 	let { modpack, onclick }: Props = $props();
 
-	// Hover state for gallery cycling
-	let isHovered = $state(false);
-	let currentGalleryIndex = $state(0);
-	let galleryInterval: ReturnType<typeof setInterval> | null = null;
-
-	// Get all available gallery images
-	let galleryImages = $derived(
-		modpack.gallery?.map((img) => img.rawUrl || img.url).filter(Boolean) ?? []
-	);
-
-	// Get banner image - try bannerUrl first, then current gallery image, then null
+	// Get banner image - try bannerUrl first, then first gallery image, then null
 	let bannerImage = $derived(() => {
 		if (modpack.bannerUrl) return modpack.bannerUrl;
-		if (galleryImages.length > 0) {
-			// When hovered with multiple gallery images, cycle through them
-			if (isHovered && galleryImages.length > 1) {
-				return galleryImages[currentGalleryIndex];
-			}
-			return galleryImages[0];
+		if (modpack.gallery && modpack.gallery.length > 0) {
+			return modpack.gallery[0].rawUrl || modpack.gallery[0].url;
 		}
 		return null;
-	});
-
-	// Handle hover start - begin gallery cycling
-	function handleMouseEnter() {
-		isHovered = true;
-		if (galleryImages.length > 1 && !modpack.bannerUrl) {
-			currentGalleryIndex = 0;
-			galleryInterval = setInterval(() => {
-				currentGalleryIndex = (currentGalleryIndex + 1) % galleryImages.length;
-			}, 2000);
-		}
-	}
-
-	// Handle hover end - stop cycling and reset
-	function handleMouseLeave() {
-		isHovered = false;
-		if (galleryInterval) {
-			clearInterval(galleryInterval);
-			galleryInterval = null;
-		}
-		currentGalleryIndex = 0;
-	}
-
-	// Cleanup on destroy
-	onDestroy(() => {
-		if (galleryInterval) {
-			clearInterval(galleryInterval);
-		}
 	});
 
 	function formatDownloads(downloads: number): string {
@@ -134,32 +91,12 @@
 				return 'bg-muted/50 text-muted-foreground';
 		}
 	}
-
-	// Get a gradient background color based on platform for cards without images
-	function getGradientBg(platform: ModpackPlatform): string {
-		switch (platform) {
-			case 'modrinth':
-				return 'from-green-900/50 to-green-950/80';
-			case 'curseforge':
-				return 'from-orange-900/50 to-orange-950/80';
-			case 'ftb':
-				return 'from-blue-900/50 to-blue-950/80';
-			case 'technic':
-				return 'from-yellow-900/50 to-yellow-950/80';
-			case 'atlauncher':
-				return 'from-purple-900/50 to-purple-950/80';
-			default:
-				return 'from-muted to-background';
-		}
-	}
 </script>
 
 <button
 	type="button"
 	class="modpack-card border-border bg-card flex w-full cursor-pointer flex-col border-2 text-left"
 	{onclick}
-	onmouseenter={handleMouseEnter}
-	onmouseleave={handleMouseLeave}
 >
 	<!-- 16:9 Banner Area -->
 	<div class="relative aspect-video w-full overflow-hidden">
@@ -171,17 +108,22 @@
 				loading="lazy"
 			/>
 		{:else}
-			<!-- Gradient background with centered icon when no image -->
-			<div
-				class="flex h-full w-full items-center justify-center bg-gradient-to-br {getGradientBg(
-					modpack.platform
-				)}"
-			>
+			<!-- Blurred icon background with centered icon when no banner image -->
+			<div class="relative flex h-full w-full items-center justify-center overflow-hidden">
 				{#if modpack.iconUrl}
+					<!-- Blurred enlarged icon as background -->
+					<img
+						src={modpack.iconUrl}
+						alt=""
+						class="absolute inset-0 h-full w-full scale-110 object-cover opacity-60 blur-xl"
+						loading="lazy"
+					/>
+					<!-- Main icon -->
 					<img
 						src={modpack.iconUrl}
 						alt={modpack.name}
-						class="h-16 w-16 rounded object-cover shadow-lg"
+						class="relative z-10 h-16 w-16 rounded object-cover shadow-lg"
+						loading="lazy"
 					/>
 				{:else}
 					<Package class="text-muted-foreground/30 h-16 w-16" />

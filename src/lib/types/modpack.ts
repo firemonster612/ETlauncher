@@ -100,6 +100,10 @@ export interface Modpack {
 	updatedAt?: number;
 	/** Created timestamp */
 	createdAt?: number;
+	/** Client-side support: 'required', 'optional', or 'unsupported' */
+	clientSide?: 'required' | 'optional' | 'unsupported';
+	/** Server-side support: 'required', 'optional', or 'unsupported' */
+	serverSide?: 'required' | 'optional' | 'unsupported';
 }
 
 /** A mod entry within a modpack */

@@ -76,8 +76,8 @@
 			</div>
 
 			<!-- Gradient overlay with title -->
-			{@const currentImage = images[currentIndex]}
-			{#if currentImage?.title || currentImage?.description}
+			{#if images[currentIndex]?.title || images[currentIndex]?.description}
+				{@const currentImage = images[currentIndex]}
 				<div
 					class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-3"
 				>

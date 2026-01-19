@@ -174,7 +174,7 @@
 					alt=""
 					class="h-full w-full scale-110 object-cover blur-sm"
 				/>
-				<div class="from-card via-card/80 absolute inset-0 bg-gradient-to-t to-transparent" />
+				<div class="from-card via-card/80 absolute inset-0 bg-gradient-to-t to-transparent"></div>
 			</div>
 		{/if}
 

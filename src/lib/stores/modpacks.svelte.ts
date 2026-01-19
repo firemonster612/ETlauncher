@@ -19,6 +19,25 @@ function createModpacksStore() {
 	let currentPage = $state(0);
 	const pageSize = $state(20);
 
+	// Home page data
+	let popularModpacks = $state<Modpack[]>([]);
+	let recentModpacks = $state<Modpack[]>([]);
+	let isLoadingPopular = $state(false);
+	let isLoadingRecent = $state(false);
+	let homeDataLoaded = $state(false);
+
+	// Explore section state
+	let exploreModpacks = $state<Modpack[]>([]);
+	let isLoadingExplore = $state(false);
+	let exploreTotalCount = $state(0);
+	let exploreCurrentPage = $state(0);
+	let explorePlatform = $state<ModpackPlatform | null>(null);
+	let exploreSortBy = $state<ModpackSortBy>('downloads');
+	let exploreMcVersion = $state<string | null>(null);
+	let exploreLoader = $state<LoaderType | null>(null);
+	let exploreCategory = $state<string | null>(null);
+	const explorePageSize = 20;
+
 	// Filter state
 	let query = $state('');
 	let platform = $state<ModpackPlatform | null>(null);
@@ -60,6 +79,55 @@ function createModpacksStore() {
 		},
 		get hasMore() {
 			return (currentPage + 1) * pageSize < totalCount;
+		},
+
+		// Home page data getters
+		get popularModpacks() {
+			return popularModpacks;
+		},
+		get recentModpacks() {
+			return recentModpacks;
+		},
+		get isLoadingPopular() {
+			return isLoadingPopular;
+		},
+		get isLoadingRecent() {
+			return isLoadingRecent;
+		},
+		get homeDataLoaded() {
+			return homeDataLoaded;
+		},
+
+		// Explore section getters
+		get exploreModpacks() {
+			return exploreModpacks;
+		},
+		get isLoadingExplore() {
+			return isLoadingExplore;
+		},
+		get exploreTotalCount() {
+			return exploreTotalCount;
+		},
+		get exploreCurrentPage() {
+			return exploreCurrentPage;
+		},
+		get explorePlatform() {
+			return explorePlatform;
+		},
+		get exploreSortBy() {
+			return exploreSortBy;
+		},
+		get hasMoreExplore() {
+			return (exploreCurrentPage + 1) * explorePageSize < exploreTotalCount;
+		},
+		get exploreMcVersion() {
+			return exploreMcVersion;
+		},
+		get exploreLoader() {
+			return exploreLoader;
+		},
+		get exploreCategory() {
+			return exploreCategory;
 		},
 
 		// Filter state getters
@@ -143,6 +211,142 @@ function createModpacksStore() {
 			} finally {
 				isSearching = false;
 			}
+		},
+
+		/** Load home page data (popular and recent modpacks) */
+		async loadHomeData() {
+			if (homeDataLoaded) return;
+
+			// Load popular and recent modpacks in parallel
+			const loadPopular = async () => {
+				isLoadingPopular = true;
+				try {
+					const result = await modpackService.searchModpacks({
+						sortBy: 'downloads',
+						page: 0,
+						pageSize: 8,
+					});
+					popularModpacks = result.modpacks;
+				} catch (e: unknown) {
+					console.error('[modpacksStore] Failed to load popular modpacks:', e);
+				} finally {
+					isLoadingPopular = false;
+				}
+			};
+
+			const loadRecent = async () => {
+				isLoadingRecent = true;
+				try {
+					// Use modrinth as default platform for recent updates since it supports this sort well
+					const result = await modpackService.searchModpacks({
+						platform: 'modrinth',
+						sortBy: 'recentlyUpdated',
+						page: 0,
+						pageSize: 10,
+					});
+					recentModpacks = result.modpacks;
+				} catch (e: unknown) {
+					console.error('[modpacksStore] Failed to load recent modpacks:', e);
+				} finally {
+					isLoadingRecent = false;
+				}
+			};
+
+			await Promise.all([loadPopular(), loadRecent()]);
+			homeDataLoaded = true;
+		},
+
+		/** Load explore section data */
+		async loadExploreData(resetPage = true) {
+			if (resetPage) {
+				exploreCurrentPage = 0;
+				// Don't clear modpacks immediately to prevent UI jump
+			}
+
+			isLoadingExplore = true;
+
+			try {
+				const result = await modpackService.searchModpacks({
+					platform: explorePlatform || undefined,
+					mcVersion: exploreMcVersion || undefined,
+					loader: exploreLoader || undefined,
+					category: exploreCategory || undefined,
+					sortBy: exploreSortBy,
+					page: exploreCurrentPage,
+					pageSize: explorePageSize,
+				});
+				console.log('[modpacksStore] Explore result:', {
+					count: result.modpacks.length,
+					total: result.totalCount,
+				});
+				exploreModpacks = result.modpacks;
+				exploreTotalCount = result.totalCount;
+			} catch (e: unknown) {
+				console.error('[modpacksStore] Failed to load explore modpacks:', e);
+			} finally {
+				isLoadingExplore = false;
+			}
+		},
+
+		/** Load more explore results */
+		async loadMoreExplore() {
+			if (!this.hasMoreExplore || isLoadingExplore) return;
+
+			exploreCurrentPage++;
+			isLoadingExplore = true;
+
+			try {
+				const result = await modpackService.searchModpacks({
+					platform: explorePlatform || undefined,
+					mcVersion: exploreMcVersion || undefined,
+					loader: exploreLoader || undefined,
+					category: exploreCategory || undefined,
+					sortBy: exploreSortBy,
+					page: exploreCurrentPage,
+					pageSize: explorePageSize,
+				});
+				console.log('[modpacksStore] Loaded more explore:', result.modpacks.length);
+				exploreModpacks = [...exploreModpacks, ...result.modpacks];
+				exploreTotalCount = result.totalCount;
+			} catch (e: unknown) {
+				console.error('[modpacksStore] Load more explore failed:', e);
+			} finally {
+				isLoadingExplore = false;
+			}
+		},
+
+		/** Set explore platform filter */
+		setExplorePlatform(newPlatform: ModpackPlatform | null) {
+			explorePlatform = newPlatform;
+		},
+
+		/** Set explore sort order */
+		setExploreSortBy(newSortBy: ModpackSortBy) {
+			exploreSortBy = newSortBy;
+		},
+
+		/** Set explore MC version filter */
+		setExploreMcVersion(version: string | null) {
+			exploreMcVersion = version;
+		},
+
+		/** Set explore loader filter */
+		setExploreLoader(newLoader: LoaderType | null) {
+			exploreLoader = newLoader;
+		},
+
+		/** Set explore category filter */
+		setExploreCategory(newCategory: string | null) {
+			exploreCategory = newCategory;
+		},
+
+		/** Clear all explore filters */
+		clearExploreFilters() {
+			explorePlatform = null;
+			exploreMcVersion = null;
+			exploreLoader = null;
+			exploreCategory = null;
+			exploreSortBy = 'downloads';
 		},
 
 		/** Load more results (next page) */

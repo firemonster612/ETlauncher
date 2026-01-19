@@ -194,12 +194,12 @@ button[data-checkbox-root][data-state='checked'] {
 	border-color: var(--primary);
 }
 
-button:hover,
+button:hover:not(.modpack-card):not(.platform-toggle-btn),
 [role='button']:hover {
 	transform: translateY(-1px);
 }
 
-button:active,
+button:active:not(.modpack-card):not(.platform-toggle-btn),
 [role='button']:active {
 	transform: translateY(1px);
 }
@@ -529,4 +529,452 @@ select:focus {
 
 .prose-markdown details > *:not(summary) {
 	margin-left: 0.5rem;
+}
+
+/* ===== Modpack Browser Redesign Styles ===== */
+
+/* Popular section grid layout */
+.popular-section-grid {
+	display: grid;
+	grid-template-columns: 60% 40%;
+	gap: 1rem;
+}
+
+@media (max-width: 768px) {
+	.popular-section-grid {
+		grid-template-columns: 1fr;
+	}
+}
+
+/* Thumbnail grid 2x2 */
+.thumbnail-grid-2x2 {
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+	gap: 0.5rem;
+}
+
+/* Horizontal scroll container for recent section */
+.horizontal-scroll {
+	display: flex;
+	overflow-x: auto;
+	scroll-snap-type: x mandatory;
+	scrollbar-width: none;
+	gap: 1rem;
+	padding-bottom: 0.5rem;
+	max-width: 100%;
+}
+
+.horizontal-scroll::-webkit-scrollbar {
+	display: none;
+}
+
+.scroll-card {
+	scroll-snap-align: start;
+	flex-shrink: 0;
+	width: 300px;
+}
+
+/* Explore list layout with gallery sidebar */
+.explore-layout {
+	display: grid;
+	grid-template-columns: 1fr 300px;
+	gap: 1.5rem;
+}
+
+@media (max-width: 1024px) {
+	.explore-layout {
+		grid-template-columns: 1fr;
+	}
+}
+
+/* Detail modal V2 top section - two columns */
+.detail-modal-v2-top {
+	display: grid;
+	grid-template-columns: 55% 45%;
+	gap: 1.5rem;
+	align-items: start;
+}
+
+@media (max-width: 768px) {
+	.detail-modal-v2-top {
+		grid-template-columns: 1fr;
+	}
+}
+
+/* Detail modal V2 bottom section - sidebar + content */
+.detail-modal-v2-bottom {
+	display: grid;
+	grid-template-columns: 280px 1fr;
+	gap: 1.5rem;
+}
+
+@media (max-width: 768px) {
+	.detail-modal-v2-bottom {
+		grid-template-columns: 1fr;
+	}
+}
+
+/* Stats row with 4 equal columns */
+.stats-grid {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: 0.5rem;
+	text-align: center;
+}
+
+@media (max-width: 640px) {
+	.stats-grid {
+		grid-template-columns: repeat(2, 1fr);
+	}
+}
+
+/* Category tag with icon */
+.category-tag-with-icon {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+	padding: 0.25rem 0.75rem;
+	border-radius: 9999px;
+	font-size: 0.75rem;
+	background: var(--muted);
+	color: var(--foreground);
+}
+
+/* Featured carousel styles */
+.featured-carousel {
+	position: relative;
+	aspect-ratio: 16 / 9;
+	overflow: hidden;
+	border: 2px solid var(--border);
+}
+
+.featured-carousel-slide {
+	position: absolute;
+	inset: 0;
+	opacity: 0;
+	transition: opacity 0.3s ease-in-out;
+}
+
+.featured-carousel-slide.active {
+	opacity: 1;
+}
+
+.featured-carousel-nav {
+	position: absolute;
+	top: 50%;
+	transform: translateY(-50%);
+	z-index: 10;
+	background: var(--background);
+	border: 2px solid var(--border);
+	padding: 0.5rem;
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+
+.featured-carousel-nav:hover {
+	background: var(--muted);
+	border-color: var(--primary);
+}
+
+.featured-carousel-nav.prev {
+	left: 0.5rem;
+}
+
+.featured-carousel-nav.next {
+	right: 0.5rem;
+}
+
+.featured-carousel-dots {
+	position: absolute;
+	bottom: 0.75rem;
+	left: 50%;
+	transform: translateX(-50%);
+	display: flex;
+	gap: 0.5rem;
+	z-index: 10;
+}
+
+.featured-carousel-dot {
+	width: 0.5rem;
+	height: 0.5rem;
+	border-radius: 9999px;
+	background: var(--muted);
+	border: none;
+	cursor: pointer;
+	transition: background 0.15s ease;
+}
+
+.featured-carousel-dot[data-active='true'] {
+	background: var(--primary);
+}
+
+.featured-carousel-dot:hover {
+	background: var(--primary);
+	opacity: 0.7;
+}
+
+/* Multi-image gallery carousel for detail modal */
+.multi-image-carousel {
+	position: relative;
+	overflow: hidden;
+	border: 2px solid var(--border);
+	background: var(--muted);
+}
+
+.multi-image-carousel-track {
+	display: flex;
+	transition: transform 0.3s ease;
+}
+
+.multi-image-carousel-slide {
+	flex-shrink: 0;
+	width: 100%;
+}
+
+.multi-image-carousel-slide img {
+	aspect-ratio: 16 / 9;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.multi-image-carousel-nav {
+	position: absolute;
+	top: 50%;
+	transform: translateY(-50%);
+	z-index: 10;
+	background: var(--background) / 80;
+	border: none;
+	padding: 1rem 0.75rem;
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+
+.multi-image-carousel-nav:hover {
+	background: var(--muted);
+}
+
+.multi-image-carousel-nav:disabled {
+	opacity: 0.3;
+	cursor: not-allowed;
+}
+
+.multi-image-carousel-nav.prev {
+	left: 0;
+}
+
+.multi-image-carousel-nav.next {
+	right: 0;
+}
+
+/* Gallery sidebar styles */
+.gallery-sidebar {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	max-height: 600px;
+	overflow-y: auto;
+}
+
+.gallery-sidebar-item {
+	aspect-ratio: 16 / 9;
+	overflow: hidden;
+	border: 2px solid var(--border);
+	cursor: pointer;
+	transition: border-color 0.15s ease;
+}
+
+.gallery-sidebar-item:hover {
+	border-color: var(--primary);
+}
+
+.gallery-sidebar-item img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+/* List item styles */
+.modpack-list-item {
+	display: grid;
+	grid-template-columns: 80px 1fr;
+	gap: 1rem;
+	padding: 1rem;
+	border: 2px solid var(--border);
+	background: var(--card);
+	cursor: pointer;
+	transition: border-color 0.15s ease;
+}
+
+.modpack-list-item:hover {
+	border-color: var(--primary);
+}
+
+.modpack-list-item-icon {
+	width: 80px;
+	height: 80px;
+	object-fit: cover;
+	border: 1px solid var(--border);
+}
+
+.modpack-list-item-icon-placeholder {
+	width: 80px;
+	height: 80px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--muted);
+	border: 1px solid var(--border);
+}
+
+/* Section headers */
+.section-header {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin-bottom: 1rem;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.section-header-title {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.section-header-icon {
+	color: var(--primary);
+}
+
+.section-header-title {
+	font-size: 1.25rem;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+/* External resources list */
+.external-resources-list {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+
+.external-resource-link {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.5rem;
+	color: var(--foreground);
+	text-decoration: none;
+	border: 1px solid var(--border);
+	transition: all 0.15s ease;
+}
+
+.external-resource-link:hover {
+	border-color: var(--primary);
+	color: var(--primary);
+}
+
+/* Technical info grid */
+.technical-info-grid {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 0.5rem 1rem;
+	font-size: 0.875rem;
+}
+
+.technical-info-label {
+	color: var(--muted-foreground);
+}
+
+.technical-info-value {
+	color: var(--foreground);
+}
+
+/* Install button styling */
+.install-button-large {
+	width: auto;
+	min-width: 200px;
+	max-width: 280px;
+	margin: 0 auto;
+	padding: 0.75rem 1.5rem;
+	font-size: 1rem;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.1em;
+}
+
+/* Fix carousel nav hover - keep vertical centering */
+.featured-carousel-nav:hover,
+.featured-carousel-nav:active,
+.multi-image-carousel-nav:hover,
+.multi-image-carousel-nav:active {
+	transform: translateY(-50%) !important;
+}
+
+/* Carousel slide click handling - only active slide receives clicks */
+.featured-carousel-slide {
+	pointer-events: none;
+}
+
+.featured-carousel-slide.active {
+	pointer-events: auto;
+}
+
+/* Empty card gradient background */
+.modpack-empty-thumbnail {
+	background: linear-gradient(135deg, var(--muted) 0%, var(--card) 100%);
+}
+
+/* Modpack grid layout */
+.modpack-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+	gap: 1rem;
+}
+
+/* Modpack card hover effects */
+.modpack-card {
+	transition:
+		border-color 0.15s ease,
+		box-shadow 0.15s ease;
+}
+
+.modpack-card:hover {
+	border-color: var(--primary);
+	box-shadow: 0 4px 20px oklch(0.72 0.18 172 / 0.15);
+}
+
+.modpack-card-gradient {
+	background: linear-gradient(to top, var(--card) 0%, transparent 50%);
+	pointer-events: none;
+}
+
+/* Platform toggle group */
+.platform-toggle-group {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+
+/* Explore filters bar */
+.explore-filters-bar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.75rem;
+	background: var(--card);
+	border: 2px solid var(--border);
+}
+
+/* Sort select smaller styling */
+.sort-select {
+	height: 2rem;
+	font-size: 0.75rem;
+	background: var(--background);
+	border: 1px solid var(--border);
+	padding: 0 0.5rem;
 }
