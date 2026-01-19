@@ -1,3 +1,4 @@
+use crate::cache::{load_disk_cache, sanitize_cache_key, save_disk_cache};
 use crate::error::CommandError;
 use crate::models::instance::LoaderType;
 use crate::models::loader::{LoaderInstallProgress, LoaderVersion};
@@ -5,14 +6,18 @@ use crate::services::instance_service;
 use crate::services::loader_service;
 use crate::state::AppState;
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
+
+/// TTL for loader versions disk cache (1 hour)
+const LOADER_VERSIONS_DISK_TTL: Duration = Duration::from_secs(3600);
 
 /// Get available loader versions for a specific loader type and Minecraft version
 #[tauri::command]
 pub async fn get_loader_versions(
     loader_type: String,
     minecraft_version: String,
-    _state: State<'_, AppState>,
+    state: State<'_, AppState>,
 ) -> Result<Vec<LoaderVersion>, CommandError> {
     let loader_type = loader_type
         .parse::<LoaderType>()
@@ -21,7 +26,39 @@ pub async fn get_loader_versions(
             message: format!("Invalid loader type: {}", loader_type),
         })?;
 
+    let cache_key = (loader_type, minecraft_version.clone());
+
+    // Check in-memory cache first
+    if let Some(cached) = state.api_cache.loader_versions.get(&cache_key) {
+        return Ok(cached);
+    }
+
+    // Check disk cache
+    let disk_cache_key = sanitize_cache_key(&format!("{}-{}", loader_type, minecraft_version));
+    if let Some(cached) = load_disk_cache::<Vec<LoaderVersion>>("loader_versions", &disk_cache_key)
+    {
+        // Store in memory cache for faster subsequent access
+        state
+            .api_cache
+            .loader_versions
+            .insert(cache_key, cached.clone());
+        return Ok(cached);
+    }
+
+    // Fetch from API
     let versions = loader_service::get_loader_versions(loader_type, &minecraft_version).await?;
+
+    // Store in both caches
+    state
+        .api_cache
+        .loader_versions
+        .insert(cache_key, versions.clone());
+    let _ = save_disk_cache(
+        "loader_versions",
+        &disk_cache_key,
+        &versions,
+        LOADER_VERSIONS_DISK_TTL,
+    );
 
     Ok(versions)
 }

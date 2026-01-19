@@ -160,9 +160,13 @@
 		modpacksStore.loadExploreData();
 	}
 
-	async function handleModpackClick(modpack: Modpack) {
+	function handleModpackClick(modpack: Modpack) {
+		// Show basic modpack immediately
 		selectedModpackDetail = modpack;
-		selectedModpackDetail = await modpacksStore.selectModpack(modpack);
+		// Start loading details + versions in parallel (non-blocking)
+		modpacksStore.selectModpack(modpack).then((detailed) => {
+			selectedModpackDetail = detailed;
+		});
 	}
 
 	function closeModpackDetail() {

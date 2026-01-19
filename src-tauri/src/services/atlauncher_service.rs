@@ -3,13 +3,22 @@ use crate::models::instance::ModpackPlatform;
 use crate::models::{
     LoaderType, Modpack, ModpackSearchParams, ModpackSearchResult, ModpackSortBy, ModpackVersion,
 };
+use parking_lot::RwLock;
 use reqwest::Client;
 use serde::Deserialize;
+use std::sync::LazyLock;
+use std::time::{Duration, Instant};
 
 // CDN endpoint (like PrismLauncher uses) - the API is blocked by Cloudflare
 const ATLAUNCHER_CDN_BASE: &str = "https://download.nodecdn.net/containers/atl";
 // API still needed for full pack details
 const ATLAUNCHER_API_BASE: &str = "https://api.atlauncher.com/v1";
+
+// Static cache for ATLauncher packs list (~500KB JSON)
+// TTL: 30 minutes
+static PACKS_CACHE: LazyLock<RwLock<Option<(Vec<AtlauncherCdnPack>, Instant)>>> =
+    LazyLock::new(|| RwLock::new(None));
+const PACKS_CACHE_TTL: Duration = Duration::from_secs(1800); // 30 minutes
 
 // ============================================================================
 // ATLauncher CDN Response Types (for pack list)
@@ -239,6 +248,34 @@ pub struct AtlauncherConfigLibrary {
 // Helper Functions
 // ============================================================================
 
+/// Get the cached packs list, fetching from CDN if cache is expired or empty
+async fn get_cached_packs(client: &Client) -> Result<Vec<AtlauncherCdnPack>, AppError> {
+    // Check cache first
+    {
+        let cache = PACKS_CACHE.read();
+        if let Some((packs, created)) = cache.as_ref() {
+            if created.elapsed() < PACKS_CACHE_TTL {
+                return Ok(packs.clone());
+            }
+        }
+    }
+
+    // Cache miss or expired - fetch from CDN
+    let url = format!("{}/launcher/json/packsnew.json", ATLAUNCHER_CDN_BASE);
+    let packs: Vec<AtlauncherCdnPack> = client
+        .get(&url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+
+    // Update cache
+    *PACKS_CACHE.write() = Some((packs.clone(), Instant::now()));
+
+    Ok(packs)
+}
+
 /// Convert ATLauncher loader type to our LoaderType
 fn parse_loader_type(loader: Option<&str>) -> LoaderType {
     match loader.map(|s| s.to_lowercase()).as_deref() {
@@ -283,15 +320,8 @@ pub async fn search_modpacks(
     let page = params.page.unwrap_or(0);
     let page_size = params.page_size.unwrap_or(20);
 
-    // Fetch all packs from CDN (API is blocked by Cloudflare)
-    let url = format!("{}/launcher/json/packsnew.json", ATLAUNCHER_CDN_BASE);
-    let packs: Vec<AtlauncherCdnPack> = client
-        .get(&url)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
+    // Get packs from cache (fetches from CDN if needed)
+    let packs = get_cached_packs(client).await?;
 
     // Filter by query and type (only show public packs)
     let mut filtered: Vec<_> = packs
@@ -470,14 +500,8 @@ async fn find_pack_in_cdn(
     client: &Client,
     pack_identifier: &str,
 ) -> Result<AtlauncherCdnPack, AppError> {
-    let url = format!("{}/launcher/json/packsnew.json", ATLAUNCHER_CDN_BASE);
-    let packs: Vec<AtlauncherCdnPack> = client
-        .get(&url)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
+    // Get packs from cache (fetches from CDN if needed)
+    let packs = get_cached_packs(client).await?;
 
     // Match by ID, name (case-insensitive), or safe name (case-insensitive)
     let pack_id_lower = pack_identifier.to_lowercase();

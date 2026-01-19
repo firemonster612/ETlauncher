@@ -225,7 +225,7 @@ async fn execute_version_migration_inner(
 
         loader_service::install_loader(
             game_dir,
-            target_loader.clone(),
+            *target_loader,
             target_mc_version,
             target_loader_version,
             |msg, pct| {
@@ -299,7 +299,7 @@ async fn execute_version_migration_inner(
 
     // Update instance metadata
     instance.minecraft_version = target_mc_version.to_string();
-    instance.loader_type = target_loader.clone();
+    instance.loader_type = *target_loader;
     instance.loader_version = Some(target_loader_version.to_string());
 
     instance_service::save_instance(state, instance)?;
@@ -339,7 +339,7 @@ async fn update_single_content(
                 modrinth_id,
                 &content_info.name,
                 &content_info.slug,
-                content.content_type.clone(),
+                content.content_type,
                 latest,
                 content.is_dependency,
                 Some(content.source.clone()),
@@ -384,7 +384,7 @@ async fn update_single_content(
                 &curseforge_id.to_string(),
                 &content_info.name,
                 &content_info.slug,
-                content.content_type.clone(),
+                content.content_type,
                 latest,
                 content.is_dependency,
                 Some(content.source.clone()),
@@ -702,7 +702,7 @@ async fn execute_modpack_update_inner(
     emit_progress(app_handle, "Updating instance", 90, None, 0, 0);
     let mut updated_instance = instance.clone();
     updated_instance.minecraft_version = target_version.mc_version.clone();
-    updated_instance.loader_type = target_version.loader_type.clone();
+    updated_instance.loader_type = target_version.loader_type;
     updated_instance.loader_version = target_version.loader_version.clone();
     updated_instance.modpack_version_id = Some(plan.target_version_id.clone());
 
@@ -791,7 +791,7 @@ async fn execute_instance_update_inner(
 
             loader_service::install_loader(
                 game_dir,
-                plan.target_loader_type.clone(),
+                plan.target_loader_type,
                 &plan.target_mc_version,
                 loader_version,
                 |msg, pct| {
@@ -890,7 +890,7 @@ async fn execute_instance_update_inner(
     emit_progress(app_handle, "Updating instance", 95, None, 0, 0);
     let mut updated_instance = instance.clone();
     updated_instance.minecraft_version = plan.target_mc_version.clone();
-    updated_instance.loader_type = plan.target_loader_type.clone();
+    updated_instance.loader_type = plan.target_loader_type;
     updated_instance.loader_version = plan.target_loader_version.clone();
 
     instance_service::save_instance(state, &updated_instance)?;

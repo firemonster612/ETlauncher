@@ -1,3 +1,4 @@
+import { SvelteMap } from 'svelte/reactivity';
 import type {
 	Instance,
 	Modpack,
@@ -8,6 +9,13 @@ import type {
 	LoaderType,
 } from '$lib/types';
 import * as modpackService from '$lib/services/modpack';
+
+/** Cached results for a platform */
+interface PlatformCache {
+	modpacks: Modpack[];
+	totalCount: number;
+	cachedAt: number;
+}
 
 /** Create the modpacks store */
 function createModpacksStore() {
@@ -38,6 +46,15 @@ function createModpacksStore() {
 	let exploreCategory = $state<string | null>(null);
 	const explorePageSize = 20;
 
+	// Cache per platform (persists across platform switches)
+	const platformCache = new SvelteMap<string, PlatformCache>();
+	const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+	/** Get cache key for current platform */
+	function getCacheKey(p: ModpackPlatform | null): string {
+		return p ?? 'all';
+	}
+
 	// Filter state
 	let query = $state('');
 	let platform = $state<ModpackPlatform | null>(null);
@@ -56,6 +73,9 @@ function createModpacksStore() {
 	// Installation state
 	let isInstalling = $state(false);
 	let installError = $state<string | null>(null);
+
+	// Selection tracking to prevent race conditions
+	let currentSelectionId: string | null = null;
 
 	return {
 		// Search state getters
@@ -389,7 +409,34 @@ function createModpacksStore() {
 
 		/** Set platform filter */
 		setPlatform(newPlatform: ModpackPlatform | null) {
-			platform = newPlatform;
+			if (platform !== newPlatform) {
+				// Save current results to cache before switching
+				if (modpacks.length > 0 && !query) {
+					platformCache.set(getCacheKey(platform), {
+						modpacks: [...modpacks],
+						totalCount,
+						cachedAt: Date.now(),
+					});
+				}
+
+				platform = newPlatform;
+
+				// Check if we have cached data for the new platform (only for default view)
+				if (!query) {
+					const cached = platformCache.get(getCacheKey(newPlatform));
+					if (cached && Date.now() - cached.cachedAt < CACHE_TTL) {
+						modpacks = cached.modpacks;
+						totalCount = cached.totalCount;
+						isSearching = false;
+						return;
+					}
+				}
+
+				// No cache - will need to search
+				modpacks = [];
+				totalCount = 0;
+				isSearching = true;
+			}
 		},
 
 		/** Set Minecraft version filter */
@@ -422,61 +469,79 @@ function createModpacksStore() {
 			sortBy = 'relevance';
 		},
 
-		/** Select a modpack and load its versions */
+		/** Select a modpack and load its details/versions in parallel */
 		async selectModpack(modpack: Modpack): Promise<Modpack> {
+			// Track this selection to prevent race conditions
+			const selectionId = modpack.id;
+			currentSelectionId = selectionId;
+
 			const shouldLoadDetail =
 				modpack.platform === 'modrinth' ||
 				modpack.platform === 'curseforge' ||
 				modpack.platform === 'ftb' ||
 				modpack.platform === 'technic';
+
+			// Show basic modpack immediately
 			selectedModpack = modpack;
 			selectedModpackVersions = [];
 			detailError = null;
 			isLoadingDetail = shouldLoadDetail;
 			isLoadingVersions = true;
 
-			if (shouldLoadDetail) {
-				try {
-					const detailed = await modpackService.getModpack(modpack.platform, modpack.id);
-					const mergedGallery =
-						(detailed.gallery?.length ?? 0) > 0 ? detailed.gallery : modpack.gallery;
-					selectedModpack = { ...modpack, ...detailed, gallery: mergedGallery };
-				} catch (e: unknown) {
-					console.error('[modpacksStore] Failed to load detailed modpack info:', e);
-					detailError =
-						e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
-					selectedModpack = modpack;
-				} finally {
-					isLoadingDetail = false;
-				}
-			}
+			// Load details and versions in parallel
+			const detailsPromise = shouldLoadDetail
+				? modpackService
+						.getModpack(modpack.platform, modpack.id)
+						.then((detailed) => {
+							// Only update if this is still the current selection
+							if (currentSelectionId === selectionId) {
+								const mergedGallery =
+									(detailed.gallery?.length ?? 0) > 0 ? detailed.gallery : modpack.gallery;
+								selectedModpack = { ...modpack, ...detailed, gallery: mergedGallery };
+								isLoadingDetail = false;
+							}
+						})
+						.catch((e) => {
+							console.error('[modpacksStore] Failed to load detailed modpack info:', e);
+							if (currentSelectionId === selectionId) {
+								detailError =
+									e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
+								isLoadingDetail = false;
+							}
+						})
+				: Promise.resolve();
 
-			try {
-				console.log(
-					'[modpacksStore] Loading versions for modpack:',
-					modpack.name,
-					modpack.platform
-				);
-				selectedModpackVersions = await modpackService.getModpackVersions(
-					modpack.platform,
-					modpack.id
-				);
-				console.log('[modpacksStore] Loaded versions:', selectedModpackVersions.length);
-			} catch (e: unknown) {
-				console.error('[modpacksStore] Failed to load modpack versions:', e);
-			} finally {
-				isLoadingVersions = false;
-			}
+			const versionsPromise = modpackService
+				.getModpackVersions(modpack.platform, modpack.id)
+				.then((versions) => {
+					// Only update if this is still the current selection
+					if (currentSelectionId === selectionId) {
+						selectedModpackVersions = versions;
+						isLoadingVersions = false;
+						console.log('[modpacksStore] Loaded versions:', versions.length);
+					}
+				})
+				.catch((e) => {
+					console.error('[modpacksStore] Failed to load modpack versions:', e);
+					if (currentSelectionId === selectionId) {
+						isLoadingVersions = false;
+					}
+				});
+
+			// Wait for both to complete (but they update UI as they finish)
+			await Promise.all([detailsPromise, versionsPromise]);
 
 			return selectedModpack ?? modpack;
 		},
 
 		/** Clear selected modpack */
 		clearSelection() {
+			currentSelectionId = null;
 			selectedModpack = null;
 			selectedModpackVersions = [];
 			detailError = null;
 			isLoadingDetail = false;
+			isLoadingVersions = false;
 		},
 
 		/** Clear search error */

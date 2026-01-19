@@ -3,6 +3,7 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::ptr_arg)]
 
+pub mod cache;
 pub mod commands;
 pub mod error;
 pub mod models;
@@ -37,6 +38,7 @@ pub fn run() {
             commands::settings::update_settings,
             commands::settings::reset_settings,
             commands::settings::get_default_instances_path,
+            commands::settings::clear_api_caches,
             // Auth commands
             commands::auth::start_device_auth,
             commands::auth::poll_device_auth,

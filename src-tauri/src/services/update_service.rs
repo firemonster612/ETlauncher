@@ -28,7 +28,7 @@ pub async fn check_modpack_update(
 
     // Only check modpack instances
     let platform = match &instance.modpack_platform {
-        Some(p) => p.clone(),
+        Some(p) => *p,
         None => return Ok(None), // Not a modpack instance
     };
 
@@ -100,12 +100,9 @@ pub async fn check_content_updates(
 
     // Get loader versions for the current MC version
     let available_loader_versions = if instance.loader_type != LoaderType::Vanilla {
-        loader_service::get_loader_versions(
-            instance.loader_type.clone(),
-            &instance.minecraft_version,
-        )
-        .await
-        .unwrap_or_default()
+        loader_service::get_loader_versions(instance.loader_type, &instance.minecraft_version)
+            .await
+            .unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -115,7 +112,7 @@ pub async fn check_content_updates(
         current_mc_version: instance.minecraft_version.clone(),
         current_loader_version: instance.loader_version.clone(),
         target_mc_version: instance.minecraft_version.clone(),
-        target_loader: instance.loader_type.clone(),
+        target_loader: instance.loader_type,
         target_loader_version: instance.loader_version.clone(),
         available_loader_versions,
         updatable: Vec::new(),
@@ -187,7 +184,7 @@ pub async fn check_version_migration(
 
     // Get loader versions for the target MC version
     let available_loader_versions = if *target_loader != LoaderType::Vanilla {
-        loader_service::get_loader_versions(target_loader.clone(), target_mc_version)
+        loader_service::get_loader_versions(*target_loader, target_mc_version)
             .await
             .unwrap_or_default()
     } else {
@@ -206,7 +203,7 @@ pub async fn check_version_migration(
         current_mc_version: instance.minecraft_version.clone(),
         current_loader_version: instance.loader_version.clone(),
         target_mc_version: target_mc_version.to_string(),
-        target_loader: target_loader.clone(),
+        target_loader: *target_loader,
         target_loader_version,
         available_loader_versions,
         updatable: Vec::new(),
@@ -429,11 +426,10 @@ pub async fn check_modpack_instance_updates(
     let instance = instance_service::get_instance(state, instance_id)?;
 
     // Verify this is a modpack instance
-    let platform = instance
+    let platform = *instance
         .modpack_platform
         .as_ref()
-        .ok_or_else(|| AppError::InvalidInput("Not a modpack instance".to_string()))?
-        .clone();
+        .ok_or_else(|| AppError::InvalidInput("Not a modpack instance".to_string()))?;
 
     let modpack_id = instance
         .modpack_id
@@ -491,7 +487,7 @@ pub async fn check_modpack_instance_updates(
             version_id: v.id.clone(),
             version_name: v.name.clone(),
             mc_version: v.mc_version.clone(),
-            loader_type: v.loader_type.clone(),
+            loader_type: v.loader_type,
             loader_version: v.loader_version.clone(),
             released_at: v.released_at,
             changelog: v.changelog.clone(),
@@ -508,7 +504,7 @@ pub async fn check_modpack_instance_updates(
             version_id: current_version_id.clone(),
             version_name: "Unknown".to_string(),
             mc_version: instance.minecraft_version.clone(),
-            loader_type: instance.loader_type.clone(),
+            loader_type: instance.loader_type,
             loader_version: instance.loader_version.clone(),
             released_at: None,
             changelog: None,
@@ -572,7 +568,7 @@ pub async fn check_instance_updates(
     // Get target loader version for the new MC version
     let target_loader_version = if instance.loader_type != LoaderType::Vanilla && has_mc_update {
         let loader_versions =
-            loader_service::get_loader_versions(instance.loader_type.clone(), &latest_mc_version)
+            loader_service::get_loader_versions(instance.loader_type, &latest_mc_version)
                 .await
                 .unwrap_or_default();
 
@@ -591,7 +587,7 @@ pub async fn check_instance_updates(
         return Ok(InstanceUpdateCheck {
             instance_id: instance_id.to_string(),
             current_mc_version: instance.minecraft_version.clone(),
-            current_loader_type: instance.loader_type.clone(),
+            current_loader_type: instance.loader_type,
             current_loader_version: instance.loader_version.clone(),
             latest_mc_version,
             has_mc_update: false,
@@ -639,7 +635,7 @@ pub async fn check_instance_updates(
     Ok(InstanceUpdateCheck {
         instance_id: instance_id.to_string(),
         current_mc_version: instance.minecraft_version.clone(),
-        current_loader_type: instance.loader_type.clone(),
+        current_loader_type: instance.loader_type,
         current_loader_version: instance.loader_version.clone(),
         latest_mc_version,
         has_mc_update,
