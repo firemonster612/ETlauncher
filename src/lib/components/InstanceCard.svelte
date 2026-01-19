@@ -133,8 +133,8 @@
 
 	<!-- Info Section -->
 	<div class="p-4">
-		<!-- Title - 2 lines max -->
-		<h3 class="line-clamp-2 text-lg leading-tight font-bold" title={instance.name}>
+		<!-- Title - 2 lines max, min-height reserves space for 2 lines to keep cards aligned -->
+		<h3 class="line-clamp-2 min-h-[2.8rem] text-lg leading-tight font-bold" title={instance.name}>
 			{instance.name}
 		</h3>
 
