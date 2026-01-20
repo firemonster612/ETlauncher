@@ -10,6 +10,7 @@ use crate::models::content::{
 };
 use crate::models::instance::{Instance, LoaderType, ModpackPlatform};
 use crate::models::modpack::ModpackVersion;
+use crate::models::ContentSource;
 use crate::services::{
     atlauncher_service, content_install_service, curseforge_service, ftb_service, instance_service,
     loader_service, manifest_service, modpack_install_service, modrinth_service, technic_service,
@@ -693,17 +694,98 @@ async fn execute_modpack_update_inner(
         }
     }
 
-    // Restore user-added content that was kept
-    emit_progress(app_handle, "Restoring user content", 85, None, 0, 0);
-    restore_user_content(&temp_dir, game_dir)?;
+    // Try to update user-added content that was kept, fall back to old version if no update found
+    emit_progress(app_handle, "Updating user content", 85, None, 0, 0);
+    let manifest = manifest_service::load_manifest(state, instance_id)?;
+    let kept_content_count = content_to_keep.len();
+
+    for (kept_completed, filename) in content_to_keep.iter().enumerate() {
+        emit_progress(
+            app_handle,
+            "Updating user content",
+            85 + (kept_completed * 10 / kept_content_count.max(1)) as u32,
+            Some(filename.clone()),
+            kept_content_count as u32,
+            kept_completed as u32,
+        );
+
+        // Find the content info in manifest
+        let content = manifest
+            .mods
+            .iter()
+            .chain(manifest.shaders.iter())
+            .chain(manifest.resource_packs.iter())
+            .find(|c| c.filename == *filename);
+
+        let mut updated = false;
+
+        if let Some(content_info) = content {
+            // Only try to update if we have platform IDs
+            if content_info.modrinth_id.is_some() || content_info.curseforge_id.is_some() {
+                // Try to find and install a compatible version
+                let update_result = update_single_content(
+                    state,
+                    instance_id,
+                    content_info,
+                    &target_version.mc_version,
+                    Some(&target_version.loader_type),
+                    app_handle,
+                )
+                .await;
+
+                if let Ok(Some(_new_content)) = update_result {
+                    // Successfully updated - don't restore old file
+                    updated = true;
+                }
+            }
+        }
+
+        // If update failed or not possible, restore the old file from temp
+        if !updated {
+            let temp_file = temp_dir.join(filename);
+            if temp_file.exists() {
+                let mods_dir = game_dir.join("mods");
+                fs::create_dir_all(&mods_dir)?;
+                let dest = mods_dir.join(filename);
+                fs::copy(&temp_file, &dest)?;
+            }
+        }
+    }
+
     let _ = fs::remove_dir_all(&temp_dir);
 
     // Update instance metadata
     emit_progress(app_handle, "Updating instance", 90, None, 0, 0);
+
+    // Resolve loader version if missing (the install functions resolve it internally but don't return it)
+    let (final_loader_type, final_loader_version) = if target_version.loader_version.is_none()
+        && target_version.loader_type != LoaderType::Vanilla
+    {
+        // Check if the instance has mods
+        let mods_dir = game_dir.join("mods");
+        let has_mods = mods_dir.exists()
+            && fs::read_dir(&mods_dir)
+                .map(|d| d.count() > 0)
+                .unwrap_or(false);
+
+        modpack_install_service::resolve_loader_for_pack(
+            &target_version.mc_version,
+            target_version.loader_type,
+            target_version.loader_version.clone(),
+            has_mods,
+        )
+        .await?
+    } else {
+        (
+            target_version.loader_type,
+            target_version.loader_version.clone(),
+        )
+    };
+
     let mut updated_instance = instance.clone();
     updated_instance.minecraft_version = target_version.mc_version.clone();
-    updated_instance.loader_type = target_version.loader_type;
-    updated_instance.loader_version = target_version.loader_version.clone();
+    updated_instance.loader_type = final_loader_type;
+    updated_instance.loader_version = final_loader_version;
     updated_instance.modpack_version_id = Some(plan.target_version_id.clone());
 
     instance_service::save_instance(state, &updated_instance)?;
@@ -711,6 +793,30 @@ async fn execute_modpack_update_inner(
     // Rebuild manifest
     emit_progress(app_handle, "Rebuilding manifest", 95, None, 0, 0);
     modpack_install_service::create_modpack_manifest(state, instance_id, game_dir)?;
+
+    // Re-mark kept user content as UserAdded so it's detected in future updates
+    if !content_to_keep.is_empty() {
+        let mut new_manifest = manifest_service::load_manifest(state, instance_id)?;
+        for filename in &content_to_keep {
+            // Find the content in the manifest and mark as UserAdded
+            for content in new_manifest.mods.iter_mut() {
+                if content.filename == *filename {
+                    content.source = ContentSource::UserAdded;
+                }
+            }
+            for content in new_manifest.shaders.iter_mut() {
+                if content.filename == *filename {
+                    content.source = ContentSource::UserAdded;
+                }
+            }
+            for content in new_manifest.resource_packs.iter_mut() {
+                if content.filename == *filename {
+                    content.source = ContentSource::UserAdded;
+                }
+            }
+        }
+        manifest_service::save_manifest(state, instance_id, &new_manifest)?;
+    }
 
     Ok(updated_instance)
 }
@@ -975,25 +1081,6 @@ fn preserve_user_content(
             let dst = temp_dir.join(filename);
             fs::copy(&src, &dst)?;
         }
-    }
-
-    Ok(())
-}
-
-/// Restore user content from temp folder
-fn restore_user_content(temp_dir: &PathBuf, game_dir: &PathBuf) -> Result<(), AppError> {
-    if !temp_dir.exists() {
-        return Ok(());
-    }
-
-    let mods_dir = game_dir.join("mods");
-    fs::create_dir_all(&mods_dir)?;
-
-    for entry in fs::read_dir(temp_dir)? {
-        let entry = entry?;
-        let src = entry.path();
-        let dst = mods_dir.join(entry.file_name());
-        fs::copy(&src, &dst)?;
     }
 
     Ok(())

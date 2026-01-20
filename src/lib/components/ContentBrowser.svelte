@@ -50,10 +50,12 @@
 		instanceName: string;
 		mcVersion: string;
 		loaderType: LoaderType;
+		initialContentType?: ContentType;
 		onClose: () => void;
 	}
 
-	let { instanceId, instanceName, mcVersion, loaderType, onClose }: Props = $props();
+	let { instanceId, instanceName, mcVersion, loaderType, initialContentType, onClose }: Props =
+		$props();
 
 	let searchInput = $state('');
 	let selectedContentDetail = $state<Content | null>(null);
@@ -215,7 +217,14 @@
 	// Initialize store with instance context on mount (once only)
 	onMount(() => {
 		contentStore.setInstanceContext(instanceId, mcVersion, loaderType);
-		contentStore.search();
+		// Set initial content type if provided
+		if (initialContentType) {
+			contentStore.setContentType(initialContentType).then(() => {
+				contentStore.search();
+			});
+		} else {
+			contentStore.search();
+		}
 		refreshModScan();
 
 		// Listen for download progress events (with queue ID)
@@ -1071,14 +1080,14 @@
 <!-- Backdrop -->
 <button
 	type="button"
-	class="fixed inset-x-0 top-[var(--titlebar-height)] z-50 h-[calc(100vh-var(--titlebar-height))] bg-black/50"
+	class="fixed inset-x-0 top-[var(--titlebar-height)] z-[55] h-[calc(100vh-var(--titlebar-height))] bg-black/50"
 	onclick={onClose}
 	aria-label={`Close content browser for ${instanceName}`}
 ></button>
 
 <!-- Panel -->
 <div
-	class="bg-card border-border fixed inset-x-0 top-[var(--titlebar-height)] z-50 flex h-[calc(100vh-var(--titlebar-height))] w-full max-w-none flex-col overflow-hidden border-l-2 shadow-2xl"
+	class="bg-card border-border fixed inset-x-0 top-[var(--titlebar-height)] z-[55] flex h-[calc(100vh-var(--titlebar-height))] w-full max-w-none flex-col overflow-hidden border-l-2 shadow-2xl"
 >
 	<!-- Close Button -->
 	<button

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Download, Loader2, RefreshCw, FolderOpen, Copy, Upload } from '@lucide/svelte';
+	import { Download, Loader2, FolderOpen, Copy, Upload } from '@lucide/svelte';
 	import { save } from '@tauri-apps/plugin-dialog';
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { Button } from '$lib/ui/button';
@@ -9,7 +9,6 @@
 	import * as Sheet from '$lib/ui/sheet';
 	import { instancesStore } from '$lib/stores/instances.svelte';
 	import * as instanceService from '$lib/services/instance';
-	import UpdateDialog from './UpdateDialog.svelte';
 	import IconPicker from './IconPicker.svelte';
 	import { makeIconPath, type EntityIcon } from '$lib/utils/icons';
 	import type { Instance, UpdateInstanceRequest } from '$lib/types';
@@ -21,18 +20,6 @@
 	}
 
 	let { instance, open: isOpen, onClose }: Props = $props();
-
-	// Update dialog state
-	let showUpdateDialog = $state(false);
-
-	function openUpdateDialog() {
-		showUpdateDialog = true;
-	}
-
-	function handleInstanceUpdated() {
-		// Reload the instances store to get updated data
-		instancesStore.load();
-	}
 
 	// Form state - initialize from instance
 	let name = $state('');
@@ -278,17 +265,6 @@
 					{/if}
 				</div>
 
-				<!-- Update Button -->
-				<Button
-					variant="outline"
-					class="w-full"
-					onclick={openUpdateDialog}
-					data-tutorial="instance-update-button"
-				>
-					<RefreshCw class="mr-2 h-4 w-4" />
-					Check for Updates
-				</Button>
-
 				<!-- Reinstall Loader Button -->
 				{#if instance.loaderType !== 'vanilla' && instance.loaderVersion}
 					<Button
@@ -363,13 +339,3 @@
 		</Sheet.Footer>
 	</Sheet.Content>
 </Sheet.Root>
-
-<!-- Update Dialog -->
-<UpdateDialog
-	{instance}
-	open={showUpdateDialog}
-	onClose={() => {
-		showUpdateDialog = false;
-	}}
-	onUpdated={handleInstanceUpdated}
-/>

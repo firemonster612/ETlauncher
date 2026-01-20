@@ -36,12 +36,13 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if open}
-	<!-- svelte-ignore a11y_click_events_have_key_events a11y_interactive_supports_focus -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div
 		class="fixed top-[var(--titlebar-height)] right-0 bottom-0 left-0 z-50 flex items-center justify-center bg-black/50 p-6"
 		onclick={handleBackdropClick}
 		role="dialog"
 		aria-label="Welcome to ETLauncher"
+		tabindex="0"
 	>
 		<div
 			class="bg-card border-border relative flex max-h-[calc(100vh-var(--titlebar-height)-4rem)] w-full max-w-lg flex-col overflow-hidden rounded-lg border-2 shadow-2xl"
