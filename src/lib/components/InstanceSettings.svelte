@@ -4,7 +4,7 @@
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { Button } from '$lib/ui/button';
 	import { Input } from '$lib/ui/input';
-	import { Slider } from '$lib/ui/slider';
+	import { RangeSlider } from '$lib/ui/slider';
 	import { Textarea } from '$lib/ui/textarea';
 	import * as Sheet from '$lib/ui/sheet';
 	import { instancesStore } from '$lib/stores/instances.svelte';
@@ -25,8 +25,7 @@
 	let name = $state('');
 	let iconPath = $state<string | undefined>(undefined);
 	let javaPath = $state('');
-	let memoryMin = $state(512);
-	let memoryMax = $state(4096);
+	let memoryRange = $state<[number, number]>([512, 4096]);
 	let jvmArgs = $state('');
 	let gameArgs = $state('');
 	let resolutionWidth = $state(0);
@@ -43,8 +42,10 @@
 		name = instance.name;
 		iconPath = instance.iconPath;
 		javaPath = instance.javaPath || '';
-		memoryMin = instance.memoryMinMb ?? globalMemoryMinMb;
-		memoryMax = instance.memoryMaxMb ?? globalMemoryMaxMb;
+		memoryRange = [
+			instance.memoryMinMb ?? globalMemoryMinMb,
+			instance.memoryMaxMb ?? globalMemoryMaxMb,
+		];
 		jvmArgs = instance.jvmArgs || '';
 		gameArgs = instance.gameArgs || '';
 		resolutionWidth = instance.resolutionWidth || 0;
@@ -55,13 +56,6 @@
 		iconPath = makeIconPath(icon);
 	}
 
-	// Ensure memoryMin <= memoryMax
-	$effect(() => {
-		if (memoryMin > memoryMax) {
-			memoryMax = memoryMin;
-		}
-	});
-
 	async function handleSave() {
 		isSaving = true;
 		saveError = null;
@@ -70,8 +64,8 @@
 			name: name !== instance.name ? name : undefined,
 			iconPath: iconPath !== instance.iconPath ? iconPath : undefined,
 			javaPath: javaPath || undefined,
-			memoryMinMb: memoryMin !== globalMemoryMinMb ? memoryMin : undefined,
-			memoryMaxMb: memoryMax !== globalMemoryMaxMb ? memoryMax : undefined,
+			memoryMinMb: memoryRange[0] !== globalMemoryMinMb ? memoryRange[0] : undefined,
+			memoryMaxMb: memoryRange[1] !== globalMemoryMaxMb ? memoryRange[1] : undefined,
 			jvmArgs: jvmArgs || undefined,
 			gameArgs: gameArgs || undefined,
 			resolutionWidth: resolutionWidth || undefined,
@@ -179,21 +173,15 @@
 					<p class="text-muted-foreground mt-1 text-xs">Adjust the RAM allocated to Minecraft</p>
 				</div>
 
-				<div class="space-y-4">
-					<div class="space-y-2">
-						<div class="flex justify-between text-sm">
-							<span>Minimum</span>
-							<span class="text-primary">{formatMemory(memoryMin)}</span>
-						</div>
-						<Slider min={512} max={16384} step={512} bind:value={memoryMin} />
+				<div class="space-y-2">
+					<div class="flex justify-between text-sm">
+						<span>Min: <span class="text-primary">{formatMemory(memoryRange[0])}</span></span>
+						<span>Max: <span class="text-primary">{formatMemory(memoryRange[1])}</span></span>
 					</div>
-
-					<div class="space-y-2">
-						<div class="flex justify-between text-sm">
-							<span>Maximum</span>
-							<span class="text-primary">{formatMemory(memoryMax)}</span>
-						</div>
-						<Slider min={512} max={32768} step={512} bind:value={memoryMax} />
+					<RangeSlider min={512} max={16384} step={512} bind:value={memoryRange} />
+					<div class="text-muted-foreground flex justify-between text-xs">
+						<span>512 MB</span>
+						<span>16 GB</span>
 					</div>
 				</div>
 			</div>
