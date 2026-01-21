@@ -28,7 +28,6 @@ pub fn same_filesystem(path1: &Path, path2: &Path) -> io::Result<bool> {
 
     #[cfg(windows)]
     {
-        use std::ffi::OsStr;
         use std::os::windows::ffi::OsStrExt;
         use windows_sys::Win32::Storage::FileSystem::{GetVolumeInformationW, GetVolumePathNameW};
 
