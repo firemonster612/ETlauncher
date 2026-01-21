@@ -2,13 +2,16 @@ import { SvelteMap } from 'svelte/reactivity';
 import type {
 	Instance,
 	Modpack,
+	ModpackMod,
 	ModpackSearchParams,
 	ModpackVersion,
 	ModpackPlatform,
 	ModpackSortBy,
 	LoaderType,
+	SideFilter,
 } from '$lib/types';
 import * as modpackService from '$lib/services/modpack';
+import * as minecraftService from '$lib/services/minecraft';
 
 /** Cached results for a platform */
 interface PlatformCache {
@@ -30,9 +33,14 @@ function createModpacksStore() {
 	// Home page data
 	let popularModpacks = $state<Modpack[]>([]);
 	let recentModpacks = $state<Modpack[]>([]);
+	let latestVersionModpacks = $state<Modpack[]>([]);
+	let risingStarsModpacks = $state<Modpack[]>([]);
 	let isLoadingPopular = $state(false);
 	let isLoadingRecent = $state(false);
+	let isLoadingLatestVersion = $state(false);
+	let isLoadingRisingStars = $state(false);
 	let homeDataLoaded = $state(false);
+	let latestMcVersion = $state<string | null>(null);
 
 	// Explore section state
 	let exploreModpacks = $state<Modpack[]>([]);
@@ -44,6 +52,7 @@ function createModpacksStore() {
 	let exploreMcVersion = $state<string | null>(null);
 	let exploreLoader = $state<LoaderType | null>(null);
 	let exploreCategory = $state<string | null>(null);
+	let exploreSide = $state<SideFilter | null>(null);
 	const explorePageSize = 20;
 
 	// Cache per platform (persists across platform switches)
@@ -73,6 +82,11 @@ function createModpacksStore() {
 	// Installation state
 	let isInstalling = $state(false);
 	let installError = $state<string | null>(null);
+
+	// Modpack contents state (mods, shaders, resource packs)
+	let selectedModpackMods = $state<ModpackMod[]>([]);
+	let isLoadingMods = $state(false);
+	let modsError = $state<string | null>(null);
 
 	// Selection tracking to prevent race conditions
 	let currentSelectionId: string | null = null;
@@ -108,14 +122,29 @@ function createModpacksStore() {
 		get recentModpacks() {
 			return recentModpacks;
 		},
+		get latestVersionModpacks() {
+			return latestVersionModpacks;
+		},
+		get risingStarsModpacks() {
+			return risingStarsModpacks;
+		},
 		get isLoadingPopular() {
 			return isLoadingPopular;
 		},
 		get isLoadingRecent() {
 			return isLoadingRecent;
 		},
+		get isLoadingLatestVersion() {
+			return isLoadingLatestVersion;
+		},
+		get isLoadingRisingStars() {
+			return isLoadingRisingStars;
+		},
 		get homeDataLoaded() {
 			return homeDataLoaded;
+		},
+		get latestMcVersion() {
+			return latestMcVersion;
 		},
 
 		// Explore section getters
@@ -148,6 +177,9 @@ function createModpacksStore() {
 		},
 		get exploreCategory() {
 			return exploreCategory;
+		},
+		get exploreSide() {
+			return exploreSide;
 		},
 
 		// Filter state getters
@@ -195,6 +227,17 @@ function createModpacksStore() {
 			return installError;
 		},
 
+		// Modpack contents getters
+		get selectedModpackMods() {
+			return selectedModpackMods;
+		},
+		get isLoadingMods() {
+			return isLoadingMods;
+		},
+		get modsError() {
+			return modsError;
+		},
+
 		/** Search for modpacks with current filters */
 		async search(resetPage = true) {
 			if (resetPage) {
@@ -233,11 +276,23 @@ function createModpacksStore() {
 			}
 		},
 
-		/** Load home page data (popular and recent modpacks) */
+		/** Load home page data (popular, recent, latest version, and rising stars modpacks) */
 		async loadHomeData() {
 			if (homeDataLoaded) return;
 
-			// Load popular and recent modpacks in parallel
+			// First, fetch the latest MC version from manifest
+			try {
+				const manifest = await minecraftService.fetchVersionManifest(false);
+				if (manifest?.latest?.release) {
+					latestMcVersion = manifest.latest.release;
+					console.log('[modpacksStore] Latest MC version:', latestMcVersion);
+				}
+			} catch (e: unknown) {
+				console.error('[modpacksStore] Failed to fetch MC versions:', e);
+				latestMcVersion = '1.21.4'; // Fallback
+			}
+
+			// Load all sections in parallel
 			const loadPopular = async () => {
 				isLoadingPopular = true;
 				try {
@@ -272,7 +327,44 @@ function createModpacksStore() {
 				}
 			};
 
-			await Promise.all([loadPopular(), loadRecent()]);
+			const loadLatestVersion = async () => {
+				if (!latestMcVersion) return;
+				isLoadingLatestVersion = true;
+				try {
+					// Use recentlyUpdated to show different modpacks than Popular section
+					const result = await modpackService.searchModpacks({
+						mcVersion: latestMcVersion,
+						sortBy: 'recentlyUpdated',
+						page: 0,
+						pageSize: 12,
+					});
+					latestVersionModpacks = result.modpacks;
+				} catch (e: unknown) {
+					console.error('[modpacksStore] Failed to load latest version modpacks:', e);
+				} finally {
+					isLoadingLatestVersion = false;
+				}
+			};
+
+			const loadRisingStars = async () => {
+				isLoadingRisingStars = true;
+				try {
+					// Use "newest" sort to get recently created modpacks (rising stars)
+					const result = await modpackService.searchModpacks({
+						platform: 'modrinth',
+						sortBy: 'newest',
+						page: 0,
+						pageSize: 5,
+					});
+					risingStarsModpacks = result.modpacks;
+				} catch (e: unknown) {
+					console.error('[modpacksStore] Failed to load rising stars modpacks:', e);
+				} finally {
+					isLoadingRisingStars = false;
+				}
+			};
+
+			await Promise.all([loadPopular(), loadRecent(), loadLatestVersion(), loadRisingStars()]);
 			homeDataLoaded = true;
 		},
 
@@ -291,6 +383,7 @@ function createModpacksStore() {
 					mcVersion: exploreMcVersion || undefined,
 					loader: exploreLoader || undefined,
 					category: exploreCategory || undefined,
+					side: exploreSide || undefined,
 					sortBy: exploreSortBy,
 					page: exploreCurrentPage,
 					pageSize: explorePageSize,
@@ -321,6 +414,7 @@ function createModpacksStore() {
 					mcVersion: exploreMcVersion || undefined,
 					loader: exploreLoader || undefined,
 					category: exploreCategory || undefined,
+					side: exploreSide || undefined,
 					sortBy: exploreSortBy,
 					page: exploreCurrentPage,
 					pageSize: explorePageSize,
@@ -360,12 +454,18 @@ function createModpacksStore() {
 			exploreCategory = newCategory;
 		},
 
+		/** Set explore side filter (client/server) */
+		setExploreSide(newSide: SideFilter | null) {
+			exploreSide = newSide;
+		},
+
 		/** Clear all explore filters */
 		clearExploreFilters() {
 			explorePlatform = null;
 			exploreMcVersion = null;
 			exploreLoader = null;
 			exploreCategory = null;
+			exploreSide = null;
 			exploreSortBy = 'downloads';
 		},
 
@@ -539,9 +639,12 @@ function createModpacksStore() {
 			currentSelectionId = null;
 			selectedModpack = null;
 			selectedModpackVersions = [];
+			selectedModpackMods = [];
 			detailError = null;
+			modsError = null;
 			isLoadingDetail = false;
 			isLoadingVersions = false;
+			isLoadingMods = false;
 		},
 
 		/** Clear search error */
@@ -552,6 +655,38 @@ function createModpacksStore() {
 		/** Clear install error */
 		clearInstallError() {
 			installError = null;
+		},
+
+		/** Clear mods error */
+		clearModsError() {
+			modsError = null;
+		},
+
+		/** Load mods/contents for a modpack version */
+		async loadMods(
+			modpackPlatform: ModpackPlatform,
+			modpackId: string,
+			versionId: string
+		): Promise<void> {
+			isLoadingMods = true;
+			modsError = null;
+			selectedModpackMods = [];
+
+			try {
+				console.log('[modpacksStore] Loading mods for:', {
+					platform: modpackPlatform,
+					modpackId,
+					versionId,
+				});
+				const mods = await modpackService.getModpackMods(modpackPlatform, modpackId, versionId);
+				selectedModpackMods = mods;
+				console.log('[modpacksStore] Loaded mods:', mods.length);
+			} catch (e: unknown) {
+				console.error('[modpacksStore] Load mods failed:', e);
+				modsError = e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
+			} finally {
+				isLoadingMods = false;
+			}
 		},
 
 		/** Install a modpack and create a new instance */

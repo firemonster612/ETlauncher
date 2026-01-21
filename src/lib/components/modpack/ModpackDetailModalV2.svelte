@@ -11,13 +11,16 @@
 		Github,
 		Copy,
 		Check,
-		ChevronLeft,
-		ChevronRight,
 		Package,
 		Loader2,
 		StopCircle,
 		Monitor,
 		Server,
+		MessageCircle,
+		Box,
+		Sparkles,
+		Palette,
+		Database,
 	} from '@lucide/svelte';
 	import { Button } from '$lib/ui/button';
 	import * as Select from '$lib/ui/select';
@@ -25,14 +28,24 @@
 	import { openUrl } from '@tauri-apps/plugin-opener';
 	import DownloadProgress from '$lib/components/DownloadProgress.svelte';
 	import ScreenshotLightbox from '$lib/components/ScreenshotLightbox.svelte';
-	import type { Modpack, ModpackVersion, LoaderType } from '$lib/types';
+	import TeamMembersSection from '$lib/components/modpack/TeamMembersSection.svelte';
+	import type {
+		Modpack,
+		ModpackVersion,
+		ModpackMod,
+		ModpackContentType,
+		LoaderType,
+	} from '$lib/types';
 
 	interface Props {
 		modpack: Modpack;
 		versions: ModpackVersion[];
+		mods?: ModpackMod[];
 		isLoadingVersions?: boolean;
 		isLoadingDetail?: boolean;
+		isLoadingMods?: boolean;
 		detailError?: string | null;
+		modsError?: string | null;
 		installProgress?: {
 			stage: string;
 			progress: number;
@@ -45,27 +58,32 @@
 		onClose: () => void;
 		onInstall: (versionId: string) => void;
 		onCancelInstall?: () => void;
+		onLoadMods?: (versionId: string) => void;
 	}
 
 	let {
 		modpack,
 		versions,
+		mods = [],
 		isLoadingVersions = false,
 		isLoadingDetail = false,
+		isLoadingMods = false,
 		detailError = null,
+		modsError = null,
 		installProgress = null,
 		isInstalling = false,
 		isCancelling = false,
 		onClose,
 		onInstall,
 		onCancelInstall,
+		onLoadMods,
 	}: Props = $props();
 
 	let selectedVersionId = $state<string | null>(null);
-	let galleryIndex = $state(0);
 	let lightboxIndex = $state<number | null>(null);
 	let slugCopied = $state(false);
-	let contentTab = $state<'about' | 'changelog'>('about');
+	let contentTab = $state<'about' | 'changelog' | 'contents'>('about');
+	let contentTypeFilter = $state<ModpackContentType | 'all'>('all');
 
 	// Set initial version when versions load
 	$effect(() => {
@@ -76,6 +94,34 @@
 
 	let gallery = $derived(modpack.gallery ?? []);
 	let selectedVersion = $derived(versions.find((v) => v.id === selectedVersionId) ?? null);
+
+	// Content type counts
+	let modCount = $derived(mods.filter((m) => m.contentType === 'mod' || !m.contentType).length);
+	let shaderCount = $derived(mods.filter((m) => m.contentType === 'shader').length);
+	let resourcePackCount = $derived(mods.filter((m) => m.contentType === 'resourcePack').length);
+	let dataPackCount = $derived(mods.filter((m) => m.contentType === 'dataPack').length);
+
+	// Filtered mods based on content type filter
+	let filteredMods = $derived.by(() => {
+		if (contentTypeFilter === 'all') return mods;
+		if (contentTypeFilter === 'mod')
+			return mods.filter((m) => m.contentType === 'mod' || !m.contentType);
+		return mods.filter((m) => m.contentType === contentTypeFilter);
+	});
+
+	// Helper to get icon for content type
+	function getContentTypeIcon(type: ModpackContentType | undefined) {
+		switch (type) {
+			case 'shader':
+				return Sparkles;
+			case 'resourcePack':
+				return Palette;
+			case 'dataPack':
+				return Database;
+			default:
+				return Box;
+		}
+	}
 
 	function formatDownloads(downloads: number): string {
 		if (downloads >= 1_000_000) return `${(downloads / 1_000_000).toFixed(1)}M`;
@@ -126,14 +172,6 @@
 		};
 		const key = category.toLowerCase().replace(/[^a-z-]/g, '');
 		return colors[key] || 'bg-muted/50 text-muted-foreground';
-	}
-
-	function prevGallery() {
-		galleryIndex = Math.max(0, galleryIndex - 1);
-	}
-
-	function nextGallery() {
-		galleryIndex = Math.min(gallery.length - 1, galleryIndex + 1);
 	}
 
 	function openLightbox(index: number) {
@@ -213,62 +251,11 @@
 		</button>
 
 		<!-- Scrollable content -->
-		<div class="flex-1 overflow-y-auto p-6">
-			<!-- Top Section - Two Columns -->
+		<div class="flex-1 overflow-x-hidden overflow-y-auto p-6">
+			<!-- Top Section - Single Column Info -->
 			<div class="detail-modal-v2-top mb-6">
-				<!-- Left: Gallery Carousel -->
-				<div class="multi-image-carousel mt-6">
-					{#if gallery.length > 0}
-						<div
-							class="multi-image-carousel-track"
-							style="transform: translateX(-{galleryIndex * 100}%)"
-						>
-							{#each gallery as image, idx (image.rawUrl ?? image.url)}
-								<button
-									type="button"
-									class="multi-image-carousel-slide"
-									onclick={() => openLightbox(idx)}
-								>
-									<img
-										src={image.rawUrl ?? image.url}
-										alt={image.title ?? `Gallery image ${idx + 1}`}
-										loading={idx < 3 ? 'eager' : 'lazy'}
-									/>
-								</button>
-							{/each}
-						</div>
-
-						{#if gallery.length > 1}
-							<button
-								type="button"
-								class="multi-image-carousel-nav prev"
-								onclick={prevGallery}
-								disabled={galleryIndex === 0}
-								aria-label="Previous image"
-							>
-								<ChevronLeft class="h-8 w-8" />
-							</button>
-							<button
-								type="button"
-								class="multi-image-carousel-nav next"
-								onclick={nextGallery}
-								disabled={galleryIndex >= gallery.length - 1}
-								aria-label="Next image"
-							>
-								<ChevronRight class="h-8 w-8" />
-							</button>
-						{/if}
-					{:else}
-						<div
-							class="border-border bg-muted/30 flex aspect-video items-center justify-center border-2"
-						>
-							<Package class="text-muted-foreground/30 h-16 w-16" />
-						</div>
-					{/if}
-				</div>
-
-				<!-- Right: Modpack Info -->
-				<div class="flex flex-col gap-4">
+				<!-- Modpack Info -->
+				<div class="flex min-w-0 flex-col gap-4">
 					<!-- Icon -->
 					<div class="flex justify-center">
 						{#if modpack.iconUrl}
@@ -305,73 +292,79 @@
 					</p>
 
 					<!-- Category tags -->
-					<div class="flex flex-wrap justify-center gap-1.5">
-						{#each (modpack.loaders || []).filter((l) => l && l !== 'unknown' && l !== 'vanilla') as loader (loader)}
-							<span class="category-tag-with-icon {getLoaderColor(loader)}">
-								{loader}
-							</span>
-						{/each}
-						{#each modpack.categories.slice(0, 6) as category (category)}
-							<span class="category-tag-with-icon {getCategoryColor(category)}">
-								{category}
-							</span>
-						{/each}
-					</div>
-
-					<!-- Version selector -->
-					{#if isLoadingVersions}
-						<div class="text-muted-foreground flex items-center justify-center gap-2 text-sm">
-							<Loader2 class="h-4 w-4 animate-spin" />
-							Loading versions...
-						</div>
-					{:else if versions.length > 0}
-						<Select.Root
-							type="single"
-							value={selectedVersionId ?? ''}
-							onValueChange={(v) => (selectedVersionId = v)}
-						>
-							<Select.Trigger
-								class="border-border bg-background mx-auto h-9 w-full max-w-[280px] overflow-hidden border-2"
-							>
-								<span class="truncate">
-									{#if selectedVersion}
-										{selectedVersion.name} - MC {selectedVersion.mcVersion}
-									{:else}
-										Select version
-									{/if}
+					{#if (modpack.loaders || []).filter((l) => l && l !== 'unknown' && l !== 'vanilla').length > 0 || modpack.categories.length > 0}
+						<div class="border-border flex flex-wrap justify-center gap-1.5 border-t pt-4">
+							{#each (modpack.loaders || []).filter((l) => l && l !== 'unknown' && l !== 'vanilla') as loader (loader)}
+								<span class="category-tag-with-icon {getLoaderColor(loader)}">
+									{loader}
 								</span>
-							</Select.Trigger>
-							<Select.Content class="border-border bg-card z-[70] max-h-[300px] border-2">
-								{#each versions as version (version.id)}
-									<Select.Item value={version.id} label={version.name}>
-										<div class="flex flex-col">
-											<span class="text-sm">{version.name}</span>
-											<span class="text-muted-foreground text-xs">
-												MC {version.mcVersion} &bull; {version.loaderType}
-												{#if version.releasedAt}
-													&bull; {formatDate(version.releasedAt)}
-												{/if}
-											</span>
-										</div>
-									</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					{:else}
-						<p class="text-muted-foreground text-center text-sm">No versions available</p>
+							{/each}
+							{#each modpack.categories.slice(0, 6) as category (category)}
+								<span class="category-tag-with-icon {getCategoryColor(category)}">
+									{category}
+								</span>
+							{/each}
+						</div>
 					{/if}
 
-					<!-- Install Button -->
-					{#if !isInstalling}
-						<Button
-							class="install-button-large"
-							disabled={!selectedVersionId || isInstalling}
-							onclick={handleInstall}
-						>
-							<Download class="mr-2 h-5 w-5" />
-							INSTALL
-						</Button>
-					{/if}
+					<!-- Version selector and Install -->
+					<div class="border-border space-y-4 border-t pt-4">
+						{#if isLoadingVersions}
+							<div class="text-muted-foreground flex items-center justify-center gap-2 text-sm">
+								<Loader2 class="h-4 w-4 animate-spin" />
+								Loading versions...
+							</div>
+						{:else if versions.length > 0}
+							<Select.Root
+								type="single"
+								value={selectedVersionId ?? ''}
+								onValueChange={(v) => (selectedVersionId = v)}
+							>
+								<Select.Trigger
+									class="border-border bg-background mx-auto h-9 w-full max-w-[280px] overflow-hidden border-2"
+								>
+									<span class="truncate">
+										{#if selectedVersion}
+											{selectedVersion.name} - MC {selectedVersion.mcVersion}
+										{:else}
+											Select version
+										{/if}
+									</span>
+								</Select.Trigger>
+								<Select.Content class="border-border bg-card z-[70] max-h-[300px] border-2">
+									{#each versions as version (version.id)}
+										<Select.Item value={version.id} label={version.name}>
+											<div class="flex flex-col">
+												<span class="text-sm">{version.name}</span>
+												<span class="text-muted-foreground text-xs">
+													MC {version.mcVersion} &bull; {version.loaderType}
+													{#if version.releasedAt}
+														&bull; {formatDate(version.releasedAt)}
+													{/if}
+												</span>
+											</div>
+										</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						{:else}
+							<p class="text-muted-foreground text-center text-sm">No versions available</p>
+						{/if}
+
+						<!-- Install Button -->
+						{#if !isInstalling}
+							<div class="flex justify-center">
+								<Button
+									class="install-button-large"
+									disabled={!selectedVersionId || isInstalling}
+									onclick={handleInstall}
+								>
+									<Download class="mr-2 h-5 w-5" />
+									INSTALL
+								</Button>
+							</div>
+						{/if}
+					</div>
 
 					<!-- Stats row -->
 					<div class="stats-grid">
@@ -382,7 +375,9 @@
 						</div>
 						<div class="flex flex-col items-center gap-1">
 							<Users class="text-muted-foreground h-4 w-4" />
-							<span class="text-sm font-bold">-</span>
+							<span class="text-sm font-bold"
+								>{modpack.followers != null ? formatDownloads(modpack.followers) : '-'}</span
+							>
 							<span class="text-muted-foreground text-xs">Followers</span>
 						</div>
 						<div class="flex flex-col items-center gap-1">
@@ -397,12 +392,33 @@
 						</div>
 					</div>
 				</div>
+
+				<!-- Horizontal Gallery Carousel -->
+				{#if gallery.length > 0}
+					<div class="gallery-carousel-container mt-4">
+						<div class="gallery-carousel-scroll">
+							{#each gallery as image, idx (image.rawUrl ?? image.url)}
+								<button
+									type="button"
+									class="gallery-carousel-item"
+									onclick={() => openLightbox(idx)}
+								>
+									<img
+										src={image.rawUrl ?? image.url}
+										alt={image.title ?? `Gallery image ${idx + 1}`}
+										loading={idx < 3 ? 'eager' : 'lazy'}
+									/>
+								</button>
+							{/each}
+						</div>
+					</div>
+				{/if}
 			</div>
 
 			<!-- Bottom Section - Two Columns -->
 			<div class="detail-modal-v2-bottom">
 				<!-- Left Sidebar -->
-				<div class="space-y-6">
+				<div class="min-w-0 space-y-6">
 					<!-- External Resources -->
 					<div>
 						<h3 class="mb-3 text-sm font-bold tracking-wide uppercase">External Resources</h3>
@@ -417,25 +433,75 @@
 									<span class="text-sm">View on {modpack.platform}</span>
 								</button>
 							{/if}
-							<button type="button" class="external-resource-link opacity-50" disabled>
-								<BookOpen class="h-4 w-4" />
-								<span class="text-sm">Wiki</span>
-							</button>
-							<button type="button" class="external-resource-link opacity-50" disabled>
-								<Bug class="h-4 w-4" />
-								<span class="text-sm">Issues</span>
-							</button>
-							<button type="button" class="external-resource-link opacity-50" disabled>
-								<Github class="h-4 w-4" />
-								<span class="text-sm">Source</span>
-							</button>
+							{#if modpack.externalLinks?.discordUrl}
+								<button
+									type="button"
+									class="external-resource-link"
+									onclick={() =>
+										modpack.externalLinks?.discordUrl && openUrl(modpack.externalLinks.discordUrl)}
+								>
+									<MessageCircle class="h-4 w-4" />
+									<span class="text-sm">Discord</span>
+								</button>
+							{/if}
+							{#if modpack.externalLinks?.wikiUrl}
+								<button
+									type="button"
+									class="external-resource-link"
+									onclick={() =>
+										modpack.externalLinks?.wikiUrl && openUrl(modpack.externalLinks.wikiUrl)}
+								>
+									<BookOpen class="h-4 w-4" />
+									<span class="text-sm">Wiki</span>
+								</button>
+							{:else}
+								<button type="button" class="external-resource-link opacity-50" disabled>
+									<BookOpen class="h-4 w-4" />
+									<span class="text-sm">Wiki</span>
+								</button>
+							{/if}
+							{#if modpack.externalLinks?.issuesUrl}
+								<button
+									type="button"
+									class="external-resource-link"
+									onclick={() =>
+										modpack.externalLinks?.issuesUrl && openUrl(modpack.externalLinks.issuesUrl)}
+								>
+									<Bug class="h-4 w-4" />
+									<span class="text-sm">Issues</span>
+								</button>
+							{:else}
+								<button type="button" class="external-resource-link opacity-50" disabled>
+									<Bug class="h-4 w-4" />
+									<span class="text-sm">Issues</span>
+								</button>
+							{/if}
+							{#if modpack.externalLinks?.sourceUrl}
+								<button
+									type="button"
+									class="external-resource-link"
+									onclick={() =>
+										modpack.externalLinks?.sourceUrl && openUrl(modpack.externalLinks.sourceUrl)}
+								>
+									<Github class="h-4 w-4" />
+									<span class="text-sm">Source</span>
+								</button>
+							{:else}
+								<button type="button" class="external-resource-link opacity-50" disabled>
+									<Github class="h-4 w-4" />
+									<span class="text-sm">Source</span>
+								</button>
+							{/if}
 						</div>
 					</div>
 
 					<!-- Project Members -->
 					<div>
 						<h3 class="mb-3 text-sm font-bold tracking-wide uppercase">Project Members</h3>
-						<div class="text-sm">{modpack.author}</div>
+						<TeamMembersSection
+							members={modpack.teamMembers ?? []}
+							authorFallback={modpack.author}
+						/>
 					</div>
 
 					<!-- Environment Support -->
@@ -504,7 +570,7 @@
 				</div>
 
 				<!-- Right: Description/Changelog Content -->
-				<div class="flex flex-col">
+				<div class="flex min-w-0 flex-col">
 					<!-- Tab Buttons -->
 					<div class="mb-3 flex gap-2">
 						<Button
@@ -520,6 +586,18 @@
 							onclick={() => (contentTab = 'changelog')}
 						>
 							Changelog
+						</Button>
+						<Button
+							variant={contentTab === 'contents' ? 'default' : 'secondary'}
+							size="sm"
+							onclick={() => {
+								contentTab = 'contents';
+								if (selectedVersionId && onLoadMods && mods.length === 0 && !isLoadingMods) {
+									onLoadMods(selectedVersionId);
+								}
+							}}
+						>
+							Contents {mods.length > 0 ? `(${mods.length})` : ''}
 						</Button>
 					</div>
 
@@ -547,7 +625,7 @@
 							{:else}
 								<p class="text-muted-foreground text-sm">No description available.</p>
 							{/if}
-						{:else}
+						{:else if contentTab === 'changelog'}
 							<!-- Changelog Tab -->
 							{#if isLoadingVersions}
 								<div class="text-muted-foreground flex items-center gap-2 text-sm">
@@ -594,6 +672,136 @@
 										</p>
 									{/if}
 								</div>
+							{/if}
+						{:else}
+							<!-- Contents Tab -->
+							{#if isLoadingMods}
+								<div class="text-muted-foreground flex items-center gap-2 text-sm">
+									<Loader2 class="h-4 w-4 animate-spin" />
+									Loading contents...
+								</div>
+							{:else if modsError}
+								<div
+									class="bg-destructive/10 border-destructive text-destructive rounded border-2 p-3 text-sm"
+								>
+									{modsError}
+								</div>
+							{:else if mods.length === 0}
+								<div class="flex flex-col items-center justify-center py-12 text-center">
+									<Package class="text-muted-foreground/30 mb-4 h-12 w-12" />
+									<p class="text-muted-foreground text-sm">
+										{#if !selectedVersionId}
+											Select a version to view contents
+										{:else}
+											No content information available for this modpack
+										{/if}
+									</p>
+									{#if selectedVersionId && onLoadMods}
+										<Button
+											variant="secondary"
+											size="sm"
+											class="mt-4"
+											onclick={() =>
+												selectedVersionId && onLoadMods && onLoadMods(selectedVersionId)}
+										>
+											Load Contents
+										</Button>
+									{/if}
+								</div>
+							{:else}
+								<!-- Content Type Filter -->
+								<div class="mb-4 flex flex-wrap gap-2">
+									<button
+										type="button"
+										class="content-filter-btn"
+										class:active={contentTypeFilter === 'all'}
+										onclick={() => (contentTypeFilter = 'all')}
+									>
+										All ({mods.length})
+									</button>
+									{#if modCount > 0}
+										<button
+											type="button"
+											class="content-filter-btn"
+											class:active={contentTypeFilter === 'mod'}
+											onclick={() => (contentTypeFilter = 'mod')}
+										>
+											<Box class="h-3.5 w-3.5" />
+											Mods ({modCount})
+										</button>
+									{/if}
+									{#if shaderCount > 0}
+										<button
+											type="button"
+											class="content-filter-btn"
+											class:active={contentTypeFilter === 'shader'}
+											onclick={() => (contentTypeFilter = 'shader')}
+										>
+											<Sparkles class="h-3.5 w-3.5" />
+											Shaders ({shaderCount})
+										</button>
+									{/if}
+									{#if resourcePackCount > 0}
+										<button
+											type="button"
+											class="content-filter-btn"
+											class:active={contentTypeFilter === 'resourcePack'}
+											onclick={() => (contentTypeFilter = 'resourcePack')}
+										>
+											<Palette class="h-3.5 w-3.5" />
+											Resource Packs ({resourcePackCount})
+										</button>
+									{/if}
+									{#if dataPackCount > 0}
+										<button
+											type="button"
+											class="content-filter-btn"
+											class:active={contentTypeFilter === 'dataPack'}
+											onclick={() => (contentTypeFilter = 'dataPack')}
+										>
+											<Database class="h-3.5 w-3.5" />
+											Data Packs ({dataPackCount})
+										</button>
+									{/if}
+								</div>
+
+								<!-- Contents List -->
+								<div class="contents-list">
+									{#each filteredMods as mod (mod.id)}
+										{@const ContentIcon = getContentTypeIcon(mod.contentType)}
+										<div class="content-item">
+											{#if mod.iconUrl}
+												<img src={mod.iconUrl} alt="" class="content-item-icon" />
+											{:else}
+												<div class="content-item-icon-placeholder">
+													<ContentIcon class="text-muted-foreground h-5 w-5" />
+												</div>
+											{/if}
+											<div class="content-item-info">
+												{#if mod.url}
+													<button
+														type="button"
+														class="content-item-name hover:text-primary"
+														onclick={() => mod.url && openUrl(mod.url)}
+													>
+														{mod.name}
+													</button>
+												{:else}
+													<span class="content-item-name">{mod.name}</span>
+												{/if}
+												{#if mod.author}
+													<span class="content-item-author">by {mod.author}</span>
+												{/if}
+											</div>
+										</div>
+									{/each}
+								</div>
+
+								{#if filteredMods.length > 0}
+									<p class="text-muted-foreground mt-4 text-center text-xs">
+										Showing {filteredMods.length} of {mods.length} items
+									</p>
+								{/if}
 							{/if}
 						{/if}
 					</div>

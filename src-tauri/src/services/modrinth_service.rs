@@ -3,8 +3,9 @@ use crate::models::instance::ModpackPlatform;
 use crate::models::{
     Content, ContentDependency, ContentFile, ContentGalleryImage, ContentPlatform,
     ContentSearchParams, ContentSearchResult, ContentType, ContentVersion, DependencyType,
-    LoaderType, Modpack, ModpackFile, ModpackMod, ModpackSearchParams, ModpackSearchResult,
-    ModpackSortBy, ModpackVersion,
+    LoaderType, Modpack, ModpackContentType, ModpackExternalLinks, ModpackFile, ModpackMod,
+    ModpackSearchParams, ModpackSearchResult, ModpackSortBy, ModpackTeamMember, ModpackVersion,
+    SideFilter,
 };
 use reqwest::Client;
 use serde::Deserialize;
@@ -41,6 +42,9 @@ pub struct ModrinthSearchHit {
     pub loaders: Vec<String>,
     pub date_modified: String,
     pub date_created: String,
+    #[serde(default)]
+    pub gallery: Vec<String>,
+    pub featured_gallery: Option<String>,
 }
 
 /// Modrinth search response
@@ -63,6 +67,7 @@ pub struct ModrinthProject {
     pub body: String,
     pub icon_url: Option<String>,
     pub downloads: u64,
+    pub followers: u64,
     pub categories: Vec<String>,
     pub game_versions: Vec<String>,
     #[serde(default)]
@@ -72,6 +77,14 @@ pub struct ModrinthProject {
     pub published: String,
     #[serde(default)]
     pub gallery: Option<Vec<ModrinthGalleryImage>>,
+    // External links
+    pub discord_url: Option<String>,
+    pub wiki_url: Option<String>,
+    pub issues_url: Option<String>,
+    pub source_url: Option<String>,
+    // Side support
+    pub client_side: Option<String>,
+    pub server_side: Option<String>,
 }
 
 /// Modrinth gallery image
@@ -138,6 +151,7 @@ pub struct ModrinthTeamMember {
 pub struct ModrinthUser {
     pub username: String,
     pub name: Option<String>,
+    pub avatar_url: Option<String>,
 }
 
 /// Convert Modrinth loaders to our LoaderType
@@ -196,8 +210,9 @@ fn sort_to_modrinth(sort: &ModpackSortBy) -> &'static str {
     match sort {
         ModpackSortBy::Downloads => "downloads",
         ModpackSortBy::RecentlyUpdated => "updated",
-        ModpackSortBy::Name => "newest", // Modrinth doesn't have alphabetical, use newest
+        ModpackSortBy::Name => "relevance", // Modrinth doesn't have alphabetical sort
         ModpackSortBy::Relevance => "relevance",
+        ModpackSortBy::Newest => "newest",
     }
 }
 
@@ -232,6 +247,22 @@ pub async fn search_modpacks(
 
     if let Some(ref category) = params.category {
         facets.push(vec![format!("categories:{}", category)]);
+    }
+
+    // Add client/server side filter
+    if let Some(ref side) = params.side {
+        match side {
+            SideFilter::Client => {
+                facets.push(vec!["client_side:required".to_string()]);
+            }
+            SideFilter::Server => {
+                facets.push(vec!["server_side:required".to_string()]);
+            }
+            SideFilter::Both => {
+                facets.push(vec!["client_side:required".to_string()]);
+                facets.push(vec!["server_side:required".to_string()]);
+            }
+        }
     }
 
     let facets_json = serde_json::to_string(&facets)?;
@@ -279,6 +310,17 @@ pub async fn search_modpacks(
                 parse_loaders(&hit.loaders)
             };
             let categories = filter_categories(hit.categories);
+            let gallery: Vec<ContentGalleryImage> = hit
+                .gallery
+                .into_iter()
+                .map(|url| ContentGalleryImage {
+                    url: url.clone(),
+                    raw_url: Some(url),
+                    title: None,
+                    description: None,
+                    featured: false,
+                })
+                .collect();
             Some(Modpack {
                 id: hit.project_id,
                 slug: hit.slug.clone(),
@@ -287,17 +329,22 @@ pub async fn search_modpacks(
                 description: hit.description,
                 body: None,
                 icon_url: hit.icon_url,
-                banner_url: None,
+                banner_url: hit.featured_gallery,
                 downloads: hit.downloads,
                 platform: ModpackPlatform::Modrinth,
                 categories,
-                gallery: Vec::new(),
+                gallery,
                 mc_versions: hit.versions,
                 loaders,
                 latest_version: None,
                 url: Some(format!("https://modrinth.com/modpack/{}", hit.slug)),
                 updated_at: parse_date(&hit.date_modified),
                 created_at: parse_date(&hit.date_created),
+                external_links: None,
+                team_members: Vec::new(),
+                followers: None,
+                client_side: None,
+                server_side: None,
             })
         })
         .collect();
@@ -337,10 +384,10 @@ pub async fn get_modpack(client: &Client, id_or_slug: &str) -> Result<Modpack, A
         )));
     }
 
-    // Get team info for author
-    let author = get_project_author(client, &project.team)
+    // Get team info for author and team members
+    let (author, team_members) = get_project_team_members(client, &project.team)
         .await
-        .unwrap_or_else(|_| "Unknown".to_string());
+        .unwrap_or_else(|_| ("Unknown".to_string(), Vec::new()));
 
     // Project endpoint returns loaders, but fallback to categories just in case
     let loaders = if project.loaders.is_empty() {
@@ -349,6 +396,22 @@ pub async fn get_modpack(client: &Client, id_or_slug: &str) -> Result<Modpack, A
         parse_loaders(&project.loaders)
     };
     let categories = filter_categories(project.categories);
+
+    // Build external links if any are present
+    let external_links = if project.discord_url.is_some()
+        || project.wiki_url.is_some()
+        || project.issues_url.is_some()
+        || project.source_url.is_some()
+    {
+        Some(ModpackExternalLinks {
+            discord_url: project.discord_url,
+            wiki_url: project.wiki_url,
+            issues_url: project.issues_url,
+            source_url: project.source_url,
+        })
+    } else {
+        None
+    };
 
     Ok(Modpack {
         id: project.id.clone(),
@@ -380,11 +443,19 @@ pub async fn get_modpack(client: &Client, id_or_slug: &str) -> Result<Modpack, A
         url: Some(format!("https://modrinth.com/modpack/{}", project.id)),
         updated_at: parse_date(&project.updated),
         created_at: parse_date(&project.published),
+        external_links,
+        team_members,
+        followers: Some(project.followers),
+        client_side: project.client_side,
+        server_side: project.server_side,
     })
 }
 
-/// Get author name from team ID
-async fn get_project_author(client: &Client, team_id: &str) -> Result<String, AppError> {
+/// Get author name and team members from team ID
+async fn get_project_team_members(
+    client: &Client,
+    team_id: &str,
+) -> Result<(String, Vec<ModpackTeamMember>), AppError> {
     let url = format!("{}/team/{}/members", MODRINTH_API_BASE, team_id);
 
     let members: Vec<ModrinthTeamMember> = client
@@ -396,7 +467,7 @@ async fn get_project_author(client: &Client, team_id: &str) -> Result<String, Ap
         .json()
         .await?;
 
-    // Find owner or first member
+    // Find owner or first member for author name
     let author = members
         .iter()
         .find(|m| m.role.to_lowercase() == "owner")
@@ -409,7 +480,18 @@ async fn get_project_author(client: &Client, team_id: &str) -> Result<String, Ap
         })
         .unwrap_or_else(|| "Unknown".to_string());
 
-    Ok(author)
+    // Convert all members to ModpackTeamMember
+    let team_members: Vec<ModpackTeamMember> = members
+        .into_iter()
+        .map(|m| ModpackTeamMember {
+            username: m.user.username,
+            name: m.user.name,
+            avatar_url: m.user.avatar_url,
+            role: m.role,
+        })
+        .collect();
+
+    Ok((author, team_members))
 }
 
 /// Get versions for a modpack
@@ -690,9 +772,9 @@ pub async fn get_content(client: &Client, id_or_slug: &str) -> Result<Content, A
         AppError::ContentNotFound(format!("{} is a modpack, not content", id_or_slug))
     })?;
 
-    let author = get_project_author(client, &project.team)
+    let (author, _team_members) = get_project_team_members(client, &project.team)
         .await
-        .unwrap_or_else(|_| "Unknown".to_string());
+        .unwrap_or_else(|_| ("Unknown".to_string(), Vec::new()));
 
     let url_path = match content_type {
         ContentType::Mod => "mod",
@@ -956,6 +1038,7 @@ pub struct ModrinthProjectLite {
     pub slug: String,
     pub title: String,
     pub icon_url: Option<String>,
+    pub project_type: Option<String>,
 }
 
 /// Batch fetch projects by ID (best-effort)
@@ -991,7 +1074,34 @@ async fn download_bytes(client: &Client, url: &str) -> Result<Vec<u8>, AppError>
     Ok(resp.bytes().await?.to_vec())
 }
 
+/// Convert Modrinth project type to ModpackContentType
+fn modrinth_type_to_content_type(project_type: Option<&str>) -> ModpackContentType {
+    match project_type {
+        Some("mod") => ModpackContentType::Mod,
+        Some("shader") => ModpackContentType::Shader,
+        Some("resourcepack") => ModpackContentType::ResourcePack,
+        Some("datapack") => ModpackContentType::DataPack,
+        _ => ModpackContentType::Other,
+    }
+}
+
+/// Get content type from file path
+fn path_to_content_type(path: &str) -> ModpackContentType {
+    if path.starts_with("mods/") {
+        ModpackContentType::Mod
+    } else if path.starts_with("shaderpacks/") {
+        ModpackContentType::Shader
+    } else if path.starts_with("resourcepacks/") {
+        ModpackContentType::ResourcePack
+    } else if path.starts_with("datapacks/") {
+        ModpackContentType::DataPack
+    } else {
+        ModpackContentType::Other
+    }
+}
+
 /// Get a mod list for a Modrinth modpack version (best-effort)
+/// Returns all content including mods, shaders, resource packs, and data packs
 pub async fn get_modpack_mods(
     client: &Client,
     version_id: &str,
@@ -1016,14 +1126,19 @@ pub async fn get_modpack_mods(
         serde_json::from_str(&contents)?
     };
 
-    // Extract sha512 hashes for mod files (mods/*)
+    // Extract sha512 hashes for all content files (mods, shaders, resourcepacks, datapacks)
+    let content_prefixes = ["mods/", "shaderpacks/", "resourcepacks/", "datapacks/"];
     let mut sha512_hashes: Vec<String> = Vec::new();
-    for f in index.files {
-        if !f.path.starts_with("mods/") {
+    let mut hash_to_path: HashMap<String, String> = HashMap::new();
+
+    for f in &index.files {
+        let is_content = content_prefixes.iter().any(|p| f.path.starts_with(p));
+        if !is_content {
             continue;
         }
         if let Some(h) = f.hashes.get("sha512") {
             sha512_hashes.push(h.clone());
+            hash_to_path.insert(h.clone(), f.path.clone());
         }
     }
     sha512_hashes.sort();
@@ -1045,21 +1160,35 @@ pub async fn get_modpack_mods(
     let project_map: HashMap<String, ModrinthProjectLite> =
         projects.into_iter().map(|p| (p.id.clone(), p)).collect();
 
-    // Build mod list, dedupe by project id when possible.
+    // Build content list, dedupe by project id when possible.
     let mut seen: HashSet<String> = HashSet::new();
     let mut mods: Vec<ModpackMod> = Vec::new();
 
-    for v in versions_by_hash.values() {
+    for (hash, v) in &versions_by_hash {
         if !seen.insert(v.project_id.clone()) {
             continue;
         }
+        let path = hash_to_path.get(hash).map(|s| s.as_str());
+        let path_type = path
+            .map(path_to_content_type)
+            .unwrap_or(ModpackContentType::Mod);
+
         if let Some(p) = project_map.get(&v.project_id) {
+            let content_type = modrinth_type_to_content_type(p.project_type.as_deref());
+            let url_type = match content_type {
+                ModpackContentType::Mod => "mod",
+                ModpackContentType::Shader => "shader",
+                ModpackContentType::ResourcePack => "resourcepack",
+                ModpackContentType::DataPack => "datapack",
+                _ => "project",
+            };
             mods.push(ModpackMod {
                 id: p.id.clone(),
                 name: p.title.clone(),
                 icon_url: p.icon_url.clone(),
                 author: None,
-                url: Some(format!("https://modrinth.com/mod/{}", p.slug)),
+                url: Some(format!("https://modrinth.com/{}/{}", url_type, p.slug)),
+                content_type,
             });
         } else {
             mods.push(ModpackMod {
@@ -1067,7 +1196,8 @@ pub async fn get_modpack_mods(
                 name: v.project_id.clone(),
                 icon_url: None,
                 author: None,
-                url: Some(format!("https://modrinth.com/mod/{}", v.project_id)),
+                url: Some(format!("https://modrinth.com/project/{}", v.project_id)),
+                content_type: path_type,
             });
         }
     }

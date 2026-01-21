@@ -111,11 +111,11 @@
 			<!-- Blurred icon background with centered icon when no banner image -->
 			<div class="relative flex h-full w-full items-center justify-center overflow-hidden">
 				{#if modpack.iconUrl}
-					<!-- Blurred enlarged icon as background -->
+					<!-- Softly blurred icon as background -->
 					<img
 						src={modpack.iconUrl}
 						alt=""
-						class="absolute inset-0 h-full w-full scale-110 object-cover opacity-60 blur-xl"
+						class="absolute inset-0 h-full w-full object-cover opacity-50 blur-sm"
 						loading="lazy"
 					/>
 					<!-- Main icon -->

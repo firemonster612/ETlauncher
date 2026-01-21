@@ -418,6 +418,11 @@ pub async fn search_modpacks(
                 url: None,
                 updated_at: None,
                 created_at: None,
+                external_links: None,
+                team_members: Vec::new(),
+                followers: None,
+                client_side: None,
+                server_side: None,
             }
         })
         .collect();
@@ -492,6 +497,11 @@ pub async fn get_modpack(client: &Client, pack_name: &str) -> Result<Modpack, Ap
             .first()
             .and_then(|v| v.published.map(|p| p as i64)),
         created_at: None,
+        external_links: None,
+        team_members: Vec::new(),
+        followers: None,
+        client_side: None,
+        server_side: None,
     })
 }
 

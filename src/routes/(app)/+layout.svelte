@@ -16,8 +16,11 @@
 </script>
 
 <AppSidebar />
-<SidebarInset>
-	<main class="flex-1 overflow-auto p-6" class:pb-24={modpackInstallStore.isInstalling}>
+<SidebarInset class="overflow-hidden">
+	<main
+		class="flex-1 overflow-x-hidden overflow-y-auto p-6"
+		class:pb-24={modpackInstallStore.isInstalling}
+	>
 		{@render children()}
 	</main>
 

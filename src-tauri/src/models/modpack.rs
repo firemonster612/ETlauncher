@@ -4,13 +4,14 @@ use serde::{Deserialize, Serialize};
 
 /// Sort order for modpack search
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq, Hash)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum ModpackSortBy {
     #[default]
     Downloads,
     RecentlyUpdated,
     Name,
     Relevance,
+    Newest,
 }
 
 /// Category of modpack content
@@ -48,6 +49,18 @@ impl std::fmt::Display for ModpackCategory {
     }
 }
 
+/// Side support filter for client/server
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum SideFilter {
+    /// Client-side required
+    Client,
+    /// Server-side required
+    Server,
+    /// Both client and server required
+    Both,
+}
+
 /// Search parameters for modpack queries
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
@@ -68,6 +81,8 @@ pub struct ModpackSearchParams {
     pub page_size: Option<u32>,
     /// Filter by platform (None = search all)
     pub platform: Option<ModpackPlatform>,
+    /// Filter by client/server side support
+    pub side: Option<SideFilter>,
 }
 
 /// A file within a modpack version
@@ -118,6 +133,26 @@ pub struct ModpackVersion {
     pub files: Vec<ModpackFile>,
 }
 
+/// External links for a modpack (Discord, Wiki, GitHub, etc.)
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ModpackExternalLinks {
+    pub discord_url: Option<String>,
+    pub wiki_url: Option<String>,
+    pub issues_url: Option<String>,
+    pub source_url: Option<String>,
+}
+
+/// A team member of a modpack project
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModpackTeamMember {
+    pub username: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+    pub role: String,
+}
+
 /// A modpack from any platform
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -162,6 +197,17 @@ pub struct Modpack {
     pub updated_at: Option<i64>,
     /// Created timestamp
     pub created_at: Option<i64>,
+    /// External links (Discord, Wiki, Issues, Source)
+    pub external_links: Option<ModpackExternalLinks>,
+    /// Team members
+    #[serde(default)]
+    pub team_members: Vec<ModpackTeamMember>,
+    /// Follower count
+    pub followers: Option<u64>,
+    /// Client-side support (required, optional, unsupported)
+    pub client_side: Option<String>,
+    /// Server-side support (required, optional, unsupported)
+    pub server_side: Option<String>,
 }
 
 /// Search results from a platform
@@ -198,7 +244,19 @@ pub struct ModpackInstallProgress {
     pub downloaded_bytes: Option<u64>,
 }
 
-/// A mod entry within a modpack (best-effort)
+/// Content type for items within a modpack
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ModpackContentType {
+    #[default]
+    Mod,
+    Shader,
+    ResourcePack,
+    DataPack,
+    Other,
+}
+
+/// A content entry within a modpack (mod, shader, resource pack, etc.)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModpackMod {
@@ -212,6 +270,9 @@ pub struct ModpackMod {
     pub author: Option<String>,
     /// Optional external URL
     pub url: Option<String>,
+    /// Content type (mod, shader, resource pack, etc.)
+    #[serde(default)]
+    pub content_type: ModpackContentType,
 }
 
 /// Request to install a modpack

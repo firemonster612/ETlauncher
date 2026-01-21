@@ -54,7 +54,7 @@ impl std::fmt::Display for ContentType {
 
 /// Sort order for content search
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq, Hash)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum ContentSortBy {
     #[default]
     Downloads,
