@@ -248,6 +248,17 @@ async fn search_all_platforms(
             combined.sort_by(|a, b| b.downloads.cmp(&a.downloads));
             combined
         }
+        ModpackSortBy::Newest => {
+            // Sort by created_at (newest first)
+            let mut combined = Vec::new();
+            combined.extend(modrinth_modpacks);
+            combined.extend(ftb_modpacks);
+            combined.extend(atlauncher_modpacks);
+            combined.extend(technic_modpacks);
+            combined.extend(curseforge_modpacks);
+            combined.sort_by_key(|m| Reverse(m.created_at.unwrap_or(0)));
+            combined
+        }
     };
 
     println!(

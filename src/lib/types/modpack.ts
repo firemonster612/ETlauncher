@@ -2,7 +2,10 @@ import type { LoaderType, ModpackPlatform } from './instance';
 import type { ContentGalleryImage } from './content';
 
 /** Sort order for modpack search */
-export type ModpackSortBy = 'downloads' | 'recentlyUpdated' | 'name' | 'relevance';
+export type ModpackSortBy = 'downloads' | 'recentlyUpdated' | 'name' | 'relevance' | 'newest';
+
+/** Side filter for client/server support */
+export type SideFilter = 'client' | 'server' | 'both';
 
 /** Search parameters for modpack queries */
 export interface ModpackSearchParams {
@@ -22,6 +25,8 @@ export interface ModpackSearchParams {
 	pageSize?: number;
 	/** Filter by platform (undefined = search all) */
 	platform?: ModpackPlatform;
+	/** Filter by client/server side support */
+	side?: SideFilter;
 }
 
 /** A file within a modpack version */
@@ -60,6 +65,22 @@ export interface ModpackVersion {
 	downloads?: number;
 	/** Files included in this version */
 	files: ModpackFile[];
+}
+
+/** External links for a modpack (Discord, Wiki, GitHub, etc.) */
+export interface ModpackExternalLinks {
+	discordUrl?: string;
+	wikiUrl?: string;
+	issuesUrl?: string;
+	sourceUrl?: string;
+}
+
+/** A team member of a modpack project */
+export interface ModpackTeamMember {
+	username: string;
+	name?: string;
+	avatarUrl?: string;
+	role: string;
 }
 
 /** A modpack from any platform */
@@ -104,9 +125,18 @@ export interface Modpack {
 	clientSide?: 'required' | 'optional' | 'unsupported';
 	/** Server-side support: 'required', 'optional', or 'unsupported' */
 	serverSide?: 'required' | 'optional' | 'unsupported';
+	/** External links (Discord, Wiki, Issues, Source) */
+	externalLinks?: ModpackExternalLinks;
+	/** Team members */
+	teamMembers?: ModpackTeamMember[];
+	/** Follower count */
+	followers?: number;
 }
 
-/** A mod entry within a modpack */
+/** Content type for items within a modpack */
+export type ModpackContentType = 'mod' | 'shader' | 'resourcePack' | 'dataPack' | 'other';
+
+/** A content entry within a modpack (mod, shader, resource pack, etc.) */
 export interface ModpackMod {
 	/** Platform-specific project ID */
 	id: string;
@@ -118,6 +148,8 @@ export interface ModpackMod {
 	author?: string;
 	/** Optional external URL */
 	url?: string;
+	/** Content type (mod, shader, resource pack, etc.) */
+	contentType?: ModpackContentType;
 }
 
 /** Search results from a platform */

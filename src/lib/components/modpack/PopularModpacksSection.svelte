@@ -12,11 +12,15 @@
 	let { modpacks, loading = false, onModpackClick }: Props = $props();
 
 	let currentIndex = $state(0);
-	let autoAdvanceTimer: ReturnType<typeof setInterval> | null = null;
+	let currentGalleryIndex = $state(0);
 	let isPaused = $state(false);
+	let tickCount = $state(0);
+	let intervalId: ReturnType<typeof setInterval> | null = null;
 
-	// Auto-advance interval (5 seconds)
-	const AUTO_ADVANCE_INTERVAL = 5000;
+	// Timing: tick every 500ms, gallery changes every 4 ticks (2s), modpack switch after 6 ticks (3s)
+	const TICK_MS = 500;
+	const GALLERY_TICKS = 4; // 2 seconds
+	const MODPACK_SWITCH_TICKS = 6; // 3 seconds on last image
 
 	// Thumbnail modpacks are the next 4 (or remaining) modpacks after featured
 	let thumbnailModpacks = $derived(() => {
@@ -28,20 +32,32 @@
 		return thumbs;
 	});
 
-	function startAutoAdvance() {
-		if (autoAdvanceTimer) return;
-		if (modpacks.length <= 1) return;
-		autoAdvanceTimer = setInterval(() => {
-			if (!isPaused) {
-				currentIndex = (currentIndex + 1) % modpacks.length;
+	function startInterval() {
+		if (intervalId) return;
+		intervalId = setInterval(() => {
+			if (isPaused || modpacks.length === 0) return;
+
+			tickCount++;
+			const gallery = modpacks[currentIndex]?.gallery || [];
+			const isLastGalleryImage = gallery.length <= 1 || currentGalleryIndex >= gallery.length - 1;
+			const ticksNeeded = isLastGalleryImage ? MODPACK_SWITCH_TICKS : GALLERY_TICKS;
+
+			if (tickCount >= ticksNeeded) {
+				tickCount = 0;
+				if (gallery.length > 1 && currentGalleryIndex < gallery.length - 1) {
+					currentGalleryIndex++;
+				} else {
+					currentIndex = (currentIndex + 1) % modpacks.length;
+					currentGalleryIndex = 0;
+				}
 			}
-		}, AUTO_ADVANCE_INTERVAL);
+		}, TICK_MS);
 	}
 
-	function stopAutoAdvance() {
-		if (autoAdvanceTimer) {
-			clearInterval(autoAdvanceTimer);
-			autoAdvanceTimer = null;
+	function stopInterval() {
+		if (intervalId) {
+			clearInterval(intervalId);
+			intervalId = null;
 		}
 	}
 
@@ -53,30 +69,36 @@
 		isPaused = false;
 	}
 
-	// Start auto-advance when component mounts and modpacks are available
+	// Start interval when modpacks are loaded
 	$effect(() => {
-		if (modpacks.length > 1 && !loading) {
-			startAutoAdvance();
+		if (modpacks.length > 0 && !loading) {
+			startInterval();
 		}
-		return () => stopAutoAdvance();
+		return () => stopInterval();
 	});
 
 	onDestroy(() => {
-		stopAutoAdvance();
+		stopInterval();
 	});
 
 	function prev() {
 		if (modpacks.length === 0) return;
 		currentIndex = (currentIndex - 1 + modpacks.length) % modpacks.length;
+		currentGalleryIndex = 0;
+		tickCount = 0;
 	}
 
 	function next() {
 		if (modpacks.length === 0) return;
 		currentIndex = (currentIndex + 1) % modpacks.length;
+		currentGalleryIndex = 0;
+		tickCount = 0;
 	}
 
 	function goTo(index: number) {
 		currentIndex = index;
+		currentGalleryIndex = 0;
+		tickCount = 0;
 	}
 
 	function getLoaderColor(loader: LoaderType): string {
@@ -149,28 +171,57 @@
 						class="featured-carousel-slide {idx === currentIndex ? 'active' : ''}"
 						onclick={() => onModpackClick?.(modpack)}
 					>
-						{#if modpack.bannerUrl || (modpack.gallery && modpack.gallery[0])}
-							<img
-								src={modpack.bannerUrl || modpack.gallery?.[0]?.rawUrl || modpack.gallery?.[0]?.url}
-								alt={modpack.name}
-								class="h-full w-full object-cover"
-							/>
+						{#if modpack.gallery && modpack.gallery.length > 0 && modpack.iconUrl}
+							<!-- Has gallery + icon: show screenshot with icon overlay -->
+							{@const galleryIdx = idx === currentIndex ? currentGalleryIndex : 0}
+							{@const galleryImage = modpack.gallery[galleryIdx] || modpack.gallery[0]}
+							<div class="relative h-full w-full">
+								<img
+									src={galleryImage?.rawUrl || galleryImage?.url}
+									alt={modpack.name}
+									class="h-full w-full object-cover transition-opacity duration-500"
+								/>
+								<!-- Icon overlay in top-left -->
+								<div class="absolute top-3 left-3 z-10">
+									<img
+										src={modpack.iconUrl}
+										alt=""
+										class="h-14 w-14 border-2 border-black/30 object-cover shadow-2xl"
+										style="will-change: transform; transform: translateZ(0);"
+									/>
+								</div>
+								<!-- Gallery progress dots -->
+								{#if modpack.gallery.length > 1 && idx === currentIndex}
+									<div class="absolute top-3 right-3 z-10 flex gap-1">
+										{#each Array.from({ length: modpack.gallery.length }, (_, i) => i) as gIdx (gIdx)}
+											<div
+												class="h-1.5 w-1.5 rounded-full transition-colors {gIdx ===
+												currentGalleryIndex
+													? 'bg-white'
+													: 'bg-white/40'}"
+											></div>
+										{/each}
+									</div>
+								{/if}
+							</div>
+						{:else if modpack.bannerUrl}
+							<img src={modpack.bannerUrl} alt={modpack.name} class="h-full w-full object-cover" />
 						{:else if modpack.iconUrl}
 							<div
 								class="bg-card relative flex h-full w-full items-center justify-center overflow-hidden"
 							>
-								<!-- Large blurred background icon -->
+								<!-- Softly blurred background icon -->
 								<img
 									src={modpack.iconUrl}
 									alt=""
-									class="absolute inset-0 h-full w-full scale-125 object-cover opacity-70 blur-xl"
+									class="absolute inset-0 h-full w-full object-cover opacity-60 blur-md"
 									style="will-change: transform; transform: translateZ(0);"
 								/>
 								<!-- Centered sharp icon -->
 								<img
 									src={modpack.iconUrl}
 									alt={modpack.name}
-									class="relative z-10 h-40 w-40 object-contain drop-shadow-lg"
+									class="relative z-10 mb-16 h-32 w-32 object-contain drop-shadow-lg"
 									style="will-change: transform; transform: translateZ(0);"
 								/>
 							</div>
@@ -248,18 +299,18 @@
 								<div
 									class="bg-card relative flex h-full w-full items-center justify-center overflow-hidden"
 								>
-									<!-- Large blurred background icon -->
+									<!-- Softly blurred background icon -->
 									<img
 										src={thumb.iconUrl}
 										alt=""
-										class="absolute inset-0 h-full w-full scale-125 object-cover opacity-70 blur-lg"
+										class="absolute inset-0 h-full w-full object-cover opacity-50 blur-sm"
 										style="will-change: transform; transform: translateZ(0);"
 									/>
-									<!-- Centered sharp icon -->
+									<!-- Centered sharp icon - larger -->
 									<img
 										src={thumb.iconUrl}
 										alt={thumb.name}
-										class="relative z-10 h-12 w-12 object-contain drop-shadow-lg"
+										class="relative z-10 h-20 w-20 object-contain drop-shadow-lg"
 										style="will-change: transform; transform: translateZ(0);"
 									/>
 								</div>

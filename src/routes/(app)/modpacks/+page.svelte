@@ -11,9 +11,11 @@
 	import { versionsStore } from '$lib/stores/versions.svelte';
 	import ModpackDetailModalV2 from '$lib/components/modpack/ModpackDetailModalV2.svelte';
 	import PopularModpacksSection from '$lib/components/modpack/PopularModpacksSection.svelte';
+	import LatestVersionSection from '$lib/components/modpack/LatestVersionSection.svelte';
+	import RisingStarsSection from '$lib/components/modpack/RisingStarsSection.svelte';
 	import PlatformToggle from '$lib/components/modpack/PlatformToggle.svelte';
 	import ModpackCard from '$lib/components/modpack/ModpackCard.svelte';
-	import type { Modpack, ModpackPlatform, ModpackSortBy, LoaderType } from '$lib/types';
+	import type { Modpack, ModpackPlatform, ModpackSortBy, LoaderType, SideFilter } from '$lib/types';
 
 	let searchInput = $state('');
 	let selectedModpackDetail = $state<Modpack | null>(null);
@@ -80,7 +82,8 @@
 	let hasActiveFilters = $derived(
 		modpacksStore.exploreMcVersion !== null ||
 			modpacksStore.exploreLoader !== null ||
-			modpacksStore.exploreCategory !== null
+			modpacksStore.exploreCategory !== null ||
+			modpacksStore.exploreSide !== null
 	);
 
 	const platforms: (ModpackPlatform | 'all')[] = [
@@ -130,6 +133,7 @@
 		modpacksStore.setExploreMcVersion(null);
 		modpacksStore.setExploreLoader(null);
 		modpacksStore.setExploreCategory(null);
+		modpacksStore.setExploreSide(null);
 		modpacksStore.loadExploreData();
 	}
 
@@ -153,10 +157,16 @@
 		modpacksStore.loadExploreData();
 	}
 
+	function handleSideChange(side: string) {
+		modpacksStore.setExploreSide(side === 'any' ? null : (side as SideFilter));
+		modpacksStore.loadExploreData();
+	}
+
 	function clearFilters() {
 		modpacksStore.setExploreMcVersion(null);
 		modpacksStore.setExploreLoader(null);
 		modpacksStore.setExploreCategory(null);
+		modpacksStore.setExploreSide(null);
 		modpacksStore.loadExploreData();
 	}
 
@@ -254,7 +264,11 @@
 	</div>
 
 	<!-- Scrollable Content -->
-	<div class="flex-1 overflow-y-auto px-4 pb-4" bind:this={scrollContainer} onscroll={handleScroll}>
+	<div
+		class="flex-1 overflow-x-hidden overflow-y-auto px-4 pb-4"
+		bind:this={scrollContainer}
+		onscroll={handleScroll}
+	>
 		<!-- Popular Modpacks Section (only show when not searching) -->
 		{#if !searchInput}
 			<PopularModpacksSection
@@ -262,6 +276,25 @@
 				loading={modpacksStore.isLoadingPopular}
 				onModpackClick={handleModpackClick}
 			/>
+
+			<!-- Latest MC Version Section -->
+			<div class="mt-8">
+				<LatestVersionSection
+					modpacks={modpacksStore.latestVersionModpacks}
+					mcVersion={modpacksStore.latestMcVersion}
+					loading={modpacksStore.isLoadingLatestVersion}
+					onModpackClick={handleModpackClick}
+				/>
+			</div>
+
+			<!-- Rising Stars Section -->
+			<div class="mt-8">
+				<RisingStarsSection
+					modpacks={modpacksStore.risingStarsModpacks}
+					loading={modpacksStore.isLoadingRisingStars}
+					onModpackClick={handleModpackClick}
+				/>
+			</div>
 		{/if}
 
 		<!-- Explore Section -->
@@ -370,6 +403,31 @@
 						</Select.Content>
 					</Select.Root>
 
+					<!-- Side (Client/Server) -->
+					<Select.Root
+						type="single"
+						value={modpacksStore.exploreSide || 'any'}
+						onValueChange={handleSideChange}
+					>
+						<Select.Trigger class="sort-select w-28">
+							<span class="truncate">
+								{modpacksStore.exploreSide === 'client'
+									? 'Client'
+									: modpacksStore.exploreSide === 'server'
+										? 'Server'
+										: modpacksStore.exploreSide === 'both'
+											? 'Both'
+											: 'Side'}
+							</span>
+						</Select.Trigger>
+						<Select.Content class="border-border bg-card border-2">
+							<Select.Item value="any" label="Any">Any Side</Select.Item>
+							<Select.Item value="client" label="Client">Client</Select.Item>
+							<Select.Item value="server" label="Server">Server</Select.Item>
+							<Select.Item value="both" label="Both">Both Required</Select.Item>
+						</Select.Content>
+					</Select.Root>
+
 					<!-- Clear Filters -->
 					{#if hasActiveFilters}
 						<Button
@@ -455,14 +513,22 @@
 	<ModpackDetailModalV2
 		modpack={selectedModpackDetail}
 		versions={modpacksStore.selectedModpackVersions}
+		mods={modpacksStore.selectedModpackMods}
 		isLoadingVersions={modpacksStore.isLoadingVersions}
 		isLoadingDetail={modpacksStore.isLoadingDetail}
+		isLoadingMods={modpacksStore.isLoadingMods}
 		detailError={modpacksStore.detailError}
+		modsError={modpacksStore.modsError}
 		installProgress={modpackInstallStore.progress}
 		isInstalling={modpackInstallStore.isInstalling}
 		isCancelling={modpackInstallStore.isCancelling}
 		onClose={closeModpackDetail}
 		onInstall={handleInstall}
 		onCancelInstall={handleCancelInstall}
+		onLoadMods={(versionId) => {
+			if (selectedModpackDetail) {
+				modpacksStore.loadMods(selectedModpackDetail.platform, selectedModpackDetail.id, versionId);
+			}
+		}}
 	/>
 {/if}

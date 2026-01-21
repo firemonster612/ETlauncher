@@ -3,8 +3,8 @@ use crate::models::instance::ModpackPlatform;
 use crate::models::{
     Content, ContentDependency, ContentFile, ContentGalleryImage, ContentPlatform,
     ContentSearchParams, ContentSearchResult, ContentType, ContentVersion, DependencyType,
-    LoaderType, Modpack, ModpackFile, ModpackMod, ModpackSearchParams, ModpackSearchResult,
-    ModpackSortBy, ModpackVersion,
+    LoaderType, Modpack, ModpackContentType, ModpackFile, ModpackMod, ModpackSearchParams,
+    ModpackSearchResult, ModpackSortBy, ModpackVersion,
 };
 use reqwest::Client;
 use serde::Deserialize;
@@ -114,6 +114,7 @@ impl CurseForgeSortField {
             ModpackSortBy::RecentlyUpdated => CurseForgeSortField::LastUpdated,
             ModpackSortBy::Name => CurseForgeSortField::Name,
             ModpackSortBy::Relevance => CurseForgeSortField::Featured,
+            ModpackSortBy::Newest => CurseForgeSortField::LastUpdated, // CurseForge doesn't have "newest", use LastUpdated
         }
     }
 }
@@ -512,6 +513,11 @@ pub async fn search_modpacks(
                 )),
                 updated_at: parse_date(&m.date_modified),
                 created_at: parse_date(&m.date_created),
+                external_links: None,
+                team_members: Vec::new(),
+                followers: None,
+                client_side: None,
+                server_side: None,
             }
         })
         .collect();
@@ -616,6 +622,11 @@ pub async fn get_modpack(
         )),
         updated_at: parse_date(&m.date_modified),
         created_at: parse_date(&m.date_created),
+        external_links: None,
+        team_members: Vec::new(),
+        followers: None,
+        client_side: None,
+        server_side: None,
     })
 }
 
@@ -766,15 +777,31 @@ pub async fn get_modpack_mods(
             .unwrap_or_default();
         for m in chunk_mods {
             let author = m.authors.first().map(|a| a.name.clone());
+            // Detect content type from CurseForge class ID
+            let content_type = match m.class_id {
+                Some(6) => ModpackContentType::Mod,           // Mods
+                Some(6552) => ModpackContentType::Shader,     // Shaders
+                Some(12) => ModpackContentType::ResourcePack, // Resource Packs
+                Some(6945) => ModpackContentType::DataPack,   // Data Packs
+                _ => ModpackContentType::Mod,                 // Default to mod
+            };
+            let url_type = match content_type {
+                ModpackContentType::Mod => "mc-mods",
+                ModpackContentType::Shader => "shaders",
+                ModpackContentType::ResourcePack => "texture-packs",
+                ModpackContentType::DataPack => "data-packs",
+                _ => "mc-mods",
+            };
             mods.push(ModpackMod {
                 id: m.id.to_string(),
                 name: m.name.clone(),
                 icon_url: m.logo.as_ref().map(|l| l.url.clone()),
                 author,
                 url: Some(format!(
-                    "https://www.curseforge.com/minecraft/mc-mods/{}",
-                    m.slug
+                    "https://www.curseforge.com/minecraft/{}/{}",
+                    url_type, m.slug
                 )),
+                content_type,
             });
         }
     }

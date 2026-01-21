@@ -1,8 +1,8 @@
 use crate::error::AppError;
 use crate::models::instance::ModpackPlatform;
 use crate::models::{
-    LoaderType, Modpack, ModpackFile, ModpackMod, ModpackSearchParams, ModpackSearchResult,
-    ModpackVersion,
+    LoaderType, Modpack, ModpackContentType, ModpackFile, ModpackMod, ModpackSearchParams,
+    ModpackSearchResult, ModpackVersion,
 };
 use reqwest::Client;
 use serde::Deserialize;
@@ -219,6 +219,11 @@ pub async fn search_modpacks(
             url: m.platform_url.or(m.url),
             updated_at: None,
             created_at: None,
+            external_links: None,
+            team_members: Vec::new(),
+            followers: None,
+            client_side: None,
+            server_side: None,
         })
         .collect();
 
@@ -277,6 +282,11 @@ pub async fn get_modpack(client: &Client, slug: &str) -> Result<Modpack, AppErro
         url: pack.url,
         updated_at: None,
         created_at: None,
+        external_links: None,
+        team_members: Vec::new(),
+        followers: None,
+        client_side: None,
+        server_side: None,
     })
 }
 
@@ -301,6 +311,7 @@ pub async fn get_modpack_mods(
             icon_url: None,
             author: None,
             url: Some(m.url),
+            content_type: ModpackContentType::default(),
         })
         .collect();
 
