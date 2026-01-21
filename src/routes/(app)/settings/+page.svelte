@@ -23,7 +23,6 @@
 	// Resource pool state
 	let poolStats = $state<ResourcePoolStats | null>(null);
 	let poolLoading = $state(false);
-	let poolMigrating = $state(false);
 	let gcRunning = $state(false);
 	let poolActionResult = $state<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -69,27 +68,6 @@
 			};
 		} finally {
 			gcRunning = false;
-		}
-	}
-
-	async function migrateAllInstances() {
-		poolMigrating = true;
-		poolActionResult = null;
-		try {
-			const result = await settingsService.migrateAllInstancesToPool();
-			await loadPoolStats();
-			poolActionResult = {
-				type: 'success',
-				message: `Migrated ${result.instancesMigrated} instances (${result.totalFilesMigrated} files), saved ${formatBytes(result.totalSpaceSavedBytes)}`,
-			};
-		} catch (e) {
-			console.error('Migration failed:', e);
-			poolActionResult = {
-				type: 'error',
-				message: 'Migration failed. Check console for details.',
-			};
-		} finally {
-			poolMigrating = false;
 		}
 	}
 
@@ -382,18 +360,6 @@
 
 				<!-- Pool Actions -->
 				<div class="flex flex-wrap gap-2">
-					<Button
-						variant="outline"
-						size="sm"
-						onclick={migrateAllInstances}
-						disabled={poolMigrating}
-					>
-						{#if poolMigrating}
-							Migrating...
-						{:else}
-							Migrate Existing Instances
-						{/if}
-					</Button>
 					<Button variant="outline" size="sm" onclick={runGarbageCollection} disabled={gcRunning}>
 						<Trash2 class="mr-2 h-4 w-4" />
 						{#if gcRunning}

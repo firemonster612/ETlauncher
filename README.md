@@ -33,6 +33,7 @@ A fast, modern Minecraft launcher that brings together modpacks from CurseForge,
 - Multiple Microsoft accounts
 - Powerful instance management
 - Update checking for packs and mods
+- Resource pool for disk space savings (mods/shaders/resource packs shared across instances)
 - Native cross-platform (Tauri + Rust)
 
 ## Screenshots

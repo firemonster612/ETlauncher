@@ -29,6 +29,14 @@ pub fn run() {
         eprintln!("Failed to load settings: {}", e);
     }
 
+    // Auto-migrate existing instances to resource pool if enabled
+    // This is fast and idempotent - already-migrated content is skipped
+    if app_state.get_settings().resource_pool.enabled {
+        if let Err(e) = services::migration_service::migrate_all_instances(&app_state) {
+            eprintln!("Auto-migration failed: {}", e);
+        }
+    }
+
     tauri::Builder::default()
         // Single instance MUST be registered first to work correctly
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
