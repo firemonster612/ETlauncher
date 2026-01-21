@@ -1,5 +1,8 @@
+use crate::models::resource_pool::ResourcePoolConfig;
 use crate::utils::paths;
 use serde::{Deserialize, Serialize};
+
+pub use crate::models::resource_pool::LinkStrategy;
 
 /// Application theme
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -39,6 +42,9 @@ pub struct AppSettings {
     /// Whether the first-launch setup/tutorial has been completed
     #[serde(default)]
     pub setup_completed: bool,
+    /// Resource pool configuration for shared content management
+    #[serde(default)]
+    pub resource_pool: ResourcePoolConfig,
 }
 
 impl Default for AppSettings {
@@ -55,6 +61,7 @@ impl Default for AppSettings {
             theme: Theme::Dark,
             curseforge_api_key: None,
             setup_completed: false,
+            resource_pool: ResourcePoolConfig::default(),
         }
     }
 }
@@ -74,4 +81,5 @@ pub struct UpdateSettingsRequest {
     pub theme: Option<Theme>,
     pub curseforge_api_key: Option<String>,
     pub setup_completed: Option<bool>,
+    pub resource_pool: Option<ResourcePoolConfig>,
 }

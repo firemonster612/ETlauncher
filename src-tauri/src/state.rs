@@ -12,6 +12,7 @@ use crate::models::content::{
 use crate::models::instance::LoaderType;
 use crate::models::loader::LoaderVersion;
 use crate::models::modpack::{Modpack, ModpackSearchResult, ModpackVersion};
+use crate::models::resource_pool::ResourcePoolIndex;
 use crate::models::{AppSettings, VersionManifest};
 
 /// API cache for reducing redundant API calls.
@@ -135,6 +136,8 @@ pub struct AppState {
     pub content_download_tokens: Arc<Mutex<HashMap<String, CancellationToken>>>,
     /// API cache for reducing redundant API calls
     pub api_cache: ApiCache,
+    /// Resource pool index for shared content management
+    pub resource_pool_index: RwLock<ResourcePoolIndex>,
 }
 
 /// Cached version manifest with fetch timestamp
@@ -164,6 +167,10 @@ impl AppState {
             .build()
             .expect("Failed to create HTTP client");
 
+        // Load the resource pool index if it exists
+        let pool_index = crate::services::resource_pool_service::load_pool_index()
+            .unwrap_or_else(|_| ResourcePoolIndex::new());
+
         Self {
             settings: RwLock::new(AppSettings::default()),
             version_manifest: RwLock::new(None),
@@ -174,6 +181,7 @@ impl AppState {
             active_content_downloads: Arc::new(Mutex::new(HashSet::new())),
             content_download_tokens: Arc::new(Mutex::new(HashMap::new())),
             api_cache: ApiCache::new(),
+            resource_pool_index: RwLock::new(pool_index),
         }
     }
 

@@ -135,6 +135,8 @@ fn migrate_old_settings(old: &serde_json::Value) -> AppSettings {
             .or_else(|| old.get("setupCompleted"))
             .and_then(|v| v.as_bool())
             .unwrap_or(true),
+        // Use default resource pool config for migrated settings
+        resource_pool: crate::models::ResourcePoolConfig::default(),
     }
 }
 
@@ -179,6 +181,9 @@ pub fn update_settings(current: &AppSettings, updates: UpdateSettingsRequest) ->
             .curseforge_api_key
             .or_else(|| current.curseforge_api_key.clone()),
         setup_completed: updates.setup_completed.unwrap_or(current.setup_completed),
+        resource_pool: updates
+            .resource_pool
+            .unwrap_or_else(|| current.resource_pool.clone()),
     }
 }
 

@@ -6,6 +6,7 @@ pub mod java;
 pub mod loader;
 pub mod minecraft;
 pub mod modpack;
+pub mod resource_pool;
 pub mod settings;
 
 pub use account::*;
@@ -16,4 +17,5 @@ pub use java::*;
 pub use loader::*;
 pub use minecraft::*;
 pub use modpack::*;
+pub use resource_pool::*;
 pub use settings::*;

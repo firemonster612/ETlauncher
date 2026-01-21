@@ -278,6 +278,9 @@ pub struct InstalledContent {
     pub sha512_hash: Option<String>,
     /// Murmur2 fingerprint for CurseForge lookup
     pub murmur2_fingerprint: Option<u32>,
+    /// Whether this content is linked from the resource pool
+    #[serde(default)]
+    pub is_pooled: bool,
 }
 
 /// Current manifest format version

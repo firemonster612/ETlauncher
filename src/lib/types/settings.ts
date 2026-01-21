@@ -1,6 +1,17 @@
 /** Application theme */
 export type Theme = 'dark' | 'light' | 'system';
 
+/** Link strategy for resource pool */
+export type LinkStrategy = 'auto' | 'hardLink' | 'symlink' | 'copy';
+
+/** Resource pool configuration */
+export interface ResourcePoolConfig {
+	/** Whether the resource pool is enabled */
+	enabled: boolean;
+	/** Preferred link strategy */
+	linkStrategy: LinkStrategy;
+}
+
 /** Global application settings */
 export interface AppSettings {
 	/** Path to instances directory */
@@ -25,6 +36,8 @@ export interface AppSettings {
 	setupCompleted: boolean;
 	/** CurseForge API key for accessing CurseForge content */
 	curseforgeApiKey?: string;
+	/** Resource pool configuration for shared content management */
+	resourcePool: ResourcePoolConfig;
 }
 
 /** Request to update settings (partial update) */
@@ -40,4 +53,25 @@ export interface UpdateSettingsRequest {
 	theme?: Theme;
 	setupCompleted?: boolean;
 	curseforgeApiKey?: string;
+	resourcePool?: ResourcePoolConfig;
+}
+
+/** Resource pool statistics */
+export interface ResourcePoolStats {
+	/** Total number of resources in the pool */
+	totalResources: number;
+	/** Number of mods in the pool */
+	modCount: number;
+	/** Number of shaders in the pool */
+	shaderCount: number;
+	/** Number of resource packs in the pool */
+	resourcePackCount: number;
+	/** Total size of the pool in bytes */
+	totalSizeBytes: number;
+	/** Estimated space saved by deduplication (bytes) */
+	spaceSavedBytes: number;
+	/** Number of unused resources (candidates for GC) */
+	unusedCount: number;
+	/** Last garbage collection timestamp */
+	lastGcAt: number | null;
 }

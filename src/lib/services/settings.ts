@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { AppSettings, UpdateSettingsRequest } from '$lib/types';
+import type { AppSettings, UpdateSettingsRequest, ResourcePoolStats } from '$lib/types';
 
 /** Get current application settings */
 export async function getSettings(): Promise<AppSettings> {
@@ -21,6 +21,7 @@ export async function updateSettings(updates: Partial<AppSettings>): Promise<App
 		theme: updates.theme,
 		setupCompleted: updates.setupCompleted,
 		curseforgeApiKey: updates.curseforgeApiKey,
+		resourcePool: updates.resourcePool,
 	};
 
 	return invoke<AppSettings>('update_settings', { updates: request });
@@ -34,4 +35,67 @@ export async function resetSettings(): Promise<AppSettings> {
 /** Get the default instances path */
 export async function getDefaultInstancesPath(): Promise<string> {
 	return invoke<string>('get_default_instances_path');
+}
+
+// =============================================================================
+// Resource Pool Functions
+// =============================================================================
+
+/** Get resource pool statistics */
+export async function getPoolStats(): Promise<ResourcePoolStats> {
+	return invoke<ResourcePoolStats>('get_pool_stats');
+}
+
+/** Result of garbage collection */
+export interface GarbageCollectResult {
+	resourcesRemoved: number;
+	bytesFreed: number;
+	failedCount: number;
+}
+
+/** Run garbage collection on the resource pool */
+export async function garbageCollectPool(): Promise<GarbageCollectResult> {
+	return invoke<GarbageCollectResult>('garbage_collect_pool');
+}
+
+/** Result of pool integrity verification */
+export interface PoolIntegrityResult {
+	validResources: number;
+	missingFiles: number;
+	orphanedFiles: number;
+}
+
+/** Verify resource pool integrity */
+export async function verifyPoolIntegrity(): Promise<PoolIntegrityResult> {
+	return invoke<PoolIntegrityResult>('verify_pool_integrity');
+}
+
+/** Result of migrating an instance */
+export interface InstanceMigrationResult {
+	instanceId: string;
+	filesMigrated: number;
+	spaceSavedBytes: number;
+	errorCount: number;
+}
+
+/** Check if an instance needs migration to the resource pool */
+export async function checkInstanceNeedsMigration(instanceId: string): Promise<boolean> {
+	return invoke<boolean>('check_instance_needs_migration', { instanceId });
+}
+
+/** Migrate a single instance to use the resource pool */
+export async function migrateInstanceToPool(instanceId: string): Promise<InstanceMigrationResult> {
+	return invoke<InstanceMigrationResult>('migrate_instance_to_pool', { instanceId });
+}
+
+/** Result of migrating all instances */
+export interface MigrateAllResult {
+	instancesMigrated: number;
+	totalFilesMigrated: number;
+	totalSpaceSavedBytes: number;
+}
+
+/** Migrate all instances to use the resource pool */
+export async function migrateAllInstancesToPool(): Promise<MigrateAllResult> {
+	return invoke<MigrateAllResult>('migrate_all_instances_to_pool');
 }

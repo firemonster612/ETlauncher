@@ -29,6 +29,14 @@ pub fn run() {
         eprintln!("Failed to load settings: {}", e);
     }
 
+    // Auto-migrate existing instances to resource pool if enabled
+    // This is fast and idempotent - already-migrated content is skipped
+    if app_state.get_settings().resource_pool.enabled {
+        if let Err(e) = services::migration_service::migrate_all_instances(&app_state) {
+            eprintln!("Auto-migration failed: {}", e);
+        }
+    }
+
     tauri::Builder::default()
         // Single instance MUST be registered first to work correctly
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -136,6 +144,13 @@ pub fn run() {
             commands::optifine::check_optifine_available,
             commands::optifine::install_optifine,
             commands::optifine::get_optifine_version,
+            // Resource pool commands
+            commands::resource_pool::get_pool_stats,
+            commands::resource_pool::garbage_collect_pool,
+            commands::resource_pool::verify_pool_integrity,
+            commands::resource_pool::check_instance_needs_migration,
+            commands::resource_pool::migrate_instance_to_pool,
+            commands::resource_pool::migrate_all_instances_to_pool,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
