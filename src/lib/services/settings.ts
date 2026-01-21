@@ -20,6 +20,7 @@ export async function updateSettings(updates: Partial<AppSettings>): Promise<App
 		showOldVersions: updates.showOldVersions,
 		theme: updates.theme,
 		setupCompleted: updates.setupCompleted,
+		curseforgeApiKey: updates.curseforgeApiKey,
 	};
 
 	return invoke<AppSettings>('update_settings', { updates: request });

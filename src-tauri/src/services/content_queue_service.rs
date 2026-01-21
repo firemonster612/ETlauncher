@@ -5,7 +5,9 @@ use crate::models::content::{
 };
 use crate::models::instance::LoaderType;
 use crate::models::AppSettings;
-use crate::services::{content_install_service, curseforge_service, modrinth_service};
+use crate::services::{
+    content_install_service, curseforge_service, manifest_service, modrinth_service,
+};
 use crate::state::AppState;
 use crate::utils::paths::get_instance_dir_with_base;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -46,6 +48,7 @@ pub async fn queue_content_install(
         mc_version: request.mc_version,
         loader: request.loader,
         is_dependency: request.is_dependency,
+        parent_filename: None, // Direct queue requests don't track parent
     };
 
     // Add to queue
@@ -150,6 +153,7 @@ async fn queue_single_item(
     mc_version: &str,
     loader: Option<LoaderType>,
     is_dependency: bool,
+    parent_filename: Option<String>,
 ) -> Result<Option<String>, AppError> {
     let queue_id = uuid::Uuid::new_v4().to_string();
 
@@ -166,6 +170,7 @@ async fn queue_single_item(
         mc_version: mc_version.to_string(),
         loader,
         is_dependency,
+        parent_filename,
     };
 
     // Atomically check if already queued and add to queue
@@ -196,6 +201,16 @@ async fn queue_single_item(
     Ok(Some(queue_id))
 }
 
+/// Get the primary filename from a content version
+fn get_primary_filename(version: &ContentVersion) -> Option<String> {
+    version
+        .files
+        .iter()
+        .find(|f| f.primary)
+        .or_else(|| version.files.first())
+        .map(|f| f.filename.clone())
+}
+
 /// Resolve dependencies and queue all items (deps first, then main content)
 /// Returns list of queue IDs for all queued items
 ///
@@ -205,6 +220,7 @@ async fn queue_single_item(
 /// - Skipping already-installed content
 /// - Atomically checking and skipping already-queued content (via queue_single_item)
 /// - Queueing dependencies before the main content
+/// - Tracking parent_filename for dependency relationships
 pub async fn resolve_and_queue_with_deps(
     state: &AppState,
     app_handle: &AppHandle,
@@ -215,6 +231,7 @@ pub async fn resolve_and_queue_with_deps(
     mc_version: &str,
     loader: Option<&LoaderType>,
     is_dependency: bool,
+    parent_filename: Option<String>,
     visited: &mut HashSet<String>,
 ) -> Result<Vec<String>, AppError> {
     let mut queue_ids = Vec::new();
@@ -238,6 +255,9 @@ pub async fn resolve_and_queue_with_deps(
         return Ok(queue_ids);
     }
 
+    // Get this content's filename to pass to its dependencies
+    let this_filename = get_primary_filename(version);
+
     // 3. Resolve dependencies for all content types that might have them
     // (mods, resource packs, shaders can all have dependencies)
     if !version.dependencies.is_empty() {
@@ -251,9 +271,12 @@ pub async fn resolve_and_queue_with_deps(
         )
         .await?;
 
-        // Recursively queue each uninstalled dependency FIRST
+        // Process each dependency
+        // - If not installed: queue for installation with parent tracking
+        // - If already installed: update manifest to record this content as a dependent
         for dep in &deps {
             if !dep.already_installed {
+                // Queue for installation
                 let dep_queue_ids = Box::pin(resolve_and_queue_with_deps(
                     state,
                     app_handle,
@@ -263,11 +286,23 @@ pub async fn resolve_and_queue_with_deps(
                     &dep.version,
                     mc_version,
                     loader,
-                    true, // is_dependency = true
+                    true,                  // is_dependency = true
+                    this_filename.clone(), // This content is the parent of the dependency
                     visited,
                 ))
                 .await?;
                 queue_ids.extend(dep_queue_ids);
+            } else if let Some(parent_fn) = &this_filename {
+                // Dependency is already installed - update its dependency_of to include this content
+                if let Some(dep_filename) = get_primary_filename(&dep.version) {
+                    let _ = manifest_service::add_dependent(
+                        state,
+                        instance_id,
+                        &dep_filename,
+                        &dep.content.content_type,
+                        parent_fn,
+                    );
+                }
             }
         }
     }
@@ -288,6 +323,7 @@ pub async fn resolve_and_queue_with_deps(
         mc_version,
         loader.cloned(),
         is_dependency,
+        parent_filename, // Pass along the parent filename (if this is a dependency)
     )
     .await?
     {
@@ -321,6 +357,7 @@ pub async fn queue_content_with_deps(
         mc_version,
         loader,
         false, // is_dependency = false (main content)
+        None,  // parent_filename: None for main content (it's not a dependency)
         &mut visited,
     )
     .await?;
@@ -531,6 +568,7 @@ async fn process_download(
         item.content_type,
         &version,
         item.is_dependency,
+        item.parent_filename.as_deref(), // Pass parent filename for dependency tracking
         source,
         Some(app_handle),
         Some(&cancel_token),

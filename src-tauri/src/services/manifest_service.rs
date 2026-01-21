@@ -6,7 +6,8 @@
 
 use crate::error::AppError;
 use crate::models::content::{
-    ContentSource, ContentType, InstalledContent, InstalledContentManifest, MANIFEST_VERSION,
+    ContentPlatform, ContentSource, ContentType, InstalledContent, InstalledContentManifest,
+    MANIFEST_VERSION,
 };
 use crate::state::AppState;
 use crate::utils::paths::get_instance_dir_with_base;
@@ -72,10 +73,11 @@ pub fn save_manifest(
 }
 
 /// Add content to manifest
+/// If the content already exists (by filename), merges dependency_of lists
 pub fn add_content(
     state: &AppState,
     instance_id: &str,
-    content: InstalledContent,
+    mut content: InstalledContent,
 ) -> Result<(), AppError> {
     let mut manifest = load_manifest(state, instance_id)?;
 
@@ -86,10 +88,27 @@ pub fn add_content(
         ContentType::ResourcePack => &mut manifest.resource_packs,
     };
 
+    // Check if content already exists and merge dependency_of if so
+    if let Some(existing) = list.iter().find(|c| c.filename == content.filename) {
+        // Merge dependency_of: combine existing parents with new parent
+        let mut merged_deps = existing.dependency_of.clone();
+        for dep in content.dependency_of.iter() {
+            if !merged_deps.contains(dep) {
+                merged_deps.push(dep.clone());
+            }
+        }
+        content.dependency_of = merged_deps;
+
+        // If existing was a dependency, keep that status
+        if existing.is_dependency {
+            content.is_dependency = true;
+        }
+    }
+
     // Remove existing entry with same filename (if updating)
     list.retain(|c| c.filename != content.filename);
 
-    // Add the new content
+    // Add the new/merged content
     list.push(content);
 
     save_manifest(state, instance_id, &manifest)?;
@@ -247,4 +266,127 @@ pub fn delete_manifest(state: &AppState, instance_id: &str) -> Result<(), AppErr
         fs::remove_file(&manifest_path)?;
     }
     Ok(())
+}
+
+/// Update reverse dependencies for newly installed content
+/// Scans the manifest to find mods that depend on this content and updates dependency_of
+pub fn update_reverse_dependencies(
+    state: &AppState,
+    instance_id: &str,
+    installed: &InstalledContent,
+) -> Result<(), AppError> {
+    let mut manifest = load_manifest(state, instance_id)?;
+
+    // Build the ID to search for in other mods' dependency_ids
+    let this_id = match installed.installed_from {
+        ContentPlatform::Modrinth => installed
+            .modrinth_id
+            .as_ref()
+            .map(|id| format!("modrinth:{}", id)),
+        ContentPlatform::CurseForge => installed
+            .curseforge_id
+            .map(|id| format!("curseforge:{}", id)),
+    };
+
+    let Some(search_id) = this_id else {
+        return Ok(());
+    };
+
+    // Find all content that has this content in their dependency_ids
+    let mut dependents: Vec<String> = Vec::new();
+
+    let list = match installed.content_type {
+        ContentType::Mod => &manifest.mods,
+        ContentType::Shader => &manifest.shaders,
+        ContentType::ResourcePack => &manifest.resource_packs,
+    };
+
+    for content in list {
+        if content.filename != installed.filename && content.dependency_ids.contains(&search_id) {
+            dependents.push(content.filename.clone());
+        }
+    }
+
+    // If we found dependents, update this content's dependency_of
+    if !dependents.is_empty() {
+        let list_mut = match installed.content_type {
+            ContentType::Mod => &mut manifest.mods,
+            ContentType::Shader => &mut manifest.shaders,
+            ContentType::ResourcePack => &mut manifest.resource_packs,
+        };
+
+        if let Some(content) = list_mut
+            .iter_mut()
+            .find(|c| c.filename == installed.filename)
+        {
+            for dep in dependents {
+                if !content.dependency_of.contains(&dep) {
+                    content.dependency_of.push(dep);
+                }
+            }
+            content.is_dependency = true;
+            save_manifest(state, instance_id, &manifest)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Add a parent to an existing content's dependency_of list
+/// Used when a new mod depends on already-installed content
+pub fn add_dependent(
+    state: &AppState,
+    instance_id: &str,
+    filename: &str,
+    content_type: &ContentType,
+    parent_filename: &str,
+) -> Result<(), AppError> {
+    let mut manifest = load_manifest(state, instance_id)?;
+
+    let list = match content_type {
+        ContentType::Mod => &mut manifest.mods,
+        ContentType::Shader => &mut manifest.shaders,
+        ContentType::ResourcePack => &mut manifest.resource_packs,
+    };
+
+    // Find the content and add the parent if not already present
+    if let Some(content) = list.iter_mut().find(|c| c.filename == filename) {
+        if !content.dependency_of.contains(&parent_filename.to_string()) {
+            content.dependency_of.push(parent_filename.to_string());
+            // Also mark as dependency if it wasn't already
+            content.is_dependency = true;
+            save_manifest(state, instance_id, &manifest)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Update dependency_ids for an existing content entry
+/// Used during scan to backfill dependency info for existing instances
+pub fn update_dependency_ids(
+    state: &AppState,
+    instance_id: &str,
+    filename: &str,
+    content_type: &ContentType,
+    dependency_ids: Vec<String>,
+) -> Result<bool, AppError> {
+    let mut manifest = load_manifest(state, instance_id)?;
+
+    let list = match content_type {
+        ContentType::Mod => &mut manifest.mods,
+        ContentType::Shader => &mut manifest.shaders,
+        ContentType::ResourcePack => &mut manifest.resource_packs,
+    };
+
+    // Find the content and update dependency_ids if empty
+    if let Some(content) = list.iter_mut().find(|c| c.filename == filename) {
+        if content.dependency_ids.is_empty() && !dependency_ids.is_empty() {
+            content.dependency_ids = dependency_ids;
+            save_manifest(state, instance_id, &manifest)?;
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }

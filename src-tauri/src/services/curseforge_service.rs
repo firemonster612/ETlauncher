@@ -1372,3 +1372,41 @@ pub async fn get_files_from_fingerprints(
 
     Ok(result)
 }
+
+#[derive(Debug, Deserialize)]
+struct FilesApiResponse {
+    data: Vec<CurseForgeFile>,
+}
+
+/// Batch fetch file details by file IDs
+/// Returns a map of file_id -> CurseForgeFile
+pub async fn get_files_by_ids(
+    client: &Client,
+    api_key: &str,
+    file_ids: &[u64],
+) -> Result<std::collections::HashMap<u64, CurseForgeFile>, AppError> {
+    if file_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    let url = format!("{}/mods/files", CURSEFORGE_API_BASE);
+
+    let body = serde_json::json!({
+        "fileIds": file_ids
+    });
+
+    let response: FilesApiResponse = client
+        .post(&url)
+        .header("x-api-key", api_key)
+        .json(&body)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+
+    let result: std::collections::HashMap<u64, CurseForgeFile> =
+        response.data.into_iter().map(|f| (f.id, f)).collect();
+
+    Ok(result)
+}

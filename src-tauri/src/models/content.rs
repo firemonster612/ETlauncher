@@ -264,6 +264,13 @@ pub struct InstalledContent {
     /// Whether this was installed as a dependency
     #[serde(default)]
     pub is_dependency: bool,
+    /// Filenames of content this is a dependency of (parent mods)
+    #[serde(default)]
+    pub dependency_of: Vec<String>,
+    /// IDs of content this mod depends on (for reverse lookup when dependencies are reinstalled)
+    /// Format: "modrinth:ID" or "curseforge:ID"
+    #[serde(default)]
+    pub dependency_ids: Vec<String>,
     /// How this content was installed (modpack-original vs user-added)
     #[serde(default)]
     pub source: ContentSource,
@@ -427,6 +434,8 @@ pub struct QueuedContentInstall {
     pub loader: Option<LoaderType>,
     /// Whether this is a dependency (auto-resolved) vs user-requested
     pub is_dependency: bool,
+    /// If this is a dependency, the filename of the parent content that depends on this
+    pub parent_filename: Option<String>,
 }
 
 /// Resolved dependency with install info
@@ -494,6 +503,12 @@ pub struct DetectedMod {
     /// Whether this item is disabled (in disabled subfolder)
     #[serde(default)]
     pub is_disabled: bool,
+    /// Whether this was installed as a dependency
+    #[serde(default)]
+    pub is_dependency: bool,
+    /// Filenames of content this is a dependency of (parent mods)
+    #[serde(default)]
+    pub dependency_of: Vec<String>,
 }
 
 /// Result of scanning an instance's content folder

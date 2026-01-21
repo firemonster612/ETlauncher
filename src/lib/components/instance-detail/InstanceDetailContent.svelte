@@ -13,6 +13,7 @@
 		Square,
 		SquareCheck,
 		Minus,
+		Link,
 	} from '@lucide/svelte';
 	import { Button } from '$lib/ui/button';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -48,6 +49,9 @@
 
 	// Remove confirmation
 	let showRemoveConfirm = $state(false);
+
+	// Dependents popover state
+	let showDependentsFor = $state<string | null>(null);
 
 	// Load content on mount and when instance changes
 	let lastLoadedInstanceId = $state<string | null>(null);
@@ -128,6 +132,13 @@
 
 	const someSelected = $derived(
 		visibleItems.some((item) => selectedItems.has(item.filename)) && !allSelected
+	);
+
+	// Find items that other mods depend on (have dependents)
+	const selectedItemsWithDependents = $derived(
+		installedItems.filter(
+			(item) => selectedItems.has(item.filename) && item.dependencyOf.length > 0
+		)
 	);
 
 	// Counts for tabs
@@ -424,6 +435,15 @@
 											Disabled
 										</span>
 									{/if}
+									{#if item.dependencyOf.length > 0}
+										<span
+											class="flex flex-shrink-0 items-center gap-1 rounded bg-blue-500/20 px-1.5 py-0.5 text-xs text-blue-500"
+											title="Required by: {item.dependencyOf.join(', ')}"
+										>
+											<Link class="h-3 w-3" />
+											Dependency
+										</span>
+									{/if}
 								</div>
 								<div class="flex flex-shrink-0 items-center gap-1">
 									{#if item.modrinthProject}
@@ -448,11 +468,59 @@
 								</div>
 							</div>
 							<p class="text-muted-foreground mt-0.5 truncate text-xs">{item.filename}</p>
-							<div class="text-muted-foreground mt-1 flex items-center gap-3 text-xs">
+							<div class="text-muted-foreground mt-1 flex flex-wrap items-center gap-3 text-xs">
 								{#if getItemVersion(item)}
 									<span>v{getItemVersion(item)}</span>
 								{/if}
 								<span>{formatBytes(item.size)}</span>
+								{#if item.dependencyOf.length > 0}
+									<div class="relative">
+										<!-- svelte-ignore a11y_no_static_element_interactions -->
+										<!-- svelte-ignore a11y_click_events_have_key_events -->
+										<span
+											class="cursor-pointer text-blue-500 underline decoration-blue-500/50 underline-offset-2 hover:decoration-blue-500"
+											onclick={(e) => {
+												e.stopPropagation();
+												showDependentsFor =
+													showDependentsFor === item.filename ? null : item.filename;
+											}}
+										>
+											Required by {item.dependencyOf.length} mod{item.dependencyOf.length === 1
+												? ''
+												: 's'}
+										</span>
+										{#if showDependentsFor === item.filename}
+											<!-- svelte-ignore a11y_no_static_element_interactions -->
+											<!-- svelte-ignore a11y_click_events_have_key_events -->
+											<div
+												class="border-border bg-popover absolute bottom-full left-0 z-10 mb-1 w-64 border p-3 shadow-lg"
+												onclick={(e) => e.stopPropagation()}
+											>
+												<div class="mb-2 flex items-center justify-between">
+													<span class="text-sm font-medium">Required by:</span>
+													<!-- svelte-ignore a11y_no_static_element_interactions -->
+													<!-- svelte-ignore a11y_click_events_have_key_events -->
+													<span
+														class="text-muted-foreground hover:text-foreground cursor-pointer text-xs"
+														onclick={(e) => {
+															e.stopPropagation();
+															showDependentsFor = null;
+														}}
+													>
+														Close
+													</span>
+												</div>
+												<ul class="space-y-1">
+													{#each item.dependencyOf as parentFilename (parentFilename)}
+														<li class="text-muted-foreground truncate text-xs">
+															{parentFilename}
+														</li>
+													{/each}
+												</ul>
+											</div>
+										{/if}
+									</div>
+								{/if}
 							</div>
 						</div>
 					</button>
@@ -533,6 +601,42 @@
 					? ''
 					: 's'}? This action cannot be undone.
 			</p>
+
+			{#if selectedItemsWithDependents.length > 0}
+				<div
+					class="flex flex-col gap-2 border border-amber-500/60 bg-amber-500/10 px-4 py-3 text-sm text-amber-500"
+				>
+					<div class="flex items-center gap-2 font-medium">
+						<Link class="h-4 w-4" />
+						Dependency Warning
+					</div>
+					<p class="text-xs text-amber-500/80">
+						{selectedItemsWithDependents.length === 1
+							? 'One of the selected items is'
+							: `${selectedItemsWithDependents.length} of the selected items are`} a dependency of other
+						mods. Removing
+						{selectedItemsWithDependents.length === 1 ? 'it' : 'them'} may cause issues.
+					</p>
+					<ul class="mt-1 list-inside list-disc text-xs text-amber-500/80">
+						{#each selectedItemsWithDependents.slice(0, 5) as item (item.filename)}
+							<li>
+								<span class="font-medium">{getItemDisplayName(item)}</span>
+								<span class="text-amber-500/60">
+									required by {item.dependencyOf.length === 1
+										? item.dependencyOf[0]
+										: `${item.dependencyOf.length} mods`}
+								</span>
+							</li>
+						{/each}
+						{#if selectedItemsWithDependents.length > 5}
+							<li class="text-amber-500/60">
+								...and {selectedItemsWithDependents.length - 5} more
+							</li>
+						{/if}
+					</ul>
+				</div>
+			{/if}
+
 			<div class="flex gap-2 pt-2">
 				<Button
 					variant="outline"
@@ -552,7 +656,7 @@
 						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
 						Removing...
 					{:else}
-						Remove
+						Remove {selectedItemsWithDependents.length > 0 ? 'Anyway' : ''}
 					{/if}
 				</Button>
 			</div>

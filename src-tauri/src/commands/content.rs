@@ -254,6 +254,7 @@ pub async fn install_content(
         content_type,
         &version,
         is_dependency.unwrap_or(false),
+        None, // parent_filename: not tracked for direct installs
         None, // source: defaults to UserAdded
         Some(&app_handle),
         None, // cancel_token: not used in direct command

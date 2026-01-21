@@ -181,6 +181,10 @@ export interface InstalledContent {
 	installedAt: number;
 	/** Whether this was installed as a dependency */
 	isDependency: boolean;
+	/** Filenames of content this is a dependency of (parent mods) */
+	dependencyOf: string[];
+	/** IDs of content this mod depends on (for reverse lookup) */
+	dependencyIds: string[];
 	/** Source of the content (modpack original, user added, etc.) */
 	source: ContentSource;
 	/** SHA512 hash for Modrinth identification */
@@ -345,6 +349,10 @@ export interface DetectedMod {
 	isIdentified: boolean;
 	/** Whether this item is disabled (in disabled subfolder) */
 	isDisabled: boolean;
+	/** Whether this was installed as a dependency */
+	isDependency: boolean;
+	/** Filenames of content this is a dependency of (parent mods) */
+	dependencyOf: string[];
 }
 
 /** Result of scanning an instance's content folder */
