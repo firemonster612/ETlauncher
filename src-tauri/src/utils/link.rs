@@ -216,7 +216,7 @@ pub fn is_hard_link(path: &Path) -> bool {
     };
 
     let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
-    let handle = file.as_raw_handle() as isize;
+    let handle = file.as_raw_handle();
 
     unsafe {
         if GetFileInformationByHandle(handle, &mut info) != 0 {
