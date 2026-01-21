@@ -27,7 +27,7 @@
 	import InstanceCard from '$lib/components/InstanceCard.svelte';
 	import InstanceDetailModal from '$lib/components/InstanceDetailModal.svelte';
 	import DownloadProgress from '$lib/components/DownloadProgress.svelte';
-	import type { LoaderType, Instance, ModpackInstallProgress } from '$lib/types';
+	import type { LoaderType, Instance, ModpackInstallProgress, ContentType } from '$lib/types';
 
 	let search = $state('');
 	let showCreateModal = $state(false);
@@ -44,6 +44,7 @@
 	// Content browser state
 	let showContentBrowser = $state(false);
 	let contentBrowserInstance = $state<Instance | null>(null);
+	let contentBrowserContentType = $state<ContentType | undefined>(undefined);
 
 	// Settings modal state
 	let showSettings = $state(false);
@@ -77,14 +78,16 @@
 		settingsInstance = null;
 	}
 
-	function openContentBrowser(instance: Instance) {
+	function openContentBrowser(instance: Instance, contentType?: ContentType) {
 		contentBrowserInstance = instance;
+		contentBrowserContentType = contentType;
 		showContentBrowser = true;
 	}
 
 	function closeContentBrowser() {
 		showContentBrowser = false;
 		contentBrowserInstance = null;
+		contentBrowserContentType = undefined;
 	}
 
 	function openDetailModal(instance: Instance) {
@@ -95,6 +98,15 @@
 	function closeDetailModal() {
 		showDetailModal = false;
 		detailInstance = null;
+	}
+
+	function handleInstanceUpdated(updatedInstance: Instance) {
+		// Update the detail instance if it's the same one
+		if (detailInstance && detailInstance.id === updatedInstance.id) {
+			detailInstance = updatedInstance;
+		}
+		// Refresh instance list after update
+		instancesStore.load();
 	}
 
 	onMount(() => {
@@ -462,6 +474,7 @@
 		instanceName={contentBrowserInstance.name}
 		mcVersion={contentBrowserInstance.minecraftVersion}
 		loaderType={contentBrowserInstance.loaderType}
+		initialContentType={contentBrowserContentType}
 		onClose={closeContentBrowser}
 	/>
 {/if}
@@ -472,7 +485,20 @@
 {/if}
 
 <!-- Instance Detail Modal -->
-<InstanceDetailModal instance={detailInstance} open={showDetailModal} onClose={closeDetailModal} />
+{#if detailInstance}
+	{@const status = getInstanceStatus(detailInstance.id)}
+	<InstanceDetailModal
+		instance={detailInstance}
+		open={showDetailModal}
+		{status}
+		onClose={closeDetailModal}
+		onLaunch={handleLaunch}
+		onKill={handleKill}
+		onOpenSettings={openSettings}
+		onOpenContentBrowser={openContentBrowser}
+		onInstanceUpdated={handleInstanceUpdated}
+	/>
+{/if}
 
 <!-- Export Modal -->
 {#if showExportModal}

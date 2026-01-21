@@ -1,43 +1,81 @@
 <script lang="ts">
-	import { ChevronLeft, Loader2, Play, X } from '@lucide/svelte';
-	import { convertFileSrc } from '@tauri-apps/api/core';
+	import { X, Loader2, LayoutDashboard, Package, Image, Database, RefreshCw } from '@lucide/svelte';
 	import { Button } from '$lib/ui/button';
-	import InstanceDetailScreenshots from '$lib/components/InstanceDetailScreenshots.svelte';
-	import InstanceDetailWorlds from '$lib/components/InstanceDetailWorlds.svelte';
-	import InstanceDetailServers from '$lib/components/InstanceDetailServers.svelte';
 	import ScreenshotLightbox from '$lib/components/ScreenshotLightbox.svelte';
+	import InstanceDetailHero from '$lib/components/instance-detail/InstanceDetailHero.svelte';
+	import InstanceDetailOverview from '$lib/components/instance-detail/InstanceDetailOverview.svelte';
+	import InstanceDetailContent from '$lib/components/instance-detail/InstanceDetailContent.svelte';
+	import InstanceDetailGallery from '$lib/components/instance-detail/InstanceDetailGallery.svelte';
+	import InstanceDetailData from '$lib/components/instance-detail/InstanceDetailData.svelte';
+	import InstanceDetailVersion from '$lib/components/instance-detail/InstanceDetailVersion.svelte';
 	import * as instanceDetailService from '$lib/services/instance-detail';
-	import { getAvatarUrl } from '$lib/services/account';
+	import * as instanceService from '$lib/services/instance';
+	import * as contentService from '$lib/services/content';
+	import * as updateService from '$lib/services/update';
 	import { accountsStore } from '$lib/stores/accounts.svelte';
-	import { getIconUrl, parseIconPath } from '$lib/utils/icons';
-	import type { Instance, InstanceDetail } from '$lib/types';
+	import type { Instance, InstanceDetail, ContentType } from '$lib/types';
+
+	type TabId = 'overview' | 'content' | 'version' | 'gallery' | 'data';
 
 	interface Props {
 		instance: Instance | null;
 		open: boolean;
+		status: string | null;
 		onClose: () => void;
+		onLaunch: (instanceId: string) => void;
+		onKill: (instanceId: string) => void;
+		onOpenSettings: (instance: Instance) => void;
+		onOpenContentBrowser: (instance: Instance, contentType?: ContentType) => void;
+		onInstanceUpdated?: (instance: Instance) => void;
 	}
 
-	let { instance, open, onClose }: Props = $props();
+	let {
+		instance,
+		open,
+		status,
+		onClose,
+		onLaunch,
+		onKill,
+		onOpenSettings,
+		onOpenContentBrowser,
+		onInstanceUpdated,
+	}: Props = $props();
 
-	let currentView = $state<'dashboard' | 'screenshots' | 'worlds' | 'servers'>('dashboard');
+	// Tab state
+	let activeTab = $state<TabId>('overview');
+
+	// Data states
 	let detail = $state<InstanceDetail | null>(null);
 	let isLoading = $state(false);
 	let error = $state<string | null>(null);
+	let modCount = $state(0);
+	let hasUpdate = $state(false);
 
+	// Screenshot lightbox states (for overview tab filmstrip)
 	let lightboxIndex = $state<number | null>(null);
 	let lightboxData = $state<string | null>(null);
 	let lightboxLoading = $state(false);
 	let screenshotPreviews = $state<Record<string, string>>({});
 
+	// Derived values
 	const activeAccountId = $derived(accountsStore.activeAccount?.id ?? null);
 	const activeAccountName = $derived(accountsStore.activeAccount?.username ?? null);
 
+	const supportsQuickPlay = $derived(
+		instance ? checkQuickPlaySupport(instance.minecraftVersion) : false
+	);
+
+	// Reset and load when modal opens
 	$effect(() => {
 		if (open && instance) {
-			currentView = 'dashboard';
+			activeTab = 'overview';
 			screenshotPreviews = {};
+			detail = null;
+			modCount = 0;
+			hasUpdate = false;
 			loadDetail();
+			loadModCount();
+			checkForUpdates();
 		} else {
 			detail = null;
 			error = null;
@@ -60,65 +98,30 @@
 		}
 	}
 
-	async function loadScreenshotPreview(filename: string) {
-		if (!instance || screenshotPreviews[filename]) return;
+	async function loadModCount() {
+		if (!instance) return;
 		try {
-			const data = await instanceDetailService.getScreenshotData(instance.id, filename);
-			screenshotPreviews = {
-				...screenshotPreviews,
-				[filename]: `data:image/png;base64,${data}`,
-			};
+			const scanResult = await contentService.scanInstalledContent(instance.id, 'mod');
+			modCount = scanResult.items.length;
 		} catch (e) {
-			console.error('Failed to load screenshot preview:', e);
+			console.error('Failed to scan mods:', e);
 		}
 	}
 
-	function handleBackToDashboard() {
-		currentView = 'dashboard';
-		// Reload detail to reflect any changes made in sub-pages
-		screenshotPreviews = {};
-		loadDetail();
-	}
-
-	function handleKeydown(e: KeyboardEvent) {
-		if (!open) return;
-		if (e.key === 'Escape') {
-			if (currentView !== 'dashboard') {
-				handleBackToDashboard();
+	async function checkForUpdates() {
+		if (!instance) return;
+		try {
+			if (instance.modpackPlatform) {
+				const check = await updateService.checkModpackInstanceUpdates(instance.id);
+				hasUpdate = check.hasUpdate;
 			} else {
-				onClose();
+				const check = await updateService.checkInstanceUpdates(instance.id);
+				hasUpdate = check.hasMcUpdate;
 			}
+		} catch (e) {
+			// Silently fail update check
+			console.error('Failed to check for updates:', e);
 		}
-	}
-
-	function getIconSrc(iconPath: string | undefined): string {
-		const icon = parseIconPath(iconPath);
-		if (icon) return getIconUrl(icon);
-		return '/icons/entities/creeper/creeper.png';
-	}
-
-	function formatPlayTime(seconds: number): string {
-		if (seconds < 60) return '< 1 min';
-		const hours = Math.floor(seconds / 3600);
-		const minutes = Math.floor((seconds % 3600) / 60);
-		if (hours === 0) return `${minutes}m`;
-		return `${hours}h ${minutes}m`;
-	}
-
-	function worldIconSrc(iconBase64: string | null | undefined): string {
-		if (iconBase64) {
-			const hasPrefix = iconBase64.startsWith('data:');
-			return hasPrefix ? iconBase64 : `data:image/png;base64,${iconBase64}`;
-		}
-		return '/blocks/grass_block.png';
-	}
-
-	function serverIconSrc(iconBase64: string | null | undefined): string {
-		if (iconBase64) {
-			const hasPrefix = iconBase64.startsWith('data:');
-			return hasPrefix ? iconBase64 : `data:image/png;base64,${iconBase64}`;
-		}
-		return '/icons/entities/creeper/creeper.png';
 	}
 
 	function checkQuickPlaySupport(version: string): boolean {
@@ -133,57 +136,17 @@
 		return major > 1 || (major === 1 && minor >= 20);
 	}
 
-	let connectingServer = $state<string | null>(null);
-	let launchingWorld = $state<string | null>(null);
-	const supportsQuickPlay = $derived(
-		instance ? checkQuickPlaySupport(instance.minecraftVersion) : false
-	);
-
-	async function handleConnectToServer(serverIp: string) {
-		if (!instance) return;
-		if (!supportsQuickPlay) {
-			error = 'Quick Play is only available on Minecraft 1.20+.';
-			return;
-		}
-		if (!activeAccountId) {
-			error = 'Select an active account before connecting.';
-			return;
-		}
-
-		connectingServer = serverIp;
-		error = null;
-
+	// Screenshot preview and lightbox handling
+	async function loadScreenshotPreview(filename: string) {
+		if (!instance || screenshotPreviews[filename]) return;
 		try {
-			await instanceDetailService.launchIntoServer(instance.id, activeAccountId, serverIp);
+			const data = await instanceDetailService.getScreenshotData(instance.id, filename);
+			screenshotPreviews = {
+				...screenshotPreviews,
+				[filename]: `data:image/png;base64,${data}`,
+			};
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to connect';
-			console.error('Failed to quick-connect:', e);
-		} finally {
-			connectingServer = null;
-		}
-	}
-
-	async function handleLaunchWorld(world: { folderName: string }) {
-		if (!instance) return;
-		if (!supportsQuickPlay) {
-			error = 'Quick Play is only available on Minecraft 1.20+.';
-			return;
-		}
-		if (!activeAccountId) {
-			error = 'Select an active account before launching.';
-			return;
-		}
-
-		launchingWorld = world.folderName;
-		error = null;
-
-		try {
-			await instanceDetailService.launchIntoWorld(instance.id, activeAccountId, world.folderName);
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to launch world';
-			console.error('Failed to launch world:', e);
-		} finally {
-			launchingWorld = null;
+			console.error('Failed to load screenshot preview:', e);
 		}
 	}
 
@@ -234,6 +197,33 @@
 	const canNextScreenshot = $derived(
 		detail && lightboxIndex !== null && lightboxIndex < detail.recentScreenshots.length - 1
 	);
+
+	// Event handlers
+	function handleKeydown(e: KeyboardEvent) {
+		if (!open) return;
+		if (e.key === 'Escape') {
+			onClose();
+		}
+	}
+
+	function handleOpenFolder() {
+		if (instance) {
+			instanceService.openInstanceFolder(instance.id);
+		}
+	}
+
+	function handleNavigateToTab(tab: string) {
+		activeTab = tab as TabId;
+	}
+
+	// Tab definitions
+	const tabs: { id: TabId; label: string; icon: typeof LayoutDashboard }[] = [
+		{ id: 'overview', label: 'Overview', icon: LayoutDashboard },
+		{ id: 'content', label: 'Content', icon: Package },
+		{ id: 'version', label: 'Version', icon: RefreshCw },
+		{ id: 'gallery', label: 'Gallery', icon: Image },
+		{ id: 'data', label: 'Worlds & Servers', icon: Database },
+	];
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -246,230 +236,112 @@
 		aria-label="Close instance detail"
 	></button>
 
-	<!-- Full-page panel (matches ContentBrowser sizing) -->
+	<!-- Full-page panel -->
 	<div
 		class="bg-card border-border fixed inset-x-0 top-[var(--titlebar-height)] z-50 flex h-[calc(100vh-var(--titlebar-height))] w-full max-w-none flex-col overflow-hidden border-l-2 shadow-2xl"
 	>
-		<div class="border-border flex items-center justify-between border-b px-6 py-4">
-			<div class="flex items-center gap-3">
-				{#if currentView !== 'dashboard'}
-					<Button variant="ghost" size="icon" onclick={handleBackToDashboard} aria-label="Back">
-						<ChevronLeft class="h-5 w-5" />
-					</Button>
-				{/if}
-				<img
-					src={getIconSrc(instance.iconPath)}
-					alt="{instance.name} icon"
-					class="pixelated h-12 w-12"
-				/>
-				<div>
-					<p class="text-muted-foreground text-xs tracking-wide uppercase">Instance</p>
-					<h2 class="text-xl leading-tight font-bold">{instance.name}</h2>
-					{#if activeAccountName}
-						<p class="text-muted-foreground mt-0.5 text-xs">Active account: {activeAccountName}</p>
-					{/if}
-				</div>
-			</div>
+		<!-- Close Button (absolute positioned) -->
+		<Button
+			variant="ghost"
+			size="icon"
+			class="absolute top-4 right-4 z-10"
+			onclick={onClose}
+			aria-label="Close"
+		>
+			<X class="h-5 w-5" />
+		</Button>
 
-			<Button variant="ghost" size="icon" onclick={onClose} aria-label="Close">
-				<X class="h-5 w-5" />
-			</Button>
+		<!-- Hero Header -->
+		<InstanceDetailHero
+			{instance}
+			{status}
+			{activeAccountName}
+			totalPlayTime={detail?.totalPlayTime ?? 0}
+			{hasUpdate}
+			onLaunch={() => onLaunch(instance.id)}
+			onKill={() => onKill(instance.id)}
+			onOpenSettings={() => onOpenSettings(instance)}
+			onOpenFolder={handleOpenFolder}
+			onCheckUpdate={() => (activeTab = 'version')}
+		/>
+
+		<!-- Tab Navigation -->
+		<div class="border-border flex gap-2 border-b px-6 py-3">
+			{#each tabs as tab (tab.id)}
+				{@const Icon = tab.icon}
+				<Button
+					size="sm"
+					variant={activeTab === tab.id ? 'default' : 'secondary'}
+					onclick={() => (activeTab = tab.id)}
+				>
+					<Icon class="mr-1.5 h-4 w-4" />
+					{tab.label}
+				</Button>
+			{/each}
 		</div>
 
-		{#if currentView === 'dashboard'}
-			<div class="flex-1 space-y-6 overflow-y-auto p-6">
-				{#if error}
+		<!-- Tab Content -->
+		<div class="flex-1 overflow-hidden">
+			{#if isLoading}
+				<div class="text-muted-foreground flex h-full items-center justify-center gap-3">
+					<Loader2 class="h-6 w-6 animate-spin" />
+					<span>Loading instance details...</span>
+				</div>
+			{:else if error && activeTab === 'overview'}
+				<div class="p-6">
 					<div
 						class="border-destructive/60 bg-destructive/10 text-destructive rounded border px-4 py-3 text-sm"
 					>
 						{error}
 					</div>
-				{/if}
-
-				{#if isLoading}
-					<div class="text-muted-foreground flex items-center gap-3">
-						<Loader2 class="h-5 w-5 animate-spin" />
-						<span>Loading instance details...</span>
-					</div>
-				{:else if detail}
-					<div class="grid gap-4 md:grid-cols-3">
-						<div class="border-border bg-muted/20 rounded-lg border p-4 md:col-span-1">
-							<p class="text-muted-foreground text-sm">Total Play Time</p>
-							<p class="text-2xl font-semibold">{formatPlayTime(detail.totalPlayTime)}</p>
-						</div>
-
-						<div class="border-border bg-muted/10 rounded-lg border p-4 md:col-span-2">
-							<p class="text-muted-foreground mb-2 text-sm">Active Account</p>
-							{#if activeAccountId && activeAccountName}
-								<div class="flex items-center gap-2">
-									<img
-										src={getAvatarUrl(activeAccountName, 32)}
-										alt="{activeAccountName}'s avatar"
-										class="pixelated h-8 w-8 rounded"
-									/>
-									<p class="font-medium">{activeAccountName}</p>
-								</div>
-							{:else}
-								<p class="text-muted-foreground text-sm">
-									No active account selected. Select one before launching.
-								</p>
-							{/if}
-						</div>
-					</div>
-
-					<!-- Recent Screenshots -->
-					<section class="border-border bg-muted/10 rounded-lg border p-4">
-						<div class="mb-3 flex items-center justify-between">
-							<h3 class="font-semibold">Recent Screenshots</h3>
-							<Button variant="ghost" size="sm" onclick={() => (currentView = 'screenshots')}>
-								View All →
-							</Button>
-						</div>
-						{#if detail.recentScreenshots.length === 0}
-							<p class="text-muted-foreground text-sm">No screenshots yet.</p>
-						{:else}
-							<div class="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
-								{#each detail.recentScreenshots as shot, index (shot.filename)}
-									<button
-										class="border-border bg-muted/40 group h-24 overflow-hidden rounded border"
-										onclick={() => openScreenshotLightbox(index)}
-										title="Open screenshot"
-									>
-										<img
-											src={screenshotPreviews[shot.filename] ?? convertFileSrc(shot.path)}
-											alt={shot.filename}
-											class="h-full w-full object-cover transition-transform group-hover:scale-[1.02]"
-											loading="lazy"
-											onerror={() => loadScreenshotPreview(shot.filename)}
-										/>
-									</button>
-								{/each}
-							</div>
-						{/if}
-					</section>
-
-					<!-- Worlds -->
-					<section class="border-border bg-muted/10 rounded-lg border p-4">
-						<div class="mb-3 flex items-center justify-between">
-							<h3 class="font-semibold">Worlds</h3>
-							<Button variant="ghost" size="sm" onclick={() => (currentView = 'worlds')}>
-								View All →
-							</Button>
-						</div>
-
-						{#if detail.recentWorlds.length === 0}
-							<p class="text-muted-foreground text-sm">No worlds found.</p>
-						{:else}
-							<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-								{#each detail.recentWorlds as world (world.folderName)}
-									<div
-										class="border-border bg-background/80 flex flex-col gap-2 rounded-lg border p-3"
-									>
-										<div class="flex items-center gap-2">
-											<img
-												src={worldIconSrc(world.iconBase64)}
-												alt="{world.name} icon"
-												class="border-border h-10 w-10 rounded border object-cover"
-											/>
-											<div class="min-w-0">
-												<p class="truncate font-semibold">{world.name}</p>
-												<p class="text-muted-foreground truncate text-xs">
-													Last played: {world.lastPlayed
-														? new Date(world.lastPlayed).toLocaleDateString()
-														: 'Unknown'}
-												</p>
-											</div>
-										</div>
-										{#if supportsQuickPlay}
-											<Button
-												variant="secondary"
-												size="sm"
-												class="justify-center"
-												onclick={() => handleLaunchWorld(world)}
-												disabled={!!launchingWorld}
-											>
-												{#if launchingWorld === world.folderName}
-													<Loader2 class="mr-1 h-4 w-4 animate-spin" /> Launching...
-												{:else}
-													<Play class="mr-1 h-4 w-4" /> Launch
-												{/if}
-											</Button>
-										{/if}
-									</div>
-								{/each}
-							</div>
-						{/if}
-					</section>
-
-					<!-- Servers -->
-					<section class="border-border bg-muted/10 rounded-lg border p-4">
-						<div class="mb-3 flex items-center justify-between">
-							<h3 class="font-semibold">Servers</h3>
-							<Button variant="ghost" size="sm" onclick={() => (currentView = 'servers')}>
-								View All →
-							</Button>
-						</div>
-
-						{#if detail.savedServers.length === 0}
-							<p class="text-muted-foreground text-sm">No saved servers yet.</p>
-						{:else}
-							<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-								{#each detail.savedServers as server (server.ip)}
-									<div
-										class="border-border bg-background/80 flex flex-col gap-2 rounded-lg border p-3"
-									>
-										<div class="flex items-center gap-2">
-											<img
-												src={serverIconSrc(server.iconBase64)}
-												alt="{server.name} icon"
-												class="border-border bg-muted h-10 w-10 rounded border object-cover"
-											/>
-											<div class="min-w-0">
-												<p class="truncate font-semibold">{server.name}</p>
-												<p class="text-muted-foreground truncate text-xs">{server.ip}</p>
-											</div>
-										</div>
-										{#if supportsQuickPlay}
-											<Button
-												variant="secondary"
-												size="sm"
-												class="justify-center"
-												onclick={() => handleConnectToServer(server.ip)}
-												disabled={!!connectingServer}
-											>
-												{#if connectingServer === server.ip}
-													<Loader2 class="mr-1 h-4 w-4 animate-spin" /> Connecting...
-												{:else}
-													<Play class="mr-1 h-4 w-4" /> Connect
-												{/if}
-											</Button>
-										{/if}
-									</div>
-								{/each}
-							</div>
-						{/if}
-					</section>
-				{/if}
-			</div>
-		{:else if currentView === 'screenshots'}
-			<InstanceDetailScreenshots instanceId={instance.id} onBack={handleBackToDashboard} />
-		{:else if currentView === 'worlds'}
-			<InstanceDetailWorlds
-				instanceId={instance.id}
-				minecraftVersion={instance.minecraftVersion}
-				{activeAccountId}
-				onBack={handleBackToDashboard}
-			/>
-		{:else if currentView === 'servers'}
-			<InstanceDetailServers
-				instanceId={instance.id}
-				minecraftVersion={instance.minecraftVersion}
-				{activeAccountId}
-				onBack={handleBackToDashboard}
-			/>
-		{/if}
+				</div>
+			{:else}
+				<div class="h-full overflow-y-auto p-6">
+					{#if activeTab === 'overview' && detail}
+						<InstanceDetailOverview
+							{instance}
+							{detail}
+							{modCount}
+							{activeAccountId}
+							{supportsQuickPlay}
+							{screenshotPreviews}
+							onLoadScreenshotPreview={loadScreenshotPreview}
+							onOpenScreenshotLightbox={openScreenshotLightbox}
+							onNavigateToTab={handleNavigateToTab}
+						/>
+					{:else if activeTab === 'content'}
+						<InstanceDetailContent
+							{instance}
+							onOpenContentBrowser={(contentType) => {
+								onOpenContentBrowser(instance, contentType);
+							}}
+						/>
+					{:else if activeTab === 'version'}
+						<InstanceDetailVersion
+							{instance}
+							onUpdated={(updatedInstance) => {
+								// Refresh the detail and notify parent
+								loadDetail();
+								loadModCount();
+								checkForUpdates();
+								onInstanceUpdated?.(updatedInstance);
+							}}
+						/>
+					{:else if activeTab === 'gallery'}
+						<InstanceDetailGallery instanceId={instance.id} />
+					{:else if activeTab === 'data'}
+						<InstanceDetailData
+							instanceId={instance.id}
+							minecraftVersion={instance.minecraftVersion}
+							{activeAccountId}
+						/>
+					{/if}
+				</div>
+			{/if}
+		</div>
 	</div>
 
+	<!-- Screenshot Lightbox -->
 	<ScreenshotLightbox
 		open={lightboxIndex !== null}
 		src={lightboxData}

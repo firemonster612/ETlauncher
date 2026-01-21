@@ -2720,7 +2720,7 @@ fn parse_mc_version(s: &str) -> Option<String> {
 /// - If MC < 1.14 with mods → assume Forge, look up version
 /// - If MC >= 1.14 with mods → use detected loader, look up version
 /// - Fail with clear error if can't determine
-async fn resolve_loader_for_pack(
+pub async fn resolve_loader_for_pack(
     mc_version: &str,
     current_loader: LoaderType,
     current_loader_version: Option<String>,
