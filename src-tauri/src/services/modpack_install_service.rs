@@ -1163,6 +1163,8 @@ fn scan_content_folder(
             content_type,
             installed_at: Utc::now().timestamp(),
             is_dependency: false,
+            dependency_of: Vec::new(),
+            dependency_ids: Vec::new(), // Unknown for direct modpack files
             source: ContentSource::ModpackOriginal,
             sha512_hash: None,
             murmur2_fingerprint: None,

@@ -5,6 +5,16 @@ use crate::models::{
     ResolvedDependency,
 };
 use crate::services::{curseforge_service, manifest_service, modrinth_service};
+
+/// Get the primary filename from a content version
+fn get_primary_filename(version: &ContentVersion) -> Option<String> {
+    version
+        .files
+        .iter()
+        .find(|f| f.primary)
+        .or_else(|| version.files.first())
+        .map(|f| f.filename.clone())
+}
 use crate::state::AppState;
 use crate::utils::hash::murmur2_bytes;
 use crate::utils::paths::get_instance_game_dir_with_base;
@@ -39,6 +49,7 @@ fn get_content_dir(game_dir: &PathBuf, content_type: &ContentType) -> PathBuf {
 /// # Arguments
 /// * `source` - How the content is being installed (UserAdded, ModpackOriginal, etc.)
 ///   If None, defaults to UserAdded for regular installs, UserDependency for dependencies
+/// * `parent_filename` - If this is a dependency, the filename of the content it's a dependency of
 /// * `cancel_token` - Optional cancellation token for queue-based installs
 /// * `queue_id` - Optional queue ID for queue-aware progress events
 pub async fn install_content(
@@ -51,6 +62,7 @@ pub async fn install_content(
     content_type: ContentType,
     version: &ContentVersion,
     is_dependency: bool,
+    parent_filename: Option<&str>,
     source: Option<ContentSource>,
     app_handle: Option<&AppHandle>,
     cancel_token: Option<&CancellationToken>,
@@ -115,6 +127,15 @@ pub async fn install_content(
         ContentSource::UserAdded
     });
 
+    // Extract dependency IDs from version for reverse lookup
+    // Format: "platform:id" (e.g., "modrinth:abc123" or "curseforge:12345")
+    let dependency_ids: Vec<String> = version
+        .dependencies
+        .iter()
+        .filter(|d| d.dependency_type == DependencyType::Required)
+        .map(|d| format!("{}:{}", platform, d.id))
+        .collect();
+
     // Create installed content entry
     let installed = InstalledContent {
         name: content_name.to_string(),
@@ -136,6 +157,10 @@ pub async fn install_content(
         content_type,
         installed_at: Utc::now().timestamp(),
         is_dependency,
+        dependency_of: parent_filename
+            .map(|p| vec![p.to_string()])
+            .unwrap_or_default(),
+        dependency_ids,
         source: content_source,
         sha512_hash: Some(download_result.sha512_hash),
         murmur2_fingerprint: Some(download_result.murmur2_fingerprint),
@@ -143,6 +168,10 @@ pub async fn install_content(
 
     // Save to manifest for persistence
     manifest_service::add_content(state, instance_id, installed.clone())?;
+
+    // After saving, check if any existing content depends on this newly installed content
+    // and update this content's dependency_of accordingly
+    manifest_service::update_reverse_dependencies(state, instance_id, &installed)?;
 
     Ok(installed)
 }
@@ -437,6 +466,14 @@ pub async fn install_content_with_dependencies(
 ) -> Result<Vec<InstalledContent>, AppError> {
     let mut installed = Vec::new();
 
+    // Get the main content's filename to track as parent for dependencies
+    let main_filename = version
+        .files
+        .iter()
+        .find(|f| f.primary)
+        .or_else(|| version.files.first())
+        .map(|f| f.filename.clone());
+
     // Determine dependency source based on main content source
     let dep_source = match &source {
         Some(ContentSource::ModpackOriginal) => Some(ContentSource::ModpackOriginal),
@@ -458,7 +495,8 @@ pub async fn install_content_with_dependencies(
                 &dep.content.slug,
                 dep.content.content_type,
                 &dep.version,
-                true, // is_dependency = true
+                true,                     // is_dependency = true
+                main_filename.as_deref(), // parent filename
                 dep_source.clone(),
                 app_handle,
                 None, // cancel_token: not used in blocking install
@@ -466,6 +504,17 @@ pub async fn install_content_with_dependencies(
             )
             .await?;
             installed.push(dep_installed);
+        } else if let Some(parent_fn) = &main_filename {
+            // Dependency is already installed - update its dependency_of to include this content
+            if let Some(dep_filename) = get_primary_filename(&dep.version) {
+                let _ = manifest_service::add_dependent(
+                    state,
+                    instance_id,
+                    &dep_filename,
+                    &dep.content.content_type,
+                    parent_fn,
+                );
+            }
         }
     }
 
@@ -480,6 +529,7 @@ pub async fn install_content_with_dependencies(
         content.content_type,
         version,
         false, // is_dependency = false
+        None,  // no parent for main content
         source,
         app_handle,
         None, // cancel_token: not used in blocking install

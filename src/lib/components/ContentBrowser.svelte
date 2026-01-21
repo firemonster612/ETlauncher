@@ -22,6 +22,7 @@
 		Square,
 		Minus,
 		Maximize2,
+		Link,
 	} from '@lucide/svelte';
 	import { Button } from '$lib/ui/button';
 	import { Input } from '$lib/ui/input';
@@ -129,6 +130,13 @@
 		installedItems.filter((item) => selectedItems.has(item.filename) && item.isDisabled)
 	);
 
+	// Derived: selected items that have dependents (other mods depend on them)
+	const selectedItemsWithDependents = $derived(
+		installedItems.filter(
+			(item) => selectedItems.has(item.filename) && item.dependencyOf.length > 0
+		)
+	);
+
 	// Cached mod scan (used for helper detection so we don't flicker between tabs)
 	let modScanResult = $state<ScanResult | null>(null);
 	let isLoadingHelperScan = $state(false);
@@ -208,6 +216,14 @@
 	let isUninstalling = $state(false);
 	let uninstallError = $state<string | null>(null);
 	let quickUninstallContentId = $state<string | null>(null);
+
+	// Dependency warning state for uninstall confirmation
+	let showDependencyWarning = $state(false);
+	let pendingUninstallItem = $state<DetectedMod | null>(null);
+	let pendingUninstallContent = $state<Content | null>(null);
+
+	// Dependents popover state
+	let showDependentsFor = $state<string | null>(null);
 
 	// Bulk action state
 	let isBulkActioning = $state(false);
@@ -916,21 +932,31 @@
 			return;
 		}
 
+		// Check if this item has dependents (other mods depend on it)
+		if (installedItem.dependencyOf.length > 0) {
+			// Show dependency warning modal instead of uninstalling immediately
+			pendingUninstallItem = installedItem;
+			pendingUninstallContent = selectedContentDetail;
+			showDependencyWarning = true;
+			return;
+		}
+
+		// No dependents, proceed with uninstall
+		await performUninstall(installedItem, selectedContentDetail);
+	}
+
+	// Extracted uninstall logic for reuse
+	async function performUninstall(installedItem: DetectedMod, content: Content) {
 		isUninstalling = true;
 		uninstallError = null;
 
 		try {
-			console.log(
-				'[ContentBrowser] Uninstalling:',
-				selectedContentDetail.name,
-				'file:',
-				installedItem.filename
-			);
+			console.log('[ContentBrowser] Uninstalling:', content.name, 'file:', installedItem.filename);
 
 			await contentService.uninstallContentByFilename(
 				instanceId,
 				installedItem.filename,
-				selectedContentDetail.contentType
+				content.contentType
 			);
 
 			console.log('[ContentBrowser] Uninstall complete');
@@ -946,6 +972,32 @@
 		} finally {
 			isUninstalling = false;
 		}
+	}
+
+	// Handle confirming uninstall despite dependency warning
+	async function confirmDependencyUninstall() {
+		if (!pendingUninstallItem || !pendingUninstallContent) return;
+
+		showDependencyWarning = false;
+
+		// Check if this came from the detail modal or quick uninstall
+		// If selectedContentDetail matches pendingUninstallContent, use performUninstall (detail modal)
+		// Otherwise use performQuickUninstall
+		if (selectedContentDetail && selectedContentDetail.id === pendingUninstallContent.id) {
+			await performUninstall(pendingUninstallItem, pendingUninstallContent);
+		} else {
+			await performQuickUninstall(pendingUninstallItem, pendingUninstallContent);
+		}
+
+		pendingUninstallItem = null;
+		pendingUninstallContent = null;
+	}
+
+	// Cancel dependency warning
+	function cancelDependencyUninstall() {
+		showDependencyWarning = false;
+		pendingUninstallItem = null;
+		pendingUninstallContent = null;
 	}
 
 	const contentTypes: { value: ContentType; label: string }[] = [
@@ -1051,6 +1103,21 @@
 			return;
 		}
 
+		// Check if this item has dependents (other mods depend on it)
+		if (installedItem.dependencyOf.length > 0) {
+			// Show dependency warning modal instead of uninstalling immediately
+			pendingUninstallItem = installedItem;
+			pendingUninstallContent = content;
+			showDependencyWarning = true;
+			return;
+		}
+
+		// No dependents, proceed with quick uninstall
+		await performQuickUninstall(installedItem, content);
+	}
+
+	// Extracted quick uninstall logic for reuse
+	async function performQuickUninstall(installedItem: DetectedMod, content: Content) {
 		isUninstalling = true;
 		quickUninstallContentId = content.id;
 
@@ -1635,6 +1702,15 @@
 												Disabled
 											</span>
 										{/if}
+										{#if item.dependencyOf.length > 0}
+											<span
+												class="flex flex-shrink-0 items-center gap-1 rounded bg-blue-500/20 px-1.5 py-0.5 text-xs text-blue-500"
+												title="Required by: {item.dependencyOf.join(', ')}"
+											>
+												<Link class="h-3 w-3" />
+												Dependency
+											</span>
+										{/if}
 									</div>
 									<div class="flex flex-shrink-0 items-center gap-1">
 										{#if item.modrinthProject}
@@ -1659,11 +1735,59 @@
 									</div>
 								</div>
 								<p class="text-muted-foreground mt-0.5 truncate text-xs">{item.filename}</p>
-								<div class="text-muted-foreground mt-1 flex items-center gap-3 text-xs">
+								<div class="text-muted-foreground mt-1 flex flex-wrap items-center gap-3 text-xs">
 									{#if getItemVersion(item)}
 										<span>v{getItemVersion(item)}</span>
 									{/if}
 									<span>{formatBytes(item.size)}</span>
+									{#if item.dependencyOf.length > 0}
+										<div class="relative">
+											<!-- svelte-ignore a11y_no_static_element_interactions -->
+											<!-- svelte-ignore a11y_click_events_have_key_events -->
+											<span
+												class="cursor-pointer text-blue-500 underline decoration-blue-500/50 underline-offset-2 hover:decoration-blue-500"
+												onclick={(e) => {
+													e.stopPropagation();
+													showDependentsFor =
+														showDependentsFor === item.filename ? null : item.filename;
+												}}
+											>
+												Required by {item.dependencyOf.length} mod{item.dependencyOf.length === 1
+													? ''
+													: 's'}
+											</span>
+											{#if showDependentsFor === item.filename}
+												<!-- svelte-ignore a11y_no_static_element_interactions -->
+												<!-- svelte-ignore a11y_click_events_have_key_events -->
+												<div
+													class="border-border bg-popover absolute bottom-full left-0 z-10 mb-1 w-64 border p-3 shadow-lg"
+													onclick={(e) => e.stopPropagation()}
+												>
+													<div class="mb-2 flex items-center justify-between">
+														<span class="text-sm font-medium">Required by:</span>
+														<!-- svelte-ignore a11y_no_static_element_interactions -->
+														<!-- svelte-ignore a11y_click_events_have_key_events -->
+														<span
+															class="text-muted-foreground hover:text-foreground cursor-pointer text-xs"
+															onclick={(e) => {
+																e.stopPropagation();
+																showDependentsFor = null;
+															}}
+														>
+															Close
+														</span>
+													</div>
+													<ul class="space-y-1">
+														{#each item.dependencyOf as parentFilename (parentFilename)}
+															<li class="text-muted-foreground truncate text-xs">
+																{parentFilename}
+															</li>
+														{/each}
+													</ul>
+												</div>
+											{/if}
+										</div>
+									{/if}
 								</div>
 							</div>
 						</button>
@@ -1799,14 +1923,50 @@
 	<div
 		class="fixed inset-x-0 top-[var(--titlebar-height)] z-[60] flex h-[calc(100vh-var(--titlebar-height))] items-center justify-center bg-black/50 p-4"
 	>
-		<div class="bg-card border-border w-full max-w-sm border-2 p-4">
-			<h3 class="mb-2 font-bold">
+		<div class="bg-card border-border w-full max-w-md space-y-4 border-2 p-6">
+			<h3 class="text-lg font-bold">
 				Remove {selectedItems.size} item{selectedItems.size === 1 ? '' : 's'}?
 			</h3>
-			<p class="text-muted-foreground mb-4 text-sm">
+			<p class="text-muted-foreground text-sm">
 				This will permanently delete the selected files. This action cannot be undone.
 			</p>
-			<div class="flex gap-2">
+
+			{#if selectedItemsWithDependents.length > 0}
+				<div
+					class="flex flex-col gap-2 border border-amber-500/60 bg-amber-500/10 px-4 py-3 text-sm text-amber-500"
+				>
+					<div class="flex items-center gap-2 font-medium">
+						<Link class="h-4 w-4" />
+						Dependency Warning
+					</div>
+					<p class="text-xs text-amber-500/80">
+						{selectedItemsWithDependents.length === 1
+							? 'One of the selected items is'
+							: `${selectedItemsWithDependents.length} of the selected items are`} a dependency of other
+						mods. Removing
+						{selectedItemsWithDependents.length === 1 ? 'it' : 'them'} may cause issues.
+					</p>
+					<ul class="mt-1 list-inside list-disc text-xs text-amber-500/80">
+						{#each selectedItemsWithDependents.slice(0, 5) as item (item.filename)}
+							<li>
+								<span class="font-medium">{getItemDisplayName(item)}</span>
+								<span class="text-amber-500/60">
+									required by {item.dependencyOf.length === 1
+										? item.dependencyOf[0]
+										: `${item.dependencyOf.length} mods`}
+								</span>
+							</li>
+						{/each}
+						{#if selectedItemsWithDependents.length > 5}
+							<li class="text-amber-500/60">
+								...and {selectedItemsWithDependents.length - 5} more
+							</li>
+						{/if}
+					</ul>
+				</div>
+			{/if}
+
+			<div class="flex gap-2 pt-2">
 				<Button
 					variant="outline"
 					class="flex-1"
@@ -1825,7 +1985,65 @@
 						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
 						Removing...
 					{:else}
-						Remove
+						Remove {selectedItemsWithDependents.length > 0 ? 'Anyway' : ''}
+					{/if}
+				</Button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Dependency Warning Modal for Uninstall -->
+{#if showDependencyWarning && pendingUninstallItem && pendingUninstallContent}
+	<div
+		class="fixed inset-x-0 top-[var(--titlebar-height)] z-[70] flex h-[calc(100vh-var(--titlebar-height))] items-center justify-center bg-black/50 p-4"
+	>
+		<div class="bg-card border-border w-full max-w-md space-y-4 border-2 p-6">
+			<h2 class="text-lg font-bold">Dependency Warning</h2>
+			<p class="text-muted-foreground text-sm">
+				<strong>{pendingUninstallContent.name}</strong> is required by other mods. Removing it may cause
+				issues.
+			</p>
+
+			<div
+				class="flex flex-col gap-2 border border-amber-500/60 bg-amber-500/10 px-4 py-3 text-sm text-amber-500"
+			>
+				<div class="flex items-center gap-2 font-medium">
+					<Link class="h-4 w-4" />
+					Required by:
+				</div>
+				<ul class="mt-1 list-inside list-disc text-xs text-amber-500/80">
+					{#each pendingUninstallItem.dependencyOf.slice(0, 5) as parentFilename (parentFilename)}
+						<li>{parentFilename}</li>
+					{/each}
+					{#if pendingUninstallItem.dependencyOf.length > 5}
+						<li class="text-amber-500/60">
+							...and {pendingUninstallItem.dependencyOf.length - 5} more
+						</li>
+					{/if}
+				</ul>
+			</div>
+
+			<div class="flex gap-2 pt-2">
+				<Button
+					variant="outline"
+					class="flex-1"
+					onclick={cancelDependencyUninstall}
+					disabled={isUninstalling}
+				>
+					Cancel
+				</Button>
+				<Button
+					variant="destructive"
+					class="flex-1"
+					onclick={confirmDependencyUninstall}
+					disabled={isUninstalling}
+				>
+					{#if isUninstalling}
+						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+						Removing...
+					{:else}
+						Remove Anyway
 					{/if}
 				</Button>
 			</div>

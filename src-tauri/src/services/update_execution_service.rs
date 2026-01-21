@@ -343,6 +343,7 @@ async fn update_single_content(
                 content.content_type,
                 latest,
                 content.is_dependency,
+                None, // parent_filename: preserve existing dependency_of from manifest
                 Some(content.source.clone()),
                 app_handle,
                 None, // cancel_token: not used in updates
@@ -388,6 +389,7 @@ async fn update_single_content(
                 content.content_type,
                 latest,
                 content.is_dependency,
+                None, // parent_filename: preserve existing dependency_of from manifest
                 Some(content.source.clone()),
                 app_handle,
                 None, // cancel_token: not used in updates

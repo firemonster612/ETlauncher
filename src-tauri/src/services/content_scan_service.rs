@@ -148,6 +148,18 @@ pub async fn scan_content(
     let content_dir = get_content_dir(&game_dir, content_type);
     let disabled_dir = get_disabled_dir(&content_dir);
 
+    // Load manifest to get dependency info
+    let manifest = manifest_service::load_manifest(state, instance_id).unwrap_or_default();
+    let manifest_items: Vec<&InstalledContent> = match content_type {
+        ContentType::Mod => manifest.mods.iter().collect(),
+        ContentType::Shader => manifest.shaders.iter().collect(),
+        ContentType::ResourcePack => manifest.resource_packs.iter().collect(),
+    };
+    let manifest_by_filename: std::collections::HashMap<&str, &InstalledContent> = manifest_items
+        .iter()
+        .map(|item| (item.filename.as_str(), *item))
+        .collect();
+
     // Check if content folder exists
     if !content_dir.exists() {
         return Ok(ScanResult {
@@ -343,6 +355,23 @@ pub async fn scan_content(
         HashMap::new()
     };
 
+    // Step 5b: Fetch CurseForge file details to get dependency info
+    // This is needed for backfilling dependency_ids for existing instances
+    let curseforge_file_map: HashMap<u64, curseforge_service::CurseForgeFile> =
+        if let Some(api_key) = &state.get_settings().curseforge_api_key {
+            let file_ids: Vec<u64> = curseforge_results.values().map(|m| m.file_id).collect();
+
+            if !file_ids.is_empty() {
+                curseforge_service::get_files_by_ids(&state.http_client, api_key, &file_ids)
+                    .await
+                    .unwrap_or_default()
+            } else {
+                HashMap::new()
+            }
+        } else {
+            HashMap::new()
+        };
+
     // Step 6: Load manifest for fallback identification
     // This allows us to identify content that was installed via the launcher
     // but couldn't be matched via API lookups (e.g., CurseForge-exclusive content)
@@ -364,9 +393,9 @@ pub async fn scan_content(
     let mut identified_count = 0u32;
     let mut unidentified_count = 0u32;
 
-    for (filename, size, hash, murmur2, is_disabled) in content_files {
+    for (filename, size, hash, murmur2, is_disabled) in &content_files {
         // Try API-based identification first
-        let mut modrinth_project = modrinth_results.get(&hash).map(|version| {
+        let mut modrinth_project = modrinth_results.get(hash).map(|version| {
             let (slug, name) = modrinth_project_map
                 .get(&version.project_id)
                 .map(|p| (p.slug.clone(), p.title.clone()))
@@ -380,7 +409,7 @@ pub async fn scan_content(
             }
         });
 
-        let mut curseforge_project = curseforge_results.get(&murmur2).map(|match_info| {
+        let mut curseforge_project = curseforge_results.get(murmur2).map(|match_info| {
             let mod_info = curseforge_mod_map.get(&match_info.mod_id);
             let name = mod_info
                 .map(|m| m.name.clone())
@@ -399,7 +428,7 @@ pub async fn scan_content(
         // This handles cases where hash/fingerprint APIs don't return matches
         // (common for shaders, resource packs, or when APIs are down)
         if curseforge_project.is_none() && modrinth_project.is_none() {
-            if let Some(manifest_entry) = manifest_content.get(&filename) {
+            if let Some(manifest_entry) = manifest_content.get(filename) {
                 // Use manifest data to create project info
                 if let Some(ref mr_id) = manifest_entry.modrinth_id {
                     modrinth_project = Some(DetectedModrinthProject {
@@ -429,16 +458,83 @@ pub async fn scan_content(
             unidentified_count += 1;
         }
 
+        // Get dependency info from manifest
+        let (is_dependency, dependency_of) = manifest_by_filename
+            .get(filename.as_str())
+            .map(|item| (item.is_dependency, item.dependency_of.clone()))
+            .unwrap_or((false, Vec::new()));
+
         items.push(DetectedMod {
-            filename,
-            size,
-            sha512: hash,
-            murmur2_fingerprint: murmur2,
+            filename: filename.clone(),
+            size: *size,
+            sha512: hash.clone(),
+            murmur2_fingerprint: *murmur2,
             modrinth_project,
             curseforge_project,
             is_identified,
-            is_disabled,
+            is_disabled: *is_disabled,
+            is_dependency,
+            dependency_of,
         });
+    }
+
+    // Backfill dependency_ids for existing instances from Modrinth/CurseForge data
+    // This ensures the reverse dependency lookup works for content installed before
+    // the dependency tracking feature was added
+    for (filename, _size, hash, murmur2, _is_disabled) in &content_files {
+        // Check if this content exists in manifest but is missing dependency_ids
+        let Some(manifest_entry) = manifest_by_filename.get(filename.as_str()) else {
+            continue;
+        };
+
+        if !manifest_entry.dependency_ids.is_empty() {
+            continue;
+        }
+
+        // Try to get dependency_ids from Modrinth first
+        let mut dep_ids: Vec<String> = Vec::new();
+
+        if let Some(version) = modrinth_results.get(hash) {
+            // Extract dependency_ids from Modrinth version's dependencies
+            dep_ids = version
+                .dependencies
+                .iter()
+                .filter(|d| d.dependency_type == "required")
+                .filter_map(|d| d.project_id.as_ref().map(|pid| format!("modrinth:{}", pid)))
+                .collect();
+        } else if let Some(fp_match) = curseforge_results.get(murmur2) {
+            // Try CurseForge - get file details which include dependencies
+            if let Some(file_info) = curseforge_file_map.get(&fp_match.file_id) {
+                // relation_type 3 = RequiredDependency
+                dep_ids = file_info
+                    .dependencies
+                    .iter()
+                    .filter(|d| d.relation_type == 3)
+                    .map(|d| format!("curseforge:{}", d.mod_id))
+                    .collect();
+            }
+        }
+
+        if dep_ids.is_empty() {
+            continue;
+        }
+
+        // Update the manifest with dependency_ids
+        if let Ok(true) = manifest_service::update_dependency_ids(
+            state,
+            instance_id,
+            filename,
+            content_type,
+            dep_ids,
+        ) {
+            // Reload the manifest entry to get the updated version
+            if let Ok(Some(updated)) =
+                manifest_service::get_content(state, instance_id, filename, content_type)
+            {
+                // Now update reverse dependencies for this content
+                let _ = manifest_service::update_reverse_dependencies(state, instance_id, &updated);
+            }
+        }
     }
 
     Ok(ScanResult {
