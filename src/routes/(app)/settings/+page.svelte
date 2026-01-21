@@ -3,7 +3,7 @@
 	import { Button } from '$lib/ui/button';
 	import { Checkbox } from '$lib/ui/checkbox';
 	import { Input } from '$lib/ui/input';
-	import { Slider } from '$lib/ui/slider';
+	import { Slider, RangeSlider } from '$lib/ui/slider';
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { RotateCcw, Eye, EyeOff } from '@lucide/svelte';
 
@@ -13,16 +13,14 @@
 	const settings = $derived(settingsStore.settings);
 
 	// Local state for sliders (for instant visual feedback)
-	let memoryMin = $state(0);
-	let memoryMax = $state(0);
+	let memoryRange = $state<[number, number]>([512, 4096]);
 	let concurrentDownloads = $state(1);
 	let showApiKey = $state(false);
 
 	// Sync local state when settings load
 	$effect(() => {
 		if (settings) {
-			memoryMin = settings.memoryMinMb;
-			memoryMax = settings.memoryMaxMb;
+			memoryRange = [settings.memoryMinMb, settings.memoryMaxMb];
 			concurrentDownloads = settings.concurrentDownloads;
 		}
 	});
@@ -123,48 +121,25 @@
 
 			<div class="space-y-2">
 				<div class="flex justify-between text-sm">
-					<span>Minimum RAM</span>
-					<span class="text-primary">{formatMemory(memoryMin)}</span>
+					<span>Min: <span class="text-primary">{formatMemory(memoryRange[0])}</span></span>
+					<span>Max: <span class="text-primary">{formatMemory(memoryRange[1])}</span></span>
 				</div>
-				<Slider
-					min={256}
-					max={8192}
-					step={256}
-					value={memoryMin}
-					onValueChange={(value) => {
-						if (value <= memoryMax) {
-							memoryMin = value;
-						}
-					}}
-					onValueCommit={(value) => {
-						if (value <= memoryMax) {
-							saveSettings({ memoryMinMb: value });
-						}
-					}}
-				/>
-			</div>
-
-			<div class="space-y-2">
-				<div class="flex justify-between text-sm">
-					<span>Maximum RAM</span>
-					<span class="text-primary">{formatMemory(memoryMax)}</span>
-				</div>
-				<Slider
+				<RangeSlider
 					min={512}
 					max={16384}
 					step={512}
-					value={memoryMax}
+					value={memoryRange}
 					onValueChange={(value) => {
-						if (value >= memoryMin) {
-							memoryMax = value;
-						}
+						memoryRange = value;
 					}}
 					onValueCommit={(value) => {
-						if (value >= memoryMin) {
-							saveSettings({ memoryMaxMb: value });
-						}
+						saveSettings({ memoryMinMb: value[0], memoryMaxMb: value[1] });
 					}}
 				/>
+				<div class="text-muted-foreground flex justify-between text-xs">
+					<span>512 MB</span>
+					<span>16 GB</span>
+				</div>
 			</div>
 
 			<p class="text-muted-foreground text-xs">
