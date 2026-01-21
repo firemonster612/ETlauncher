@@ -136,6 +136,13 @@ pub fn run() {
             commands::optifine::check_optifine_available,
             commands::optifine::install_optifine,
             commands::optifine::get_optifine_version,
+            // Resource pool commands
+            commands::resource_pool::get_pool_stats,
+            commands::resource_pool::garbage_collect_pool,
+            commands::resource_pool::verify_pool_integrity,
+            commands::resource_pool::check_instance_needs_migration,
+            commands::resource_pool::migrate_instance_to_pool,
+            commands::resource_pool::migrate_all_instances_to_pool,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

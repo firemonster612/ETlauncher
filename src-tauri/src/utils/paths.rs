@@ -87,6 +87,40 @@ pub fn get_instance_natives_dir_with_base(base: &str, instance_id: &str) -> Path
     get_instance_dir_with_base(base, instance_id).join("natives")
 }
 
+/// Get the resource pool directory
+pub fn get_resource_pool_dir() -> PathBuf {
+    get_cache_dir().join("resources")
+}
+
+/// Get the resource pool directory for a specific content type
+pub fn get_resource_pool_dir_for_type(content_type: &crate::models::ContentType) -> PathBuf {
+    let type_dir = match content_type {
+        crate::models::ContentType::Mod => "mods",
+        crate::models::ContentType::Shader => "shaderpacks",
+        crate::models::ContentType::ResourcePack => "resourcepacks",
+    };
+    get_resource_pool_dir().join(type_dir)
+}
+
+/// Get the pool index file path
+pub fn get_pool_index_path() -> PathBuf {
+    get_resource_pool_dir().join("pool_index.json")
+}
+
+/// Get the path to a pooled resource by its hash
+pub fn get_pooled_resource_path(
+    content_type: &crate::models::ContentType,
+    sha512: &str,
+    original_filename: &str,
+) -> PathBuf {
+    // Use hash as filename but preserve extension for compatibility
+    let extension = std::path::Path::new(original_filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("jar");
+    get_resource_pool_dir_for_type(content_type).join(format!("{}.{}", sha512, extension))
+}
+
 /// Ensure all required directories exist
 pub fn ensure_directories() -> std::io::Result<()> {
     std::fs::create_dir_all(get_app_data_dir())?;
@@ -96,5 +130,15 @@ pub fn ensure_directories() -> std::io::Result<()> {
     std::fs::create_dir_all(get_assets_dir().join("objects"))?;
     std::fs::create_dir_all(get_libraries_dir())?;
     std::fs::create_dir_all(get_java_dir())?;
+    // Create resource pool directories
+    std::fs::create_dir_all(get_resource_pool_dir_for_type(
+        &crate::models::ContentType::Mod,
+    ))?;
+    std::fs::create_dir_all(get_resource_pool_dir_for_type(
+        &crate::models::ContentType::Shader,
+    ))?;
+    std::fs::create_dir_all(get_resource_pool_dir_for_type(
+        &crate::models::ContentType::ResourcePack,
+    ))?;
     Ok(())
 }

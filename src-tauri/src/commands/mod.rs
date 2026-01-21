@@ -8,5 +8,6 @@ pub mod loader;
 pub mod minecraft;
 pub mod modpack;
 pub mod optifine;
+pub mod resource_pool;
 pub mod settings;
 pub mod update;

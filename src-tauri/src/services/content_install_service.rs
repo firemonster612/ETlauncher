@@ -4,7 +4,9 @@ use crate::models::{
     ContentSource, ContentType, ContentVersion, DependencyType, InstalledContent, LoaderType,
     ResolvedDependency,
 };
-use crate::services::{curseforge_service, manifest_service, modrinth_service};
+use crate::services::{
+    curseforge_service, manifest_service, modrinth_service, resource_pool_service,
+};
 
 /// Get the primary filename from a content version
 fn get_primary_filename(version: &ContentVersion) -> Option<String> {
@@ -29,10 +31,11 @@ use std::path::PathBuf;
 use tauri::{AppHandle, Emitter};
 use tokio_util::sync::CancellationToken;
 
-/// Result of downloading a file including computed hashes
+/// Result of downloading a file including computed hashes and bytes
 struct DownloadResult {
     sha512_hash: String,
     murmur2_fingerprint: u32,
+    bytes: Vec<u8>,
 }
 
 /// Get the content install directory based on content type
@@ -75,7 +78,11 @@ pub async fn install_content(
         }
     }
 
-    let instances_base = state.settings.read().instances_path.clone();
+    let settings = state.get_settings();
+    let instances_base = settings.instances_path.clone();
+    let pool_enabled = settings.resource_pool.enabled;
+    let link_strategy = settings.resource_pool.link_strategy;
+
     let game_dir = get_instance_game_dir_with_base(&instances_base, instance_id);
     let content_dir = get_content_dir(&game_dir, &content_type);
 
@@ -90,12 +97,10 @@ pub async fn install_content(
         .or_else(|| version.files.first())
         .ok_or_else(|| AppError::ContentNotFound("No files in version".to_string()))?;
 
-    // Download the file with progress tracking
-    let file_path = content_dir.join(&file.filename);
-    let download_result = download_file_with_progress(
+    // Download the file into memory
+    let download_result = download_content_bytes(
         &state.http_client,
         &file.url,
-        &file_path,
         &file.filename,
         content_id,
         file.size,
@@ -107,6 +112,36 @@ pub async fn install_content(
     )
     .await?;
 
+    // Determine if we're using the pool
+    let is_pooled = if pool_enabled {
+        // Add to pool first
+        let _pool_path = resource_pool_service::add_resource_from_bytes(
+            state,
+            &download_result.bytes,
+            &download_result.sha512_hash,
+            content_type,
+            &file.filename,
+        )?;
+
+        // Link from pool to instance
+        let link_result = resource_pool_service::link_to_instance(
+            state,
+            &download_result.sha512_hash,
+            &content_type,
+            instance_id,
+            &file.filename,
+            link_strategy,
+        )?;
+
+        link_result.success
+    } else {
+        // Write directly to instance (old behavior)
+        let file_path = content_dir.join(&file.filename);
+        let mut out_file = File::create(&file_path)?;
+        out_file.write_all(&download_result.bytes)?;
+        false
+    };
+
     // Emit progress event
     if let Some(handle) = app_handle {
         let _ = handle.emit(
@@ -116,6 +151,7 @@ pub async fn install_content(
                 "contentType": content_type,
                 "name": content_name,
                 "filename": file.filename,
+                "isPooled": is_pooled,
             }),
         );
     }
@@ -164,6 +200,7 @@ pub async fn install_content(
         source: content_source,
         sha512_hash: Some(download_result.sha512_hash),
         murmur2_fingerprint: Some(download_result.murmur2_fingerprint),
+        is_pooled,
     };
 
     // Save to manifest for persistence
@@ -176,16 +213,17 @@ pub async fn install_content(
     Ok(installed)
 }
 
-/// Download a file with streaming progress updates and optional hash verification
-/// Returns the computed SHA512 hash and Murmur2 fingerprint for manifest tracking
+/// Download content and return bytes with computed hashes
+///
+/// Downloads the file into memory, computes hashes, and returns the bytes.
+/// Does NOT write to disk - caller handles file creation.
 ///
 /// # Arguments
 /// * `cancel_token` - Optional cancellation token for queue-based installs
 /// * `queue_id` - Optional queue ID; when provided, emits queue-specific progress events
-async fn download_file_with_progress(
+async fn download_content_bytes(
     client: &Client,
     url: &str,
-    path: &PathBuf,
     filename: &str,
     content_id: &str,
     expected_size: u64,
@@ -200,11 +238,6 @@ async fn download_file_with_progress(
         if token.is_cancelled() {
             return Err(AppError::Cancelled);
         }
-    }
-
-    // Create parent directories
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
     }
 
     // Start download
@@ -306,18 +339,15 @@ async fn download_file_with_progress(
             };
 
             if !matches {
-                return Err(AppError::HashMismatch(path.display().to_string()));
+                return Err(AppError::HashMismatch(filename.to_string()));
             }
         }
     }
 
-    // Write to file
-    let mut file = File::create(path)?;
-    file.write_all(&all_bytes)?;
-
     Ok(DownloadResult {
         sha512_hash,
         murmur2_fingerprint,
+        bytes: all_bytes,
     })
 }
 

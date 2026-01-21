@@ -1168,6 +1168,7 @@ fn scan_content_folder(
             source: ContentSource::ModpackOriginal,
             sha512_hash: None,
             murmur2_fingerprint: None,
+            is_pooled: false,
         };
 
         content.push(installed);

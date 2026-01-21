@@ -76,6 +76,9 @@ pub enum AppError {
     #[error("Content not found: {0}")]
     ContentNotFound(String),
 
+    #[error("Resource not found: {0}")]
+    ResourceNotFound(String),
+
     #[error("Version not compatible: {0}")]
     VersionNotCompatible(String),
 
@@ -152,6 +155,7 @@ impl From<AppError> for CommandError {
             AppError::ApiError(_) => "API_ERROR",
             AppError::ModpackNotFound(_) => "MODPACK_NOT_FOUND",
             AppError::ContentNotFound(_) => "CONTENT_NOT_FOUND",
+            AppError::ResourceNotFound(_) => "RESOURCE_NOT_FOUND",
             AppError::VersionNotCompatible(_) => "VERSION_NOT_COMPATIBLE",
             AppError::DependencyError(_) => "DEPENDENCY_ERROR",
             AppError::ApiKeyRequired(_) => "API_KEY_REQUIRED",

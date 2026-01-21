@@ -1,5 +1,7 @@
 use crate::error::AppError;
 use crate::models::instance::{CreateInstanceRequest, Instance, LoaderType, UpdateInstanceRequest};
+use crate::models::ContentType;
+use crate::services::{manifest_service, resource_pool_service};
 use crate::state::AppState;
 use crate::utils::paths::{
     get_instance_dir_with_base, get_instance_game_dir_with_base, get_instances_dir_with_base,
@@ -361,6 +363,16 @@ pub fn delete_instance(
         return Err(AppError::InstanceNotFound(instance_id.to_string()));
     }
 
+    // Remove instance from resource pool tracking before deleting files
+    // This updates the "space saved" calculation by removing usage references
+    if let Err(e) = resource_pool_service::remove_instance_from_pool(state, instance_id) {
+        eprintln!(
+            "Warning: Failed to remove instance {} from resource pool: {}",
+            instance_id, e
+        );
+        // Continue with deletion even if pool update fails
+    }
+
     if delete_files {
         // Completely remove the instance directory
         fs::remove_dir_all(&instance_dir)?;
@@ -374,6 +386,8 @@ pub fn delete_instance(
 }
 
 /// Duplicate an instance with a new name
+///
+/// When resource pool is enabled, pooled content is linked instead of copied.
 pub fn duplicate_instance(
     state: &AppState,
     instance_id: &str,
@@ -384,12 +398,41 @@ pub fn duplicate_instance(
     let source_dir = get_instance_dir_with_base(&get_instances_base_dir(state), instance_id);
     let dest_dir = get_instance_dir_with_base(&get_instances_base_dir(state), &new_id);
 
-    // Copy the entire directory
-    copy_dir_recursive(&source_dir, &dest_dir)?;
+    let settings = state.get_settings();
+    let pool_enabled = settings.resource_pool.enabled;
+    let link_strategy = settings.resource_pool.link_strategy;
+
+    // Load source manifest to identify pooled content
+    let source_manifest = manifest_service::load_manifest(state, instance_id).ok();
+
+    // Create destination directory
+    fs::create_dir_all(&dest_dir)?;
+
+    // Copy the directory, but handle pooled content specially
+    if pool_enabled {
+        if let Some(ref manifest) = source_manifest {
+            // Copy directory but skip pooled content files (we'll link them instead)
+            copy_dir_with_pool_awareness(
+                state,
+                &source_dir,
+                &dest_dir,
+                manifest,
+                instance_id,
+                &new_id,
+                link_strategy,
+            )?;
+        } else {
+            // No manifest, just copy everything
+            copy_dir_recursive(&source_dir, &dest_dir)?;
+        }
+    } else {
+        // Pool disabled, just copy everything
+        copy_dir_recursive(&source_dir, &dest_dir)?;
+    }
 
     // Create new instance with updated metadata
     let new_instance = Instance {
-        id: new_id,
+        id: new_id.clone(),
         name: new_name,
         minecraft_version: source.minecraft_version,
         loader_type: source.loader_type,
@@ -413,6 +456,150 @@ pub fn duplicate_instance(
     save_instance(state, &new_instance)?;
 
     Ok(new_instance)
+}
+
+/// Copy a directory with pool awareness
+///
+/// For pooled content, creates links from the pool instead of copying.
+fn copy_dir_with_pool_awareness(
+    state: &AppState,
+    src: &PathBuf,
+    dst: &PathBuf,
+    manifest: &crate::models::InstalledContentManifest,
+    _source_instance_id: &str,
+    new_instance_id: &str,
+    link_strategy: crate::models::LinkStrategy,
+) -> Result<(), AppError> {
+    fs::create_dir_all(dst)?;
+
+    let entries = fs::read_dir(src)?;
+
+    for entry in entries {
+        let entry = entry?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+
+        if src_path.is_dir() {
+            let dir_name = entry.file_name().to_string_lossy().to_string();
+
+            // Check if this is a content directory we need to handle specially
+            if dir_name == ".minecraft" {
+                // Recursively handle .minecraft directory
+                copy_dir_with_pool_awareness(
+                    state,
+                    &src_path,
+                    &dst_path,
+                    manifest,
+                    _source_instance_id,
+                    new_instance_id,
+                    link_strategy,
+                )?;
+            } else if dir_name == "mods" || dir_name == "shaderpacks" || dir_name == "resourcepacks"
+            {
+                // Handle content directories with pool awareness
+                copy_content_dir_with_pool(
+                    state,
+                    &src_path,
+                    &dst_path,
+                    manifest,
+                    new_instance_id,
+                    &dir_name,
+                    link_strategy,
+                )?;
+            } else {
+                // Regular directory, copy recursively
+                copy_dir_recursive(&src_path, &dst_path)?;
+            }
+        } else {
+            // Regular file, copy
+            fs::copy(&src_path, &dst_path)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Copy a content directory (mods/shaderpacks/resourcepacks) with pool awareness
+fn copy_content_dir_with_pool(
+    state: &AppState,
+    src: &PathBuf,
+    dst: &PathBuf,
+    manifest: &crate::models::InstalledContentManifest,
+    new_instance_id: &str,
+    dir_name: &str,
+    link_strategy: crate::models::LinkStrategy,
+) -> Result<(), AppError> {
+    use crate::models::resource_pool::LinkStrategy;
+
+    fs::create_dir_all(dst)?;
+
+    // Determine content type from directory name
+    let content_type = match dir_name {
+        "mods" => ContentType::Mod,
+        "shaderpacks" => ContentType::Shader,
+        "resourcepacks" => ContentType::ResourcePack,
+        _ => return copy_dir_recursive(src, dst),
+    };
+
+    // Get the appropriate content list from manifest
+    let content_list = match content_type {
+        ContentType::Mod => &manifest.mods,
+        ContentType::Shader => &manifest.shaders,
+        ContentType::ResourcePack => &manifest.resource_packs,
+    };
+
+    let entries = fs::read_dir(src)?;
+
+    for entry in entries {
+        let entry = entry?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        let filename = entry.file_name().to_string_lossy().to_string();
+
+        if src_path.is_dir() {
+            // Could be "disabled" subdirectory
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            // Check if this file is pooled
+            let pooled_content = content_list
+                .iter()
+                .find(|c| c.filename == filename && c.is_pooled);
+
+            if let Some(content) = pooled_content {
+                if let Some(ref sha512) = content.sha512_hash {
+                    // Create link from pool instead of copying
+                    let link_strat = match link_strategy {
+                        crate::models::LinkStrategy::Auto => LinkStrategy::Auto,
+                        crate::models::LinkStrategy::HardLink => LinkStrategy::HardLink,
+                        crate::models::LinkStrategy::Symlink => LinkStrategy::Symlink,
+                        crate::models::LinkStrategy::Copy => LinkStrategy::Copy,
+                    };
+
+                    let result = resource_pool_service::link_to_instance(
+                        state,
+                        sha512,
+                        &content_type,
+                        new_instance_id,
+                        &filename,
+                        link_strat,
+                    );
+
+                    if result.is_err() {
+                        // Fallback to copy if linking fails
+                        fs::copy(&src_path, &dst_path)?;
+                    }
+                } else {
+                    // No hash, copy the file
+                    fs::copy(&src_path, &dst_path)?;
+                }
+            } else {
+                // Not pooled, copy the file
+                fs::copy(&src_path, &dst_path)?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Update instance's last played time and increment play time
