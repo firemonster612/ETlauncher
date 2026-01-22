@@ -89,9 +89,25 @@ export interface DownloadProgress {
 /** Instance launch status */
 export type LaunchStatus =
 	| { status: 'idle' }
-	| { status: 'preparing'; message: string }
+	| { status: 'checkingAccount' }
+	| { status: 'refreshingToken' }
+	| { status: 'loadingVersion' }
+	| { status: 'verifyingFiles'; checked: number; total: number }
 	| { status: 'downloading'; progress: DownloadProgress }
+	| { status: 'checkingJava'; version: number }
+	| { status: 'downloadingJava'; version: number; progress: number }
+	| { status: 'buildingClasspath' }
 	| { status: 'launching' }
 	| { status: 'running'; pid: number }
+	| { status: 'windowReady'; pid: number }
 	| { status: 'stopped'; exitCode: number }
 	| { status: 'crashed'; message: string };
+
+/** Instance setup status (used during instance creation) */
+export type InstanceSetupStatus =
+	| { status: 'pending' }
+	| { status: 'preparing'; message: string }
+	| { status: 'downloadingGameFiles'; progress: DownloadProgress }
+	| { status: 'installingLoader'; stage: string; progress: number }
+	| { status: 'complete' }
+	| { status: 'failed'; message: string };

@@ -41,6 +41,10 @@
 	let createLoaderVersion = $state('');
 	let isCreating = $state(false);
 
+	// Setup progress state (shown after instance is created)
+	let setupInstanceId = $state<string | null>(null);
+	let setupInstanceName = $state<string>('');
+
 	// Content browser state
 	let showContentBrowser = $state(false);
 	let contentBrowserInstance = $state<Instance | null>(null);
@@ -134,21 +138,96 @@
 		if (!createName.trim()) return;
 
 		isCreating = true;
+		const instanceName = createName.trim();
 		const instance = await instancesStore.create({
-			name: createName.trim(),
+			name: instanceName,
 			minecraftVersion: createVersion,
 			loaderType: createLoader === 'vanilla' ? undefined : createLoader,
 			loaderVersion: createLoader !== 'vanilla' ? createLoaderVersion : undefined,
 		});
 
 		if (instance) {
-			showCreateModal = false;
+			// Enter setup mode - don't close the modal yet
+			setupInstanceId = instance.id;
+			setupInstanceName = instanceName;
+			// Reset form for next time
 			createName = '';
 			createVersion = versionsStore.latestRelease ?? '';
 			createLoader = 'vanilla';
 			createLoaderVersion = '';
 		}
 		isCreating = false;
+	}
+
+	function closeCreateModal() {
+		showCreateModal = false;
+		setupInstanceId = null;
+		setupInstanceName = '';
+	}
+
+	// Watch for setup completion to auto-close the modal
+	$effect(() => {
+		if (setupInstanceId) {
+			const status = instancesStore.setupStatuses.get(setupInstanceId);
+			if (status?.status === 'complete') {
+				// Setup complete, close modal after brief delay
+				setTimeout(() => {
+					closeCreateModal();
+				}, 500);
+			}
+		}
+	});
+
+	// Get setup progress for display
+	const setupStatus = $derived(
+		setupInstanceId ? instancesStore.setupStatuses.get(setupInstanceId) : null
+	);
+
+	function getSetupMessage(status: typeof setupStatus): string {
+		if (!status) return 'Starting setup...';
+		switch (status.status) {
+			case 'pending':
+				return 'Starting setup...';
+			case 'preparing':
+				return status.message;
+			case 'downloadingGameFiles':
+				return 'Downloading game files...';
+			case 'installingLoader':
+				return `Installing ${status.stage}...`;
+			case 'complete':
+				return 'Setup complete!';
+			case 'failed':
+				return `Setup failed: ${status.message}`;
+			default:
+				return 'Setting up...';
+		}
+	}
+
+	function getSetupProgress(status: typeof setupStatus): number {
+		if (!status) return 0;
+		switch (status.status) {
+			case 'pending':
+				return 5;
+			case 'preparing':
+				return 10;
+			case 'downloadingGameFiles': {
+				const progress = status.progress;
+				if (progress.totalBytes > 0) {
+					return 15 + (progress.downloadedBytes / progress.totalBytes) * 80;
+				} else if (progress.totalFiles > 0) {
+					return 15 + (progress.completedFiles / progress.totalFiles) * 80;
+				}
+				return 15;
+			}
+			case 'installingLoader':
+				return 90 + (status.progress / 100) * 5;
+			case 'complete':
+				return 100;
+			case 'failed':
+				return 0;
+			default:
+				return 0;
+		}
 	}
 
 	function confirmDelete(instanceId: string) {
@@ -322,10 +401,12 @@
 			{#each filteredInstances as instance (instance.id)}
 				{@const status = getInstanceStatus(instance.id)}
 				{@const launchStatus = launchStore.launchStates.get(instance.id)?.status}
+				{@const setupStatus = instancesStore.setupStatuses.get(instance.id)}
 				<InstanceCard
 					{instance}
 					{status}
 					{launchStatus}
+					{setupStatus}
 					onLaunch={handleLaunch}
 					onKill={handleKill}
 					onOpenSettings={openSettings}
@@ -342,103 +423,160 @@
 {#if showCreateModal}
 	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
 		<div class="bg-card border-border mx-4 w-full max-w-md space-y-4 border-2 p-6">
-			<h2 class="text-lg font-bold">Create New Instance</h2>
-
-			<div class="space-y-4">
-				<div>
-					<label for="name" class="text-muted-foreground mb-1 block text-sm">Instance Name</label>
-					<Input id="name" type="text" bind:value={createName} placeholder="My Instance" />
-				</div>
-
-				<div data-tutorial="instance-version-loader" class="space-y-4">
-					<div data-tutorial="instance-version">
-						<span class="text-muted-foreground mb-1 block text-sm">Minecraft Version</span>
-						<Select.Root
-							type="single"
-							bind:value={createVersion}
-							disabled={versionsStore.isLoading}
-						>
-							<Select.Trigger class="border-border bg-background w-full border-2">
-								{#if versionsStore.isLoading}
-									Loading versions...
-								{:else if createVersion}
-									{createVersion}
-								{:else}
-									Select version...
-								{/if}
-							</Select.Trigger>
-							<Select.Content class="border-border bg-card max-h-[300px] border-2">
-								{#each versionsStore.versions as version (version.id)}
-									<Select.Item value={version.id} label={version.id}>
-										{version.id}
-										{#if version.type === 'snapshot'}
-											<span class="text-muted-foreground ml-1">(snapshot)</span>
-										{:else if version.type === 'old_beta'}
-											<span class="text-muted-foreground ml-1">(beta)</span>
-										{:else if version.type === 'old_alpha'}
-											<span class="text-muted-foreground ml-1">(alpha)</span>
-										{/if}
-									</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
+			{#if setupInstanceId}
+				<!-- Setup Progress View -->
+				<div class="flex flex-col items-center gap-4 py-4">
+					<div class="flex items-center gap-3">
+						{#if setupStatus?.status === 'complete'}
+							<CheckCircle class="text-primary h-8 w-8" />
+						{:else if setupStatus?.status === 'failed'}
+							<AlertTriangle class="h-8 w-8 text-red-500" />
+						{:else}
+							<Loader2 class="text-primary h-8 w-8 animate-spin" />
+						{/if}
+						<h2 class="text-lg font-bold">
+							{#if setupStatus?.status === 'complete'}
+								Instance Ready!
+							{:else if setupStatus?.status === 'failed'}
+								Setup Failed
+							{:else}
+								Setting Up Instance
+							{/if}
+						</h2>
 					</div>
 
-					<div data-tutorial="instance-loader">
-						<LoaderSelect
-							loaderType={createLoader}
-							loaderVersion={createLoaderVersion}
-							minecraftVersion={createVersion}
-							onLoaderTypeChange={(loader) => (createLoader = loader)}
-							onLoaderVersionChange={(version) => (createLoaderVersion = version)}
-						/>
-					</div>
-				</div>
-			</div>
+					<p class="text-muted-foreground text-center text-sm">
+						{setupInstanceName}
+					</p>
 
-			<div class="flex gap-2 pt-2">
-				<Button
-					variant="outline"
-					class="flex-1"
-					onclick={() => (showCreateModal = false)}
-					disabled={isCreating || instancesStore.isInstallingLoader}
-					data-tutorial="create-cancel"
-				>
-					Cancel
-				</Button>
-				<Button
-					class="flex-1"
-					onclick={handleCreate}
-					disabled={!createName.trim() || isCreating || instancesStore.isInstallingLoader}
-					data-tutorial="instance-create"
-				>
-					{#if instancesStore.isInstallingLoader}
-						Installing {createLoader}...
-					{:else if isCreating}
-						Creating...
-					{:else}
-						Create
+					<!-- Progress bar -->
+					<div class="w-full space-y-2">
+						<div class="bg-muted h-2 w-full overflow-hidden rounded-full">
+							<div
+								class="bg-primary h-full transition-all duration-300 ease-out"
+								class:bg-red-500={setupStatus?.status === 'failed'}
+								style="width: {getSetupProgress(setupStatus)}%"
+							></div>
+						</div>
+						<p class="text-muted-foreground text-center text-sm">
+							{getSetupMessage(setupStatus)}
+						</p>
+
+						<!-- Show current file being downloaded -->
+						{#if setupStatus?.status === 'downloadingGameFiles' && setupStatus.progress.currentFile}
+							<p class="text-muted-foreground truncate text-center text-xs">
+								{setupStatus.progress.currentFile}
+							</p>
+						{/if}
+					</div>
+
+					<!-- Close button (only show when complete or failed) -->
+					{#if setupStatus?.status === 'complete' || setupStatus?.status === 'failed'}
+						<Button onclick={closeCreateModal} class="mt-2">
+							{setupStatus?.status === 'complete' ? 'Done' : 'Close'}
+						</Button>
 					{/if}
-				</Button>
-			</div>
+				</div>
+			{:else}
+				<!-- Create Form View -->
+				<h2 class="text-lg font-bold">Create New Instance</h2>
 
-			<!-- Loader Installation Progress -->
-			{#if instancesStore.isInstallingLoader && instancesStore.loaderInstallProgress}
-				<div class="border-border mt-4 border-t pt-4">
-					<div class="flex items-center gap-2 text-sm">
-						<Loader2 class="text-primary h-4 w-4 animate-spin" />
-						<span>{instancesStore.loaderInstallProgress.stage}</span>
+				<div class="space-y-4">
+					<div>
+						<label for="name" class="text-muted-foreground mb-1 block text-sm">Instance Name</label>
+						<Input id="name" type="text" bind:value={createName} placeholder="My Instance" />
 					</div>
-					<div class="bg-muted mt-2 h-2 overflow-hidden rounded-full">
-						<div
-							class="bg-primary h-full transition-all duration-300"
-							style="width: {instancesStore.loaderInstallProgress.progress}%"
-						></div>
-					</div>
-					<div class="text-muted-foreground mt-1 text-xs">
-						{instancesStore.loaderInstallProgress.progress}% complete
+
+					<div data-tutorial="instance-version-loader" class="space-y-4">
+						<div data-tutorial="instance-version">
+							<span class="text-muted-foreground mb-1 block text-sm">Minecraft Version</span>
+							<Select.Root
+								type="single"
+								bind:value={createVersion}
+								disabled={versionsStore.isLoading}
+							>
+								<Select.Trigger class="border-border bg-background w-full border-2">
+									{#if versionsStore.isLoading}
+										Loading versions...
+									{:else if createVersion}
+										{createVersion}
+									{:else}
+										Select version...
+									{/if}
+								</Select.Trigger>
+								<Select.Content class="border-border bg-card max-h-[300px] border-2">
+									{#each versionsStore.versions as version (version.id)}
+										<Select.Item value={version.id} label={version.id}>
+											{version.id}
+											{#if version.type === 'snapshot'}
+												<span class="text-muted-foreground ml-1">(snapshot)</span>
+											{:else if version.type === 'old_beta'}
+												<span class="text-muted-foreground ml-1">(beta)</span>
+											{:else if version.type === 'old_alpha'}
+												<span class="text-muted-foreground ml-1">(alpha)</span>
+											{/if}
+										</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</div>
+
+						<div data-tutorial="instance-loader">
+							<LoaderSelect
+								loaderType={createLoader}
+								loaderVersion={createLoaderVersion}
+								minecraftVersion={createVersion}
+								onLoaderTypeChange={(loader) => (createLoader = loader)}
+								onLoaderVersionChange={(version) => (createLoaderVersion = version)}
+							/>
+						</div>
 					</div>
 				</div>
+
+				<div class="flex gap-2 pt-2">
+					<Button
+						variant="outline"
+						class="flex-1"
+						onclick={closeCreateModal}
+						disabled={isCreating || instancesStore.isInstallingLoader}
+						data-tutorial="create-cancel"
+					>
+						Cancel
+					</Button>
+					<Button
+						class="flex-1"
+						onclick={handleCreate}
+						disabled={!createName.trim() || isCreating || instancesStore.isInstallingLoader}
+						data-tutorial="instance-create"
+					>
+						{#if instancesStore.isInstallingLoader}
+							Installing {createLoader}...
+						{:else if isCreating}
+							Creating...
+						{:else}
+							Create
+						{/if}
+					</Button>
+				</div>
+
+				<!-- Loader Installation Progress -->
+				{#if instancesStore.isInstallingLoader && instancesStore.loaderInstallProgress}
+					<div class="border-border mt-4 border-t pt-4">
+						<div class="flex items-center gap-2 text-sm">
+							<Loader2 class="text-primary h-4 w-4 animate-spin" />
+							<span>{instancesStore.loaderInstallProgress.stage}</span>
+						</div>
+						<div class="bg-muted mt-2 h-2 overflow-hidden rounded-full">
+							<div
+								class="bg-primary h-full transition-all duration-300"
+								style="width: {instancesStore.loaderInstallProgress.progress}%"
+							></div>
+						</div>
+						<div class="text-muted-foreground mt-1 text-xs">
+							{instancesStore.loaderInstallProgress.progress}% complete
+						</div>
+					</div>
+				{/if}
 			{/if}
 		</div>
 	</div>

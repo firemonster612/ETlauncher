@@ -2,9 +2,11 @@
 	import { onMount } from 'svelte';
 	import AppSidebar from '$lib/components/layout/AppSidebar.svelte';
 	import ModpackInstallBar from '$lib/components/ModpackInstallBar.svelte';
+	import LaunchingDialog from '$lib/components/LaunchingDialog.svelte';
 	import { SidebarInset } from '$lib/ui/sidebar';
 	import { launchStore } from '$lib/stores/launch.svelte';
 	import { modpackInstallStore } from '$lib/stores/modpackInstall.svelte';
+	import { instancesStore } from '$lib/stores/instances.svelte';
 
 	let { children } = $props();
 
@@ -12,6 +14,12 @@
 	onMount(() => {
 		launchStore.init();
 		modpackInstallStore.init();
+		instancesStore.init();
+
+		return () => {
+			launchStore.cleanup();
+			instancesStore.cleanup();
+		};
 	});
 </script>
 
@@ -27,3 +35,6 @@
 	<!-- Global modpack install progress bar -->
 	<ModpackInstallBar />
 </SidebarInset>
+
+<!-- Global launching dialog -->
+<LaunchingDialog />

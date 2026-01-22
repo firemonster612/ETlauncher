@@ -131,12 +131,35 @@
 					<div class="flex items-center justify-between text-sm">
 						<span>{instance?.name ?? instanceId}</span>
 						<span class="text-muted-foreground capitalize">
-							{state.status.status}
-							{#if state.status.status === 'preparing' && 'message' in state.status}
-								- {state.status.message}
-							{/if}
-							{#if state.status.status === 'running' && 'pid' in state.status}
-								(PID: {state.status.pid})
+							{#if state.status.status === 'checkingAccount'}
+								Checking account...
+							{:else if state.status.status === 'refreshingToken'}
+								Refreshing token...
+							{:else if state.status.status === 'loadingVersion'}
+								Loading version...
+							{:else if state.status.status === 'verifyingFiles'}
+								Verifying files ({state.status.checked}/{state.status.total})
+							{:else if state.status.status === 'downloading'}
+								Downloading ({state.status.progress.completedFiles}/{state.status.progress
+									.totalFiles})
+							{:else if state.status.status === 'checkingJava'}
+								Checking Java {state.status.version}...
+							{:else if state.status.status === 'downloadingJava'}
+								Downloading Java {state.status.version} ({state.status.progress}%)
+							{:else if state.status.status === 'buildingClasspath'}
+								Building classpath...
+							{:else if state.status.status === 'launching'}
+								Launching...
+							{:else if state.status.status === 'running'}
+								Starting... (PID: {state.status.pid})
+							{:else if state.status.status === 'windowReady'}
+								Running (PID: {state.status.pid})
+							{:else if state.status.status === 'stopped'}
+								Stopped (exit: {state.status.exitCode})
+							{:else if state.status.status === 'crashed'}
+								Crashed: {state.status.message}
+							{:else}
+								{state.status.status}
 							{/if}
 						</span>
 					</div>

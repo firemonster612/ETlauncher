@@ -1,7 +1,10 @@
 use crate::error::AppError;
-use crate::models::instance::{CreateInstanceRequest, Instance, LoaderType, UpdateInstanceRequest};
+use crate::models::instance::{
+    CreateInstanceRequest, DownloadProgress, Instance, InstanceSetupStatus, LoaderType,
+    UpdateInstanceRequest,
+};
 use crate::models::ContentType;
-use crate::services::{manifest_service, resource_pool_service};
+use crate::services::{download_service, manifest_service, resource_pool_service};
 use crate::state::AppState;
 use crate::utils::paths::{
     get_instance_dir_with_base, get_instance_game_dir_with_base, get_instances_dir_with_base,
@@ -11,6 +14,7 @@ use rand::Rng;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::PathBuf;
+use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
 /// All available entity icons for random assignment
@@ -644,4 +648,77 @@ pub fn get_game_directory(state: &AppState, instance_id: &str) -> PathBuf {
 /// Check if an instance exists
 pub fn instance_exists(state: &AppState, instance_id: &str) -> bool {
     get_instance_config_path(state, instance_id).exists()
+}
+
+/// Emit instance setup status event
+fn emit_setup_status(app_handle: &AppHandle, instance_id: &str, status: InstanceSetupStatus) {
+    #[derive(serde::Serialize, Clone)]
+    struct SetupStatusEvent {
+        instance_id: String,
+        status: InstanceSetupStatus,
+    }
+
+    let _ = app_handle.emit(
+        "instance_setup_status",
+        SetupStatusEvent {
+            instance_id: instance_id.to_string(),
+            status,
+        },
+    );
+}
+
+/// Setup an instance by downloading game files
+/// This should be called after instance creation (and loader installation if applicable)
+pub async fn setup_instance(
+    state: &AppState,
+    instance_id: &str,
+    app_handle: &AppHandle,
+) -> Result<(), AppError> {
+    // Load instance
+    let instance = get_instance(state, instance_id)?;
+    let game_dir = get_game_directory(state, instance_id);
+
+    // Emit preparing status
+    emit_setup_status(
+        app_handle,
+        instance_id,
+        InstanceSetupStatus::Preparing {
+            message: "Loading version info...".to_string(),
+        },
+    );
+
+    // Get version info (with loader support if applicable)
+    let version_info = download_service::get_version_info_with_loader(
+        &instance.minecraft_version,
+        &instance.loader_type,
+        instance.loader_version.as_deref(),
+        &game_dir,
+    )
+    .await?;
+
+    // Emit downloading status - initial state
+    emit_setup_status(
+        app_handle,
+        instance_id,
+        InstanceSetupStatus::DownloadingGameFiles {
+            progress: DownloadProgress::default(),
+        },
+    );
+
+    // Download game files using the merged version info
+    // The download_service will emit download_progress events, but we also want
+    // to emit instance_setup_status events. We'll listen for download_progress
+    // events in the frontend and update the setup status accordingly.
+    download_service::download_game_files_with_version(
+        instance_id,
+        &instance.minecraft_version,
+        &version_info,
+        Some(app_handle),
+    )
+    .await?;
+
+    // Emit complete status
+    emit_setup_status(app_handle, instance_id, InstanceSetupStatus::Complete);
+
+    Ok(())
 }

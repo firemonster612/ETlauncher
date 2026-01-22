@@ -176,18 +176,50 @@ pub struct UpdateInstanceRequest {
 pub enum LaunchStatus {
     #[serde(rename = "idle")]
     Idle,
-    #[serde(rename = "preparing")]
-    Preparing { message: String },
+    #[serde(rename = "checkingAccount")]
+    CheckingAccount,
+    #[serde(rename = "refreshingToken")]
+    RefreshingToken,
+    #[serde(rename = "loadingVersion")]
+    LoadingVersion,
+    #[serde(rename = "verifyingFiles")]
+    VerifyingFiles { checked: u32, total: u32 },
     #[serde(rename = "downloading")]
     Downloading { progress: DownloadProgress },
+    #[serde(rename = "checkingJava")]
+    CheckingJava { version: u32 },
+    #[serde(rename = "downloadingJava")]
+    DownloadingJava { version: u32, progress: u32 },
+    #[serde(rename = "buildingClasspath")]
+    BuildingClasspath,
     #[serde(rename = "launching")]
     Launching,
     #[serde(rename = "running")]
     Running { pid: u32 },
+    #[serde(rename = "windowReady")]
+    WindowReady { pid: u32 },
     #[serde(rename = "stopped")]
     Stopped { exit_code: i32 },
     #[serde(rename = "crashed")]
     Crashed { message: String },
+}
+
+/// Instance setup status (used during instance creation)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "status")]
+pub enum InstanceSetupStatus {
+    #[serde(rename = "pending")]
+    Pending,
+    #[serde(rename = "preparing")]
+    Preparing { message: String },
+    #[serde(rename = "downloadingGameFiles")]
+    DownloadingGameFiles { progress: DownloadProgress },
+    #[serde(rename = "installingLoader")]
+    InstallingLoader { stage: String, progress: u32 },
+    #[serde(rename = "complete")]
+    Complete,
+    #[serde(rename = "failed")]
+    Failed { message: String },
 }
 
 /// Download progress information
