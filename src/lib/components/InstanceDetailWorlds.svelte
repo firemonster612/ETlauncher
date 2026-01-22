@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ArrowLeft, FolderOpen, Loader2, Play, Search, Trash2 } from '@lucide/svelte';
-	import { ask } from '@tauri-apps/plugin-dialog';
+	import { alertDialogStore } from '$lib/stores/alertDialog.svelte';
 	import { Button } from '$lib/ui/button';
 	import { Input } from '$lib/ui/input';
 	import * as instanceDetailService from '$lib/services/instance-detail';
@@ -130,9 +130,12 @@
 	}
 
 	async function handleDelete(world: World) {
-		const confirmed = await ask(`Delete world "${world.name}"? This action cannot be undone.`, {
+		const confirmed = await alertDialogStore.confirm({
 			title: 'Delete World',
-			kind: 'warning',
+			message: `Delete world "${world.name}"? This action cannot be undone.`,
+			type: 'warning',
+			confirmText: 'Delete',
+			cancelText: 'Cancel',
 		});
 
 		if (!confirmed) {

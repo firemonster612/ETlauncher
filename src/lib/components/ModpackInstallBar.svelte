@@ -1,19 +1,19 @@
 <script lang="ts">
 	import { Loader2, StopCircle } from '@lucide/svelte';
-	import { ask } from '@tauri-apps/plugin-dialog';
 	import { modpackInstallStore } from '$lib/stores/modpackInstall.svelte';
+	import { alertDialogStore } from '$lib/stores/alertDialog.svelte';
 	import { Button } from '$lib/ui/button';
 
 	async function handleCancel() {
 		if (!modpackInstallStore.modpackName || modpackInstallStore.isCancelling) return;
 
-		const confirmed = await ask(
-			`This will stop the download and remove any partially installed files.`,
-			{
-				title: `Cancel installation of "${modpackInstallStore.modpackName}"?`,
-				kind: 'warning',
-			}
-		);
+		const confirmed = await alertDialogStore.confirm({
+			title: `Cancel installation of "${modpackInstallStore.modpackName}"?`,
+			message: 'This will stop the download and remove any partially installed files.',
+			type: 'warning',
+			confirmText: 'Cancel Installation',
+			cancelText: 'Continue',
+		});
 
 		if (confirmed) {
 			modpackInstallStore.cancel();

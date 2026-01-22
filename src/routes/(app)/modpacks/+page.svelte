@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Search, Loader2, AlertTriangle, ArrowUpDown, X, Filter } from '@lucide/svelte';
-	import { ask } from '@tauri-apps/plugin-dialog';
 	import { Button } from '$lib/ui/button';
 	import { Input } from '$lib/ui/input';
 	import * as Select from '$lib/ui/select';
@@ -9,6 +8,7 @@
 	import { modpackInstallStore } from '$lib/stores/modpackInstall.svelte';
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { versionsStore } from '$lib/stores/versions.svelte';
+	import { alertDialogStore } from '$lib/stores/alertDialog.svelte';
 	import ModpackDetailModalV2 from '$lib/components/modpack/ModpackDetailModalV2.svelte';
 	import PopularModpacksSection from '$lib/components/modpack/PopularModpacksSection.svelte';
 	import LatestVersionSection from '$lib/components/modpack/LatestVersionSection.svelte';
@@ -196,22 +196,30 @@
 
 		if (instance) {
 			closeModpackDetail();
-			alert(`Successfully installed ${selectedModpackDetail.name}!`);
+			alertDialogStore.alert({
+				title: 'Installation Complete',
+				message: `Successfully installed ${selectedModpackDetail.name}!`,
+				type: 'success',
+			});
 		} else if (modpacksStore.installError && !modpacksStore.installError.includes('CANCELLED')) {
-			alert(`Failed to install: ${modpacksStore.installError}`);
+			alertDialogStore.alert({
+				title: 'Installation Failed',
+				message: `Failed to install: ${modpacksStore.installError}`,
+				type: 'error',
+			});
 		}
 	}
 
 	async function handleCancelInstall() {
 		if (!modpackInstallStore.modpackName || modpackInstallStore.isCancelling) return;
 
-		const confirmed = await ask(
-			`This will stop the download and remove any partially installed files.`,
-			{
-				title: `Cancel installation of "${modpackInstallStore.modpackName}"?`,
-				kind: 'warning',
-			}
-		);
+		const confirmed = await alertDialogStore.confirm({
+			title: `Cancel installation of "${modpackInstallStore.modpackName}"?`,
+			message: 'This will stop the download and remove any partially installed files.',
+			type: 'warning',
+			confirmText: 'Cancel Installation',
+			cancelText: 'Continue',
+		});
 
 		if (confirmed) {
 			modpackInstallStore.cancel();

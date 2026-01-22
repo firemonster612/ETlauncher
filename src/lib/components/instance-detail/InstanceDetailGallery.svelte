@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Loader2, Search, Trash2, Calendar, Image } from '@lucide/svelte';
 	import { convertFileSrc } from '@tauri-apps/api/core';
-	import { ask } from '@tauri-apps/plugin-dialog';
+	import { alertDialogStore } from '$lib/stores/alertDialog.svelte';
 	import { Button } from '$lib/ui/button';
 	import { Input } from '$lib/ui/input';
 	import * as Select from '$lib/ui/select';
@@ -156,9 +156,12 @@
 	async function handleDelete(shot: Screenshot, event: MouseEvent) {
 		event.stopPropagation();
 
-		const confirmed = await ask(`Delete screenshot "${shot.filename}"?`, {
+		const confirmed = await alertDialogStore.confirm({
 			title: 'Delete Screenshot',
-			kind: 'warning',
+			message: `Delete screenshot "${shot.filename}"?`,
+			type: 'warning',
+			confirmText: 'Delete',
+			cancelText: 'Cancel',
 		});
 
 		if (!confirmed) return;
