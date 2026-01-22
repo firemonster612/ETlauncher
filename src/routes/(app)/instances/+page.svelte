@@ -22,6 +22,7 @@
 	import { versionsStore } from '$lib/stores/versions.svelte';
 	import { launchStore } from '$lib/stores/launch.svelte';
 	import { accountsStore } from '$lib/stores/accounts.svelte';
+	import { alertDialogStore } from '$lib/stores/alertDialog.svelte';
 	import ContentBrowser from '$lib/components/ContentBrowser.svelte';
 	import InstanceSettings from '$lib/components/InstanceSettings.svelte';
 	import InstanceCard from '$lib/components/InstanceCard.svelte';
@@ -246,7 +247,12 @@
 	async function handleLaunch(instanceId: string) {
 		// Check if user is logged in
 		if (!accountsStore.activeAccount) {
-			alert('Please log in with a Microsoft account first. Go to Accounts and set one as active.');
+			alertDialogStore.alert({
+				title: 'Account Required',
+				message:
+					'Please log in with a Microsoft account first. Go to Accounts and set one as active.',
+				type: 'warning',
+			});
 			return;
 		}
 

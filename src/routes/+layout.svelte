@@ -6,6 +6,7 @@
 	import Titlebar from '$lib/components/layout/Titlebar.svelte';
 	import TutorialOverlay from '$lib/components/TutorialOverlay.svelte';
 	import TutorialWelcome from '$lib/components/TutorialWelcome.svelte';
+	import AlertDialog from '$lib/components/AlertDialog.svelte';
 	import { tutorialStore } from '$lib/stores/tutorial.svelte';
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { accountsStore } from '$lib/stores/accounts.svelte';
@@ -37,3 +38,6 @@
 <!-- Tutorial System -->
 <TutorialWelcome open={tutorialStore.showWelcome} />
 <TutorialOverlay />
+
+<!-- Global Alert Dialog -->
+<AlertDialog />

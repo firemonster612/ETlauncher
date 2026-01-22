@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/ui/button';
 	import { accountsStore } from '$lib/stores/accounts.svelte';
+	import { alertDialogStore } from '$lib/stores/alertDialog.svelte';
 	import { UserPlus, LogOut, Star, Copy, Check, ExternalLink } from '@lucide/svelte';
 	import { openUrl } from '@tauri-apps/plugin-opener';
 
@@ -16,7 +17,14 @@
 	}
 
 	async function logout(accountId: string) {
-		if (confirm('Are you sure you want to log out this account?')) {
+		const confirmed = await alertDialogStore.confirm({
+			title: 'Log Out Account',
+			message: 'Are you sure you want to log out this account?',
+			type: 'warning',
+			confirmText: 'Log Out',
+			cancelText: 'Cancel',
+		});
+		if (confirmed) {
 			await accountsStore.deleteAccount(accountId);
 		}
 	}
