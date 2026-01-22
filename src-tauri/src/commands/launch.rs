@@ -49,6 +49,7 @@ pub fn get_running_instances(state: State<'_, AppState>) -> Vec<String> {
 }
 
 /// Kill a running Minecraft instance
+/// First tries graceful shutdown (SIGTERM), then forces kill (SIGKILL) if needed
 #[tauri::command]
 pub fn kill_instance(instance_id: String, state: State<'_, AppState>) -> Result<(), CommandError> {
     let running = state.running_instances.read();
@@ -57,16 +58,64 @@ pub fn kill_instance(instance_id: String, state: State<'_, AppState>) -> Result<
         let pid = instance.pid;
         drop(running); // Release lock before killing
 
-        // Kill the process
         #[cfg(unix)]
         {
             use std::process::Command;
+            use std::thread;
+            use std::time::Duration;
+
+            // First try SIGTERM (graceful shutdown)
+            let _ = Command::new("kill")
+                .args(["-15", &pid.to_string()])
+                .output();
+
+            // Wait up to 3 seconds for graceful exit
+            for _ in 0..6 {
+                thread::sleep(Duration::from_millis(500));
+                // Check if process is still running
+                let check = Command::new("kill").args(["-0", &pid.to_string()]).output();
+                if check.is_err() || !check.unwrap().status.success() {
+                    // Process has exited
+                    state.unregister_running_instance(&instance_id);
+                    return Ok(());
+                }
+            }
+
+            // Process still running, force kill with SIGKILL
             let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
         }
 
         #[cfg(windows)]
         {
             use std::process::Command;
+            use std::thread;
+            use std::time::Duration;
+
+            // First try graceful shutdown (sends WM_CLOSE)
+            let mut cmd = Command::new("taskkill");
+            cmd.args(["/PID", &pid.to_string()])
+                .creation_flags(CREATE_NO_WINDOW);
+            let _ = cmd.output();
+
+            // Wait up to 3 seconds for graceful exit
+            for _ in 0..6 {
+                thread::sleep(Duration::from_millis(500));
+                // Check if process is still running
+                let mut check = Command::new("tasklist");
+                check
+                    .args(["/FI", &format!("PID eq {}", pid), "/NH"])
+                    .creation_flags(CREATE_NO_WINDOW);
+                if let Ok(output) = check.output() {
+                    let output_str = String::from_utf8_lossy(&output.stdout);
+                    if !output_str.contains(&pid.to_string()) {
+                        // Process has exited
+                        state.unregister_running_instance(&instance_id);
+                        return Ok(());
+                    }
+                }
+            }
+
+            // Process still running, force kill
             let mut cmd = Command::new("taskkill");
             cmd.args(["/F", "/PID", &pid.to_string()])
                 .creation_flags(CREATE_NO_WINDOW);

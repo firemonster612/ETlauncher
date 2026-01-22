@@ -79,6 +79,7 @@ pub fn run() {
             commands::instance::duplicate_instance,
             commands::instance::open_instance_folder,
             commands::instance::export_instance,
+            commands::instance::setup_instance,
             // Instance detail commands
             commands::instance_detail::get_instance_detail,
             commands::instance_detail::get_instance_screenshots,

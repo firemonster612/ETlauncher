@@ -41,26 +41,14 @@ pub async fn launch_instance(
         ));
     }
 
-    // Emit preparing status
-    emit_launch_status(
-        app_handle,
-        &instance_id,
-        LaunchStatus::Preparing {
-            message: "Checking account...".to_string(),
-        },
-    );
+    // Emit checking account status
+    emit_launch_status(app_handle, &instance_id, LaunchStatus::CheckingAccount);
 
     // Get and verify account
     let account = account_service::get_account(account_id)?;
 
     // Get valid access token (will refresh if needed)
-    emit_launch_status(
-        app_handle,
-        &instance_id,
-        LaunchStatus::Preparing {
-            message: "Getting access token...".to_string(),
-        },
-    );
+    emit_launch_status(app_handle, &instance_id, LaunchStatus::RefreshingToken);
 
     let http_client = reqwest::Client::new();
     let access_token = account_service::get_valid_access_token(&http_client, account_id).await?;
@@ -69,13 +57,7 @@ pub async fn launch_instance(
     let game_dir = instance_service::get_game_directory(&state, &instance.id);
 
     // Get version info (with loader support) - do this FIRST so we know all libraries needed
-    emit_launch_status(
-        app_handle,
-        &instance_id,
-        LaunchStatus::Preparing {
-            message: "Loading version info...".to_string(),
-        },
-    );
+    emit_launch_status(app_handle, &instance_id, LaunchStatus::LoadingVersion);
 
     let version_info = download_service::get_version_info_with_loader(
         &instance.minecraft_version,
@@ -85,16 +67,8 @@ pub async fn launch_instance(
     )
     .await?;
 
-    // Emit downloading status
-    emit_launch_status(
-        app_handle,
-        &instance_id,
-        LaunchStatus::Preparing {
-            message: "Downloading game files...".to_string(),
-        },
-    );
-
     // Download game files using the merged version info (includes loader libraries)
+    // The download_game_files_with_version function will emit its own Downloading status events
     download_service::download_game_files_with_version(
         &instance.id,
         &instance.minecraft_version,
@@ -112,15 +86,15 @@ pub async fn launch_instance(
         emit_launch_status(
             app_handle,
             &instance_id,
-            LaunchStatus::Preparing {
-                message: format!("Checking Java {}...", required_java),
+            LaunchStatus::CheckingJava {
+                version: required_java,
             },
         );
         java_service::ensure_java_installed(required_java, &instance_id, app_handle).await?
     };
 
-    // Emit launching status
-    emit_launch_status(app_handle, &instance_id, LaunchStatus::Launching);
+    // Emit building classpath status
+    emit_launch_status(app_handle, &instance_id, LaunchStatus::BuildingClasspath);
 
     // Build classpath (pass game_dir for Forge libraries)
     let classpath = download_service::get_classpath(
@@ -341,6 +315,9 @@ pub async fn launch_instance(
     }
     eprintln!("[launch] =========================");
 
+    // Emit launching status
+    emit_launch_status(app_handle, &instance_id, LaunchStatus::Launching);
+
     // Spawn the process
     let mut cmd = Command::new(&java_path);
     cmd.args(&all_args)
@@ -363,14 +340,30 @@ pub async fn launch_instance(
     // Emit running status
     emit_launch_status(app_handle, &instance_id, LaunchStatus::Running { pid });
 
+    // Shared flag to track if window ready has been emitted
+    let window_ready_emitted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
     // Capture stdout/stderr in background threads
     let app_handle_stdout = app_handle.clone();
     let instance_id_stdout = instance_id.clone();
+    let window_ready_stdout = window_ready_emitted.clone();
 
     if let Some(stdout) = child.stdout.take() {
         thread::spawn(move || {
             let reader = BufReader::new(stdout);
             for line in reader.lines().map_while(Result::ok) {
+                // Check for window ready indicators
+                if !window_ready_stdout.load(std::sync::atomic::Ordering::Relaxed)
+                    && is_window_ready_log(&line)
+                {
+                    window_ready_stdout.store(true, std::sync::atomic::Ordering::Relaxed);
+                    emit_launch_status(
+                        &app_handle_stdout,
+                        &instance_id_stdout,
+                        LaunchStatus::WindowReady { pid },
+                    );
+                }
+
                 emit_game_log(
                     &app_handle_stdout,
                     &instance_id_stdout,
@@ -383,11 +376,24 @@ pub async fn launch_instance(
 
     let app_handle_stderr = app_handle.clone();
     let instance_id_stderr = instance_id.clone();
+    let window_ready_stderr = window_ready_emitted.clone();
 
     if let Some(stderr) = child.stderr.take() {
         thread::spawn(move || {
             let reader = BufReader::new(stderr);
             for line in reader.lines().map_while(Result::ok) {
+                // Check for window ready indicators (some loaders log to stderr)
+                if !window_ready_stderr.load(std::sync::atomic::Ordering::Relaxed)
+                    && is_window_ready_log(&line)
+                {
+                    window_ready_stderr.store(true, std::sync::atomic::Ordering::Relaxed);
+                    emit_launch_status(
+                        &app_handle_stderr,
+                        &instance_id_stderr,
+                        LaunchStatus::WindowReady { pid },
+                    );
+                }
+
                 let level = if line.contains("ERROR") || line.contains("Exception") {
                     LogLevel::Error
                 } else if line.contains("WARN") {
@@ -525,4 +531,52 @@ fn emit_game_log(app_handle: &AppHandle, instance_id: &str, line: &str, level: L
     };
 
     let _ = app_handle.emit("game_log", log);
+}
+
+/// Check if a log line indicates the Minecraft window is ready
+/// This detects various patterns from vanilla, Fabric, Forge, etc.
+fn is_window_ready_log(line: &str) -> bool {
+    // GLFW window creation - logs dimensions like "Created: 854x480"
+    if line.contains("Created:") && line.contains("x") {
+        // Check for dimension pattern (number x number)
+        let parts: Vec<&str> = line.split("Created:").collect();
+        if parts.len() > 1 {
+            let after = parts[1].trim();
+            if after.split('x').count() == 2 {
+                let dims: Vec<&str> = after.split('x').collect();
+                if dims[0].trim().parse::<u32>().is_ok()
+                    && dims[1]
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("")
+                        .parse::<u32>()
+                        .is_ok()
+                {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Backend library initialized (LWJGL)
+    if line.contains("Backend library: LWJGL") {
+        return true;
+    }
+
+    // OpenGL renderer info - appears after window is created
+    if line.contains("OpenGL Renderer:") || line.contains("GL Renderer:") {
+        return true;
+    }
+
+    // Fabric/Quilt specific - game ready indicator
+    if line.contains("[main/INFO]: Setting user:") {
+        return true;
+    }
+
+    // Sound system initialized - happens after window
+    if line.contains("OpenAL initialized") || line.contains("Sound engine started") {
+        return true;
+    }
+
+    false
 }

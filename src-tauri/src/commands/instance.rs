@@ -4,7 +4,7 @@ use crate::services::{instance_export_service, instance_service};
 use crate::state::AppState;
 use std::path::PathBuf;
 use std::process::Command;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -130,4 +130,17 @@ pub async fn export_instance(
         .map_err(CommandError::from)?;
 
     Ok(result_path.to_string_lossy().to_string())
+}
+
+/// Setup an instance by downloading game files
+/// This is called after instance creation to download client JAR, libraries, and assets
+#[tauri::command]
+pub async fn setup_instance(
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+    instance_id: String,
+) -> Result<(), CommandError> {
+    instance_service::setup_instance(&state, &instance_id, &app_handle)
+        .await
+        .map_err(CommandError::from)
 }

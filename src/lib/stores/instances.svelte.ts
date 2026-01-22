@@ -3,10 +3,14 @@ import type {
 	CreateInstanceRequest,
 	UpdateInstanceRequest,
 	LoaderType,
+	InstanceSetupStatus,
+	DownloadProgress,
 } from '$lib/types';
 import type { LoaderInstallProgress } from '$lib/types/loader';
 import * as instanceService from '$lib/services/instance';
 import * as loaderService from '$lib/services/loader';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { SvelteMap } from 'svelte/reactivity';
 
 /** Create the instances store */
 function createInstancesStore() {
@@ -19,6 +23,16 @@ function createInstancesStore() {
 	let isInstallingLoader = $state(false);
 	let loaderInstallProgress = $state<LoaderInstallProgress | null>(null);
 	let loaderInstallError = $state<string | null>(null);
+
+	// Instance setup state
+	// eslint-disable-next-line svelte/no-unnecessary-state-wrap
+	let setupStatuses: Map<string, InstanceSetupStatus> = $state(new SvelteMap());
+	let setupError = $state<string | null>(null);
+
+	// Event listeners
+	let unlistenSetupStatus: UnlistenFn | null = null;
+	let unlistenDownloadProgress: UnlistenFn | null = null;
+	let initialized = false;
 
 	return {
 		// Getters
@@ -45,6 +59,12 @@ function createInstancesStore() {
 		},
 		get loaderInstallError() {
 			return loaderInstallError;
+		},
+		get setupStatuses() {
+			return setupStatuses;
+		},
+		get setupError() {
+			return setupError;
 		},
 
 		/** Load all instances from backend */
@@ -75,10 +95,24 @@ function createInstancesStore() {
 				const instance = await instanceService.createInstance(request);
 				instances = [instance, ...instances];
 
-				// If a non-vanilla loader is specified, install it
+				// If a non-vanilla loader is specified, install it first
 				if (request.loaderType && request.loaderType !== 'vanilla' && request.loaderVersion) {
-					await this.installLoader(instance.id, request.loaderType, request.loaderVersion);
+					const loaderSuccess = await this.installLoader(
+						instance.id,
+						request.loaderType,
+						request.loaderVersion
+					);
+					if (!loaderSuccess) {
+						// Loader failed, but instance was created - don't setup yet
+						return instance;
+					}
 				}
+
+				// Setup instance (download game files) - runs in background
+				// Don't await - let it run asynchronously
+				this.setupInstance(instance.id).catch((e) => {
+					console.error('Instance setup failed:', e);
+				});
 
 				return instance;
 			} catch (e: unknown) {
@@ -170,6 +204,109 @@ function createInstancesStore() {
 		/** Clear error */
 		clearError() {
 			error = null;
+		},
+
+		/** Clear setup error */
+		clearSetupError() {
+			setupError = null;
+		},
+
+		/** Get setup status for a specific instance */
+		getSetupStatus(instanceId: string): InstanceSetupStatus | null {
+			return setupStatuses.get(instanceId) ?? null;
+		},
+
+		/** Check if an instance is currently being set up */
+		isSettingUp(instanceId: string): boolean {
+			const status = setupStatuses.get(instanceId);
+			if (!status) return false;
+			return (
+				status.status === 'pending' ||
+				status.status === 'preparing' ||
+				status.status === 'downloadingGameFiles' ||
+				status.status === 'installingLoader'
+			);
+		},
+
+		/** Setup an instance by downloading game files */
+		async setupInstance(instanceId: string): Promise<boolean> {
+			setupError = null;
+
+			// Set initial pending status
+			setupStatuses.set(instanceId, { status: 'pending' });
+			setupStatuses = new SvelteMap(setupStatuses);
+
+			try {
+				await instanceService.setupInstance(instanceId);
+				return true;
+			} catch (e: unknown) {
+				setupError = e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
+				setupStatuses.set(instanceId, {
+					status: 'failed',
+					message: setupError,
+				});
+				setupStatuses = new SvelteMap(setupStatuses);
+				console.error('Failed to setup instance:', e);
+				return false;
+			}
+		},
+
+		/** Initialize event listeners */
+		async init() {
+			if (initialized) {
+				console.log('[instancesStore] Already initialized, skipping');
+				return;
+			}
+			initialized = true;
+
+			// Listen for instance setup status events
+			unlistenSetupStatus = await listen<{ instance_id: string; status: InstanceSetupStatus }>(
+				'instance_setup_status',
+				(event) => {
+					const { instance_id, status } = event.payload;
+
+					setupStatuses.set(instance_id, status);
+					setupStatuses = new SvelteMap(setupStatuses);
+
+					// Clean up completed/failed statuses after a delay
+					if (status.status === 'complete' || status.status === 'failed') {
+						setTimeout(() => {
+							setupStatuses.delete(instance_id);
+							setupStatuses = new SvelteMap(setupStatuses);
+						}, 5000);
+					}
+				}
+			);
+
+			// Listen for download progress events to update setup status
+			unlistenDownloadProgress = await listen<DownloadProgress>('download_progress', (event) => {
+				// Find which instance this download is for by checking active setup statuses
+				// We update all instances in "downloadingGameFiles" state since the backend
+				// only sends one instance's downloads at a time
+				for (const [instanceId, status] of setupStatuses.entries()) {
+					if (
+						status.status === 'pending' ||
+						status.status === 'preparing' ||
+						status.status === 'downloadingGameFiles'
+					) {
+						setupStatuses.set(instanceId, {
+							status: 'downloadingGameFiles',
+							progress: event.payload,
+						});
+						setupStatuses = new SvelteMap(setupStatuses);
+						break;
+					}
+				}
+			});
+		},
+
+		/** Cleanup event listeners */
+		cleanup() {
+			unlistenSetupStatus?.();
+			unlistenDownloadProgress?.();
+			unlistenSetupStatus = null;
+			unlistenDownloadProgress = null;
+			initialized = false;
 		},
 	};
 }

@@ -68,7 +68,7 @@ function createLaunchStore() {
 		/** Check if an instance is running */
 		isRunning(instanceId: string): boolean {
 			const status = launchStates.get(instanceId)?.status;
-			return status?.status === 'running';
+			return status?.status === 'running' || status?.status === 'windowReady';
 		},
 
 		/** Get logs for a specific instance */
@@ -80,10 +80,10 @@ function createLaunchStore() {
 		async launch(instanceId: string, accountId: string): Promise<number | null> {
 			error = null;
 
-			// Set initial preparing state
+			// Set initial checking account state
 			launchStates.set(instanceId, {
 				instanceId,
-				status: { status: 'preparing', message: 'Starting...' },
+				status: { status: 'checkingAccount' },
 			});
 			launchStates = new SvelteMap(launchStates);
 

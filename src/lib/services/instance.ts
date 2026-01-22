@@ -43,3 +43,8 @@ export async function openInstanceFolder(instanceId: string): Promise<void> {
 export async function exportInstance(instanceId: string, outputPath: string): Promise<string> {
 	return invoke<string>('export_instance', { instanceId, outputPath });
 }
+
+/** Setup an instance by downloading game files (client JAR, libraries, assets) */
+export async function setupInstance(instanceId: string): Promise<void> {
+	return invoke('setup_instance', { instanceId });
+}

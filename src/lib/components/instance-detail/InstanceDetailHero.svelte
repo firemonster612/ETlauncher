@@ -79,15 +79,26 @@
 	}
 
 	function handlePlayButtonClick() {
-		if (status === 'running') {
+		if (status === 'running' || status === 'windowReady') {
 			onKill();
 		} else {
 			onLaunch();
 		}
 	}
 
-	const isLaunching = $derived(status === 'preparing' || status === 'launching');
-	const isRunning = $derived(status === 'running');
+	const isLaunching = $derived(
+		status === 'checkingAccount' ||
+			status === 'refreshingToken' ||
+			status === 'loadingVersion' ||
+			status === 'verifyingFiles' ||
+			status === 'downloading' ||
+			status === 'checkingJava' ||
+			status === 'downloadingJava' ||
+			status === 'buildingClasspath' ||
+			status === 'launching' ||
+			status === 'running'
+	);
+	const isRunning = $derived(status === 'running' || status === 'windowReady');
 	const canLaunch = $derived(!status || status === 'stopped' || status === 'crashed');
 </script>
 
