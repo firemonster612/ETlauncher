@@ -23,7 +23,13 @@
 	} from '@lucide/svelte';
 	import * as settingsService from '$lib/services/settings';
 	import ColorPicker from '$lib/components/ColorPicker.svelte';
-	import type { ResourcePoolStats, LinkStrategy, Theme, ColorPreset, ThemeColors } from '$lib/types';
+	import type {
+		ResourcePoolStats,
+		LinkStrategy,
+		Theme,
+		ColorPreset,
+		ThemeColors,
+	} from '$lib/types';
 
 	let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
