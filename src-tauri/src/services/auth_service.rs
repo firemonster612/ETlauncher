@@ -18,10 +18,8 @@ const MC_PROFILE_URL: &str = "https://api.minecraftservices.com/minecraft/profil
 const MC_SKINS_URL: &str = "https://api.minecraftservices.com/minecraft/profile/skins";
 const MC_CAPES_URL: &str = "https://api.minecraftservices.com/minecraft/profile/capes/active";
 
-// Client ID - using Prism Launcher's until ETlauncher's app is approved
-// ETlauncher App ID: 1fe9961c-2553-4cab-8286-1279defbfe1e
-// TODO: Switch to ETlauncher's client ID once approved at https://aka.ms/mce-reviewappid
-const CLIENT_ID: &str = "c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb";
+// ETlauncher Microsoft OAuth Client ID
+const CLIENT_ID: &str = "1fe9961c-2553-4cab-8286-1279defbfe1e";
 
 /// Start the device code authentication flow
 pub async fn start_device_code_flow(client: &Client) -> Result<DeviceCodeResponse, AppError> {
