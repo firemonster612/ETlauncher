@@ -73,11 +73,12 @@ pub async fn search_modpacks(
                     .await
                     .map_err(CommandError::from)?
             }
-            ModpackPlatform::ATLauncher => {
-                atlauncher_service::search_modpacks(&state.http_client, &params)
-                    .await
-                    .map_err(CommandError::from)?
-            }
+            ModpackPlatform::ATLauncher => ModpackSearchResult {
+                modpacks: vec![],
+                total_count: 0,
+                page: params.page.unwrap_or(0),
+                page_size: params.page_size.unwrap_or(20),
+            },
         }
     };
 
@@ -106,7 +107,6 @@ async fn search_all_platforms(
     // Create futures for each platform search
     let modrinth_future = modrinth_service::search_modpacks(&state.http_client, params);
     let ftb_future = ftb_service::search_modpacks(&state.http_client, params);
-    let atlauncher_future = atlauncher_service::search_modpacks(&state.http_client, params);
 
     // Technic uses trending endpoint when no query provided
     let technic_future = technic_service::search_modpacks(&state.http_client, params);
@@ -129,7 +129,6 @@ async fn search_all_platforms(
     let results = tokio::join!(
         modrinth_future,
         ftb_future,
-        atlauncher_future,
         technic_future,
         curseforge_future
     );
@@ -137,7 +136,6 @@ async fn search_all_platforms(
     // Collect successful results, log errors but don't fail
     let mut modrinth_modpacks: Vec<Modpack> = Vec::new();
     let mut ftb_modpacks: Vec<Modpack> = Vec::new();
-    let mut atlauncher_modpacks: Vec<Modpack> = Vec::new();
     let mut technic_modpacks: Vec<Modpack> = Vec::new();
     let mut curseforge_modpacks: Vec<Modpack> = Vec::new();
     let mut total_count: u64 = 0;
@@ -159,26 +157,18 @@ async fn search_all_platforms(
     }
 
     if let Ok(result) = results.2 {
-        println!("[modpack_cmd] ATLauncher: {} packs", result.modpacks.len());
-        total_count += result.total_count;
-        atlauncher_modpacks = result.modpacks;
-    } else if let Err(e) = &results.2 {
-        println!("[modpack_cmd] ATLauncher error: {:?}", e);
-    }
-
-    if let Ok(result) = results.3 {
         println!("[modpack_cmd] Technic: {} packs", result.modpacks.len());
         total_count += result.total_count;
         technic_modpacks = result.modpacks;
-    } else if let Err(e) = &results.3 {
+    } else if let Err(e) = &results.2 {
         println!("[modpack_cmd] Technic error: {:?}", e);
     }
 
-    if let Ok(result) = results.4 {
+    if let Ok(result) = results.3 {
         println!("[modpack_cmd] CurseForge: {} packs", result.modpacks.len());
         total_count += result.total_count;
         curseforge_modpacks = result.modpacks;
-    } else if let Err(e) = &results.4 {
+    } else if let Err(e) = &results.3 {
         println!("[modpack_cmd] CurseForge error: {:?}", e);
     }
 
@@ -189,14 +179,12 @@ async fn search_all_platforms(
             // and interleave results so "All" doesn't look grouped by platform.
             let mut modrinth = VecDeque::from(modrinth_modpacks);
             let mut ftb = VecDeque::from(ftb_modpacks);
-            let mut atlauncher = VecDeque::from(atlauncher_modpacks);
             let mut technic = VecDeque::from(technic_modpacks);
             let mut curseforge = VecDeque::from(curseforge_modpacks);
 
             let mut combined = Vec::new();
             while !(modrinth.is_empty()
                 && ftb.is_empty()
-                && atlauncher.is_empty()
                 && technic.is_empty()
                 && curseforge.is_empty())
             {
@@ -209,9 +197,6 @@ async fn search_all_platforms(
                 if let Some(m) = ftb.pop_front() {
                     combined.push(m);
                 }
-                if let Some(m) = atlauncher.pop_front() {
-                    combined.push(m);
-                }
                 if let Some(m) = technic.pop_front() {
                     combined.push(m);
                 }
@@ -222,7 +207,6 @@ async fn search_all_platforms(
             let mut combined = Vec::new();
             combined.extend(modrinth_modpacks);
             combined.extend(ftb_modpacks);
-            combined.extend(atlauncher_modpacks);
             combined.extend(technic_modpacks);
             combined.extend(curseforge_modpacks);
             combined.sort_by_key(|m| Reverse(m.updated_at.unwrap_or(0)));
@@ -232,7 +216,6 @@ async fn search_all_platforms(
             let mut combined = Vec::new();
             combined.extend(modrinth_modpacks);
             combined.extend(ftb_modpacks);
-            combined.extend(atlauncher_modpacks);
             combined.extend(technic_modpacks);
             combined.extend(curseforge_modpacks);
             combined.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
@@ -242,7 +225,6 @@ async fn search_all_platforms(
             let mut combined = Vec::new();
             combined.extend(modrinth_modpacks);
             combined.extend(ftb_modpacks);
-            combined.extend(atlauncher_modpacks);
             combined.extend(technic_modpacks);
             combined.extend(curseforge_modpacks);
             combined.sort_by(|a, b| b.downloads.cmp(&a.downloads));
@@ -253,7 +235,6 @@ async fn search_all_platforms(
             let mut combined = Vec::new();
             combined.extend(modrinth_modpacks);
             combined.extend(ftb_modpacks);
-            combined.extend(atlauncher_modpacks);
             combined.extend(technic_modpacks);
             combined.extend(curseforge_modpacks);
             combined.sort_by_key(|m| Reverse(m.created_at.unwrap_or(0)));

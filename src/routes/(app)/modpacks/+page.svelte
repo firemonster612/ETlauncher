@@ -92,7 +92,6 @@
 		'curseforge',
 		'ftb',
 		'technic',
-		'atlauncher',
 	];
 
 	const sortOptions: { value: ModpackSortBy; label: string }[] = [
