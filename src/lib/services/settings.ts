@@ -19,6 +19,13 @@ export async function updateSettings(updates: Partial<AppSettings>): Promise<App
 		showSnapshots: updates.showSnapshots,
 		showOldVersions: updates.showOldVersions,
 		theme: updates.theme,
+		colorPreset: updates.colorPreset,
+		customColors: updates.customColors,
+		disableHoverLift: updates.disableHoverLift,
+		fontFamily: updates.fontFamily,
+		customFont: updates.customFont,
+		sidebarStyle: updates.sidebarStyle,
+		customSidebarColor: updates.customSidebarColor,
 		setupCompleted: updates.setupCompleted,
 		curseforgeApiKey: updates.curseforgeApiKey,
 		resourcePool: updates.resourcePool,
@@ -35,6 +42,12 @@ export async function resetSettings(): Promise<AppSettings> {
 /** Get the default instances path */
 export async function getDefaultInstancesPath(): Promise<string> {
 	return invoke<string>('get_default_instances_path');
+}
+
+/** Get the system theme (light or dark) from Tauri's native detection */
+export async function getSystemTheme(): Promise<'light' | 'dark'> {
+	const theme = await invoke<string>('get_system_theme');
+	return theme === 'light' ? 'light' : 'dark';
 }
 
 // =============================================================================

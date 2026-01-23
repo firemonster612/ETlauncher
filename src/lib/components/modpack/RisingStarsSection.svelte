@@ -36,7 +36,7 @@
 	<!-- Section Header -->
 	<div class="section-header">
 		<TrendingUp class="section-header-icon h-6 w-6" />
-		<h2 class="section-header-title">Rising Stars</h2>
+		<h2 class="section-header-title text-foreground">Rising Stars</h2>
 	</div>
 
 	{#if loading}

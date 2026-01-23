@@ -6,9 +6,24 @@
 	import * as Select from '$lib/ui/select';
 	import { Slider, RangeSlider } from '$lib/ui/slider';
 	import { settingsStore } from '$lib/stores/settings.svelte';
-	import { RotateCcw, Eye, EyeOff, HardDrive, Trash2, RefreshCw, Check, X } from '@lucide/svelte';
+	import { themeStore } from '$lib/stores/theme.svelte';
+	import {
+		RotateCcw,
+		Eye,
+		EyeOff,
+		HardDrive,
+		Trash2,
+		RefreshCw,
+		Check,
+		X,
+		Monitor,
+		Sun,
+		Moon,
+		Palette,
+	} from '@lucide/svelte';
 	import * as settingsService from '$lib/services/settings';
-	import type { ResourcePoolStats, LinkStrategy } from '$lib/types';
+	import ColorPicker from '$lib/components/ColorPicker.svelte';
+	import type { ResourcePoolStats, LinkStrategy, Theme, ColorPreset, ThemeColors } from '$lib/types';
 
 	let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
@@ -26,11 +41,39 @@
 	let gcRunning = $state(false);
 	let poolActionResult = $state<{ type: 'success' | 'error'; message: string } | null>(null);
 
+	// Theme state
+	let customHue = $state(172);
+	let customChroma = $state(0.18);
+
+	// Sidebar state
+	let sidebarHue = $state(220);
+	let sidebarChroma = $state(0.05);
+
+	// Color presets configuration
+	const colorPresets: { id: ColorPreset; label: string; hue: number; chroma: number }[] = [
+		{ id: 'default', label: 'Cyan', hue: 172, chroma: 0.18 },
+		{ id: 'purple', label: 'Purple', hue: 280, chroma: 0.2 },
+		{ id: 'green', label: 'Green', hue: 145, chroma: 0.18 },
+		{ id: 'orange', label: 'Orange', hue: 45, chroma: 0.2 },
+		{ id: 'pink', label: 'Pink', hue: 330, chroma: 0.22 },
+		{ id: 'blue', label: 'Blue', hue: 220, chroma: 0.18 },
+	];
+
 	// Sync local state when settings load
 	$effect(() => {
 		if (settings) {
 			memoryRange = [settings.memoryMinMb, settings.memoryMaxMb];
 			concurrentDownloads = settings.concurrentDownloads;
+			// Sync custom color state
+			if (settings.customColors) {
+				customHue = settings.customColors.primaryHue ?? 172;
+				customChroma = settings.customColors.primaryChroma ?? 0.18;
+			}
+			// Sync sidebar color state
+			if (settings.customSidebarColor) {
+				sidebarHue = settings.customSidebarColor.hue ?? 220;
+				sidebarChroma = settings.customSidebarColor.chroma ?? 0.05;
+			}
 		}
 	});
 
@@ -103,6 +146,61 @@
 		}
 		return `${mb} MB`;
 	}
+
+	/** Save theme preference to localStorage for flash prevention */
+	function saveThemeToLocalStorage(theme: Theme, preset: ColorPreset, colors?: ThemeColors) {
+		try {
+			localStorage.setItem('etlauncher-theme', JSON.stringify(theme));
+
+			// Calculate the actual hue/chroma to store
+			let hue = 172;
+			let chroma = 0.18;
+			if (preset === 'custom' && colors) {
+				hue = colors.primaryHue ?? 172;
+				chroma = colors.primaryChroma ?? 0.18;
+			} else {
+				const presetValues = themeStore.getPresetValues(preset);
+				hue = presetValues.hue;
+				chroma = presetValues.chroma;
+			}
+			localStorage.setItem('etlauncher-accent', JSON.stringify({ hue, chroma }));
+		} catch {
+			// localStorage may not be available
+		}
+	}
+
+	async function handleThemeChange(theme: Theme) {
+		await themeStore.applyThemeMode(theme);
+		// Re-apply accent color and sidebar since primary color values differ between light/dark
+		themeStore.applyAccentColor(settings?.colorPreset ?? 'default', settings?.customColors);
+		themeStore.applySidebarStyle(settings?.sidebarStyle ?? 'default', settings?.customSidebarColor);
+		saveThemeToLocalStorage(theme, settings?.colorPreset ?? 'default', settings?.customColors);
+		await saveSettings({ theme });
+	}
+
+	async function handleColorPresetChange(preset: ColorPreset) {
+		themeStore.applyAccentColor(preset);
+		saveThemeToLocalStorage(settings?.theme ?? 'dark', preset);
+		await saveSettings({ colorPreset: preset, customColors: undefined });
+	}
+
+	async function handleCustomColorChange() {
+		const colors: ThemeColors = {
+			primaryHue: customHue,
+			primaryChroma: customChroma,
+		};
+		themeStore.applyAccentColor('custom', colors);
+		saveThemeToLocalStorage(settings?.theme ?? 'dark', 'custom', colors);
+		await saveSettings({ colorPreset: 'custom', customColors: colors });
+	}
+
+	function applyCustomColorPreview() {
+		// Apply preview without saving
+		themeStore.applyAccentColor('custom', {
+			primaryHue: customHue,
+			primaryChroma: customChroma,
+		});
+	}
 </script>
 
 <div class="max-w-2xl space-y-6">
@@ -122,6 +220,270 @@
 	{:else if settingsStore.error}
 		<div class="text-destructive">Error: {settingsStore.error}</div>
 	{:else}
+		<!-- Appearance Settings -->
+		<section class="border-border bg-card space-y-4 border-2 p-4">
+			<h3 class="text-muted-foreground text-sm tracking-wider uppercase">Appearance</h3>
+
+			<!-- Theme Mode -->
+			<div class="space-y-2">
+				<span class="text-sm">Theme</span>
+				<div class="flex gap-2">
+					<button
+						class="flex flex-1 flex-col items-center gap-1 border-2 p-3 transition-colors {settings.theme ===
+						'system'
+							? 'border-primary bg-primary/10'
+							: 'border-border hover:border-primary/50'}"
+						onclick={() => handleThemeChange('system')}
+					>
+						<Monitor class="h-5 w-5" />
+						<span class="text-xs">System</span>
+					</button>
+					<button
+						class="flex flex-1 flex-col items-center gap-1 border-2 p-3 transition-colors {settings.theme ===
+						'light'
+							? 'border-primary bg-primary/10'
+							: 'border-border hover:border-primary/50'}"
+						onclick={() => handleThemeChange('light')}
+					>
+						<Sun class="h-5 w-5" />
+						<span class="text-xs">Light</span>
+					</button>
+					<button
+						class="flex flex-1 flex-col items-center gap-1 border-2 p-3 transition-colors {settings.theme ===
+						'dark'
+							? 'border-primary bg-primary/10'
+							: 'border-border hover:border-primary/50'}"
+						onclick={() => handleThemeChange('dark')}
+					>
+						<Moon class="h-5 w-5" />
+						<span class="text-xs">Dark</span>
+					</button>
+				</div>
+				<p class="text-muted-foreground text-xs">Choose your preferred color scheme</p>
+			</div>
+
+			<!-- Accent Color -->
+			<div class="space-y-2">
+				<span class="text-sm">Accent Color</span>
+				<div class="grid grid-cols-4 gap-2 sm:grid-cols-7">
+					{#each colorPresets as preset (preset.id)}
+						{@const isSelected = (settings.colorPreset ?? 'default') === preset.id}
+						<button
+							class="relative flex flex-col items-center gap-1 rounded-lg border-2 p-2 transition-all {isSelected
+								? 'border-primary bg-primary/10'
+								: 'border-border bg-muted/30 hover:border-primary/50 hover:bg-muted/50'}"
+							onclick={() => handleColorPresetChange(preset.id)}
+							title={preset.label}
+						>
+							<div
+								class="ring-offset-background h-6 w-6 rounded-full ring-2 ring-offset-2 {isSelected
+									? 'ring-primary'
+									: 'ring-transparent'}"
+								style="background: oklch(0.65 {preset.chroma} {preset.hue})"
+							></div>
+							<span class="text-xs">{preset.label}</span>
+						</button>
+					{/each}
+					<button
+						class="relative flex flex-col items-center gap-1 rounded-lg border-2 p-2 transition-all {settings.colorPreset ===
+						'custom'
+							? 'border-primary bg-primary/10'
+							: 'border-border bg-muted/30 hover:border-primary/50 hover:bg-muted/50'}"
+						onclick={() => handleColorPresetChange('custom')}
+						title="Custom"
+					>
+						<Palette class="h-6 w-6 {settings.colorPreset === 'custom' ? 'text-primary' : ''}" />
+						<span class="text-xs">Custom</span>
+					</button>
+				</div>
+			</div>
+
+			<!-- Custom Color Controls -->
+			{#if settings.colorPreset === 'custom'}
+				<div class="bg-muted/50 flex items-center gap-3 p-3">
+					<span class="text-sm">Custom color:</span>
+					<ColorPicker
+						hue={customHue}
+						saturation={customChroma / 0.35}
+						oninput={(h, s) => {
+							customHue = h;
+							customChroma = Math.max(0.05, s * 0.35);
+							applyCustomColorPreview();
+						}}
+						onchange={() => handleCustomColorChange()}
+					/>
+				</div>
+			{/if}
+
+			<!-- Font Family -->
+			<div class="space-y-2">
+				<span class="text-sm">Font</span>
+				<div class="grid grid-cols-3 gap-2">
+					<button
+						class="flex flex-col items-center gap-1 border-2 p-3 transition-colors {(settings.fontFamily ??
+							'pixel') === 'pixel'
+							? 'border-primary bg-primary/10'
+							: 'border-border hover:border-primary/50'}"
+						onclick={() => {
+							themeStore.applyFontFamily('pixel');
+							saveSettings({ fontFamily: 'pixel', customFont: undefined });
+						}}
+					>
+						<span class="text-sm" style="font-family: 'Silkscreen', monospace">Aa</span>
+						<span class="text-xs">Pixel</span>
+					</button>
+					<button
+						class="flex flex-col items-center gap-1 border-2 p-3 transition-colors {settings.fontFamily ===
+						'system'
+							? 'border-primary bg-primary/10'
+							: 'border-border hover:border-primary/50'}"
+						onclick={() => {
+							themeStore.applyFontFamily('system');
+							saveSettings({ fontFamily: 'system', customFont: undefined });
+						}}
+					>
+						<span class="text-sm" style="font-family: system-ui, sans-serif">Aa</span>
+						<span class="text-xs">System</span>
+					</button>
+					<button
+						class="flex flex-col items-center gap-1 border-2 p-3 transition-colors {settings.fontFamily ===
+						'custom'
+							? 'border-primary bg-primary/10'
+							: 'border-border hover:border-primary/50'}"
+						onclick={() => {
+							const fontFamily = settings.customFont?.family || 'Arial';
+							themeStore.applyFontFamily('custom', { family: fontFamily });
+							saveSettings({ fontFamily: 'custom', customFont: { family: fontFamily } });
+						}}
+					>
+						<span
+							class="text-sm"
+							style="font-family: {settings.customFont?.family || 'Arial'}, sans-serif"
+						>
+							Aa
+						</span>
+						<span class="text-xs">Custom</span>
+					</button>
+				</div>
+
+				{#if settings.fontFamily === 'custom'}
+					<div class="mt-2 flex gap-2">
+						<input
+							type="text"
+							class="border-border bg-background text-foreground focus:border-primary flex-1 border-2 px-3 py-2 text-sm focus:outline-none"
+							placeholder="Font name (e.g., Arial, Roboto)"
+							value={settings.customFont?.family || ''}
+							oninput={(e) => {
+								const fontFamily = e.currentTarget.value;
+								themeStore.applyFontFamily('custom', { family: fontFamily });
+							}}
+							onchange={(e) => {
+								const fontFamily = e.currentTarget.value;
+								if (fontFamily) {
+									saveSettings({ customFont: { family: fontFamily } });
+								}
+							}}
+						/>
+					</div>
+					<p class="text-muted-foreground text-xs">Enter any font name installed on your system</p>
+				{:else}
+					<p class="text-muted-foreground text-xs">Choose the font style for the launcher</p>
+				{/if}
+			</div>
+
+			<!-- Sidebar Style -->
+			<div class="space-y-2">
+				<span class="text-sm">Sidebar & Titlebar</span>
+				<div class="grid grid-cols-3 gap-2">
+					<button
+						class="flex flex-col items-center gap-1 border-2 p-3 transition-colors {(settings.sidebarStyle ??
+							'default') === 'default'
+							? 'border-primary bg-primary/10'
+							: 'border-border hover:border-primary/50'}"
+						onclick={() => {
+							themeStore.applySidebarStyle('default');
+							saveSettings({ sidebarStyle: 'default', customSidebarColor: undefined });
+						}}
+					>
+						<div class="bg-muted border-border h-6 w-8 border"></div>
+						<span class="text-xs">Default</span>
+					</button>
+					<button
+						class="flex flex-col items-center gap-1 border-2 p-3 transition-colors {settings.sidebarStyle ===
+						'accent'
+							? 'border-primary bg-primary/10'
+							: 'border-border hover:border-primary/50'}"
+						onclick={() => {
+							themeStore.applySidebarStyle('accent');
+							saveSettings({ sidebarStyle: 'accent', customSidebarColor: undefined });
+						}}
+					>
+						<div class="bg-primary/20 border-primary/40 h-6 w-8 border"></div>
+						<span class="text-xs">Accent</span>
+					</button>
+					<button
+						class="flex flex-col items-center gap-1 border-2 p-3 transition-colors {settings.sidebarStyle ===
+						'custom'
+							? 'border-primary bg-primary/10'
+							: 'border-border hover:border-primary/50'}"
+						onclick={() => {
+							themeStore.applySidebarStyle('custom', { hue: sidebarHue, chroma: sidebarChroma });
+							saveSettings({
+								sidebarStyle: 'custom',
+								customSidebarColor: { hue: sidebarHue, chroma: sidebarChroma },
+							});
+						}}
+					>
+						<div
+							class="h-6 w-8 border"
+							style="background: oklch(0.2 {sidebarChroma} {sidebarHue}); border-color: oklch(0.35 {sidebarChroma} {sidebarHue})"
+						></div>
+						<span class="text-xs">Custom</span>
+					</button>
+				</div>
+
+				{#if settings.sidebarStyle === 'custom'}
+					<div class="bg-muted/50 flex items-center gap-3 p-3">
+						<span class="text-sm">Custom color:</span>
+						<ColorPicker
+							hue={sidebarHue}
+							saturation={sidebarChroma / 0.35}
+							oninput={(h, s) => {
+								sidebarHue = h;
+								sidebarChroma = s * 0.35;
+								themeStore.applySidebarStyle('custom', { hue: sidebarHue, chroma: sidebarChroma });
+							}}
+							onchange={() =>
+								saveSettings({ customSidebarColor: { hue: sidebarHue, chroma: sidebarChroma } })}
+						/>
+					</div>
+				{/if}
+				<p class="text-muted-foreground text-xs">Customize the sidebar and titlebar appearance</p>
+			</div>
+
+			<!-- Hover Lift Toggle -->
+			<div class="flex items-center justify-between">
+				<div>
+					<span class="text-sm">Disable hover lift</span>
+					<p class="text-muted-foreground text-xs">
+						Turn off the slight raise effect on buttons when hovering
+					</p>
+				</div>
+				<Checkbox
+					checked={settings.disableHoverLift ?? false}
+					onCheckedChange={(checked) => {
+						themeStore.applyHoverLift(!!checked);
+						try {
+							localStorage.setItem('etlauncher-disable-hover-lift', String(!!checked));
+						} catch {
+							// localStorage may be unavailable
+						}
+						saveSettings({ disableHoverLift: !!checked });
+					}}
+				/>
+			</div>
+		</section>
+
 		<!-- General Settings -->
 		<section class="border-border bg-card space-y-4 border-2 p-4">
 			<h3 class="text-muted-foreground text-sm tracking-wider uppercase">General</h3>

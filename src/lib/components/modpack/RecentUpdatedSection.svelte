@@ -74,7 +74,7 @@
 	<!-- Section Header -->
 	<div class="section-header">
 		<RefreshCw class="section-header-icon h-6 w-6" />
-		<h2 class="section-header-title">Recent Updated</h2>
+		<h2 class="section-header-title text-foreground">Recent Updated</h2>
 	</div>
 
 	{#if loading}

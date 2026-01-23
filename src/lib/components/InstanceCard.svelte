@@ -106,7 +106,7 @@
 </script>
 
 <div
-	class="border-border bg-card group hover:border-primary/60 relative w-[320px] cursor-pointer border-2 transition-all duration-200 hover:shadow-[0_0_20px_rgba(20,184,166,0.25)]"
+	class="border-border bg-card instance-card-glow group hover:border-primary/60 relative w-[320px] cursor-pointer border-2 transition-all duration-200"
 	onclick={handleCardClick}
 	onkeydown={(e) => e.key === 'Enter' && onCardClick(instance)}
 	role="button"

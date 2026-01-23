@@ -10,18 +10,33 @@
 	import { tutorialStore } from '$lib/stores/tutorial.svelte';
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { accountsStore } from '$lib/stores/accounts.svelte';
+	import { themeStore } from '$lib/stores/theme.svelte';
 
 	let { children } = $props();
 
 	onMount(async () => {
+		// Initialize theme system
+		themeStore.init();
+
 		// Provide navigation function to tutorial store
 		// eslint-disable-next-line svelte/no-navigation-without-resolve
 		tutorialStore.setNavigate((path: string) => goto(path));
 
 		// Load settings and accounts in parallel
 		await Promise.all([settingsStore.load(), accountsStore.load()]);
+
+		// Apply theme from loaded settings
+		themeStore.applyFromSettings();
+
 		if (settingsStore.settings && !settingsStore.settings.setupCompleted) {
 			tutorialStore.showWelcomeModal();
+		}
+	});
+
+	// Re-apply theme when settings change
+	$effect(() => {
+		if (settingsStore.settings) {
+			themeStore.applyFromSettings();
 		}
 	});
 </script>

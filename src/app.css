@@ -14,38 +14,43 @@
 	--font-pixel: 'Silkscreen', monospace;
 	--font-pixel-bold: 'Press Start 2P', monospace;
 
-	/* Light mode (unused, but defined) */
-	--background: oklch(0.15 0.01 285);
-	--foreground: oklch(0.98 0 0);
-	--card: oklch(0.18 0.01 285);
-	--card-foreground: oklch(0.98 0 0);
-	--popover: oklch(0.18 0.01 285);
-	--popover-foreground: oklch(0.98 0 0);
-	--primary: oklch(0.7 0.15 175);
-	--primary-foreground: oklch(0.12 0.01 285);
-	--secondary: oklch(0.25 0.01 285);
-	--secondary-foreground: oklch(0.98 0 0);
-	--muted: oklch(0.22 0.01 285);
-	--muted-foreground: oklch(0.65 0.02 285);
-	--accent: oklch(0.25 0.01 285);
-	--accent-foreground: oklch(0.98 0 0);
-	--destructive: oklch(0.6 0.25 25);
-	--border: oklch(0.35 0.02 285);
-	--input: oklch(0.3 0.02 285);
-	--ring: oklch(0.7 0.15 175);
-	--chart-1: oklch(0.7 0.15 175);
-	--chart-2: oklch(0.7 0.2 280);
-	--chart-3: oklch(0.75 0.2 60);
-	--chart-4: oklch(0.65 0.25 330);
-	--chart-5: oklch(0.7 0.2 140);
-	--sidebar: oklch(0.1 0.01 285);
-	--sidebar-foreground: oklch(0.98 0 0);
-	--sidebar-primary: oklch(0.7 0.15 175);
-	--sidebar-primary-foreground: oklch(0.1 0.01 285);
-	--sidebar-accent: oklch(0.7 0.15 175);
-	--sidebar-accent-foreground: oklch(0.1 0.01 285);
-	--sidebar-border: oklch(0.3 0.02 285);
-	--sidebar-ring: oklch(0.7 0.15 175);
+	/* Configurable accent color - these are set by JavaScript */
+	--accent-hue: 172;
+	--accent-chroma: 0.18;
+
+	/* Light mode colors */
+	--background: oklch(0.97 0.01 285);
+	--foreground: oklch(0.15 0.01 285);
+	--card: oklch(0.99 0.005 285);
+	--card-foreground: oklch(0.15 0.01 285);
+	--popover: oklch(0.99 0.005 285);
+	--popover-foreground: oklch(0.15 0.01 285);
+	/* Primary colors use default cyan - JavaScript will override these */
+	--primary: oklch(0.55 0.18 172);
+	--primary-foreground: oklch(0.98 0 0);
+	--secondary: oklch(0.92 0.01 285);
+	--secondary-foreground: oklch(0.15 0.01 285);
+	--muted: oklch(0.94 0.01 285);
+	--muted-foreground: oklch(0.45 0.02 285);
+	--accent: oklch(0.92 0.01 285);
+	--accent-foreground: oklch(0.15 0.01 285);
+	--destructive: oklch(0.55 0.25 25);
+	--border: oklch(0.85 0.02 285);
+	--input: oklch(0.92 0.02 285);
+	--ring: oklch(0.55 0.18 172);
+	--chart-1: oklch(0.55 0.18 172);
+	--chart-2: oklch(0.55 0.2 280);
+	--chart-3: oklch(0.65 0.2 60);
+	--chart-4: oklch(0.55 0.25 330);
+	--chart-5: oklch(0.55 0.2 140);
+	--sidebar: oklch(0.95 0.01 285);
+	--sidebar-foreground: oklch(0.15 0.01 285);
+	--sidebar-primary: oklch(0.55 0.18 172);
+	--sidebar-primary-foreground: oklch(0.98 0 0);
+	--sidebar-accent: oklch(0.55 0.18 172);
+	--sidebar-accent-foreground: oklch(0.98 0 0);
+	--sidebar-border: oklch(0.85 0.02 285);
+	--sidebar-ring: oklch(0.55 0.18 172);
 }
 
 .dark {
@@ -60,7 +65,7 @@
 	--popover: oklch(0.14 0.015 280);
 	--popover-foreground: oklch(0.95 0 0);
 
-	/* Vibrant oxidized copper - MORE SATURATED */
+	/* Primary colors use default cyan - JavaScript will override these */
 	--primary: oklch(0.72 0.18 172);
 	--primary-foreground: oklch(0.08 0.01 280);
 
@@ -82,7 +87,7 @@
 	--ring: oklch(0.72 0.18 172);
 
 	/* Chart colors - vibrant gaming palette */
-	--chart-1: oklch(0.72 0.18 172); /* Cyan/teal */
+	--chart-1: oklch(0.72 0.18 172); /* Primary accent - JS will override */
 	--chart-2: oklch(0.65 0.25 280); /* Purple */
 	--chart-3: oklch(0.8 0.22 85); /* Gold */
 	--chart-4: oklch(0.65 0.28 330); /* Pink */
@@ -150,6 +155,49 @@
 		image-rendering: pixelated;
 	}
 
+	/* Font family overrides */
+	html.font-system body,
+	html.font-system h1,
+	html.font-system h2,
+	html.font-system h3,
+	html.font-system h4,
+	html.font-system h5,
+	html.font-system h6,
+	html.font-system button,
+	html.font-system [role='button'],
+	html.font-system input,
+	html.font-system textarea,
+	html.font-system select,
+	html.font-system [data-sidebar='menu-button'] {
+		font-family:
+			system-ui,
+			-apple-system,
+			BlinkMacSystemFont,
+			'Segoe UI',
+			Roboto,
+			sans-serif !important;
+		-webkit-font-smoothing: auto;
+		-moz-osx-font-smoothing: auto;
+	}
+
+	html.font-custom body,
+	html.font-custom h1,
+	html.font-custom h2,
+	html.font-custom h3,
+	html.font-custom h4,
+	html.font-custom h5,
+	html.font-custom h6,
+	html.font-custom button,
+	html.font-custom [role='button'],
+	html.font-custom input,
+	html.font-custom textarea,
+	html.font-custom select,
+	html.font-custom [data-sidebar='menu-button'] {
+		font-family: var(--custom-font-family), system-ui, sans-serif !important;
+		-webkit-font-smoothing: auto;
+		-moz-osx-font-smoothing: auto;
+	}
+
 	/* Pixel font for headings */
 	h1,
 	h2,
@@ -161,11 +209,12 @@
 		font-weight: 700;
 		letter-spacing: 0.05em;
 		text-transform: uppercase;
+		color: var(--foreground) !important;
 	}
 
 	/* Chunky text shadow for depth */
 	h1 {
-		text-shadow: 2px 2px 0 oklch(0.72 0.18 172 / 0.3);
+		text-shadow: 2px 2px 0 color-mix(in oklch, var(--primary), transparent 70%);
 	}
 }
 
@@ -194,27 +243,28 @@ button[data-checkbox-root][data-state='checked'] {
 	border-color: var(--primary);
 }
 
-button:hover:not(.modpack-card):not(.platform-toggle-btn),
-[role='button']:hover {
+/* Hover lift effect - disabled when .no-hover-lift is on html */
+html:not(.no-hover-lift) button:hover:not(.modpack-card):not(.platform-toggle-btn),
+html:not(.no-hover-lift) [role='button']:hover {
 	transform: translateY(-1px);
 }
 
-button:active:not(.modpack-card):not(.platform-toggle-btn),
-[role='button']:active {
+html:not(.no-hover-lift) button:active:not(.modpack-card):not(.platform-toggle-btn),
+html:not(.no-hover-lift) [role='button']:active {
 	transform: translateY(1px);
 }
 
 /* Primary buttons get a glow */
 .bg-primary {
 	box-shadow:
-		0 0 10px oklch(0.72 0.18 172 / 0.4),
-		0 0 20px oklch(0.72 0.18 172 / 0.2);
+		0 0 10px color-mix(in oklch, var(--primary), transparent 60%),
+		0 0 20px color-mix(in oklch, var(--primary), transparent 80%);
 }
 
 .bg-primary:hover {
 	box-shadow:
-		0 0 15px oklch(0.72 0.18 172 / 0.6),
-		0 0 30px oklch(0.72 0.18 172 / 0.3);
+		0 0 15px color-mix(in oklch, var(--primary), transparent 40%),
+		0 0 30px color-mix(in oklch, var(--primary), transparent 70%);
 }
 
 /* Sidebar menu items - bolder styling */
@@ -227,10 +277,10 @@ button:active:not(.modpack-card):not(.platform-toggle-btn),
 }
 
 [data-sidebar='menu-button'][data-active='true'] {
-	border-color: oklch(0.72 0.18 172);
+	border-color: var(--primary);
 	box-shadow:
-		0 0 8px oklch(0.72 0.18 172 / 0.5),
-		inset 0 0 20px oklch(0.72 0.18 172 / 0.1);
+		0 0 8px color-mix(in oklch, var(--primary), transparent 50%),
+		inset 0 0 20px color-mix(in oklch, var(--primary), transparent 90%);
 }
 
 /* Cards with border */
@@ -241,8 +291,8 @@ button:active:not(.modpack-card):not(.platform-toggle-btn),
 
 .card:hover,
 [data-slot='card']:hover {
-	border-color: oklch(0.72 0.18 172 / 0.5);
-	box-shadow: 0 0 15px oklch(0.72 0.18 172 / 0.2);
+	border-color: color-mix(in oklch, var(--primary), transparent 50%);
+	box-shadow: 0 0 15px color-mix(in oklch, var(--primary), transparent 80%);
 }
 
 /* Inputs - chunky border */
@@ -257,8 +307,8 @@ select {
 input:focus,
 textarea:focus,
 select:focus {
-	border-color: oklch(0.72 0.18 172) !important;
-	box-shadow: 0 0 10px oklch(0.72 0.18 172 / 0.3);
+	border-color: var(--primary) !important;
+	box-shadow: 0 0 10px color-mix(in oklch, var(--primary), transparent 70%);
 }
 
 /* Scrollbar styling */
@@ -278,12 +328,12 @@ select:focus {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-	background: oklch(0.72 0.18 172 / 0.5);
+	background: color-mix(in oklch, var(--primary), transparent 50%);
 }
 
 /* Selection color */
 ::selection {
-	background: oklch(0.72 0.18 172 / 0.4);
+	background: color-mix(in oklch, var(--primary), transparent 60%);
 	color: white;
 }
 
@@ -907,6 +957,17 @@ select:focus {
 	font-weight: 700;
 	text-transform: uppercase;
 	letter-spacing: 0.05em;
+	color: var(--foreground) !important;
+}
+
+/* Ensure light mode text is visible */
+:root .section-header-title,
+html:not(.dark) .section-header-title {
+	color: oklch(0.15 0.01 285) !important;
+}
+
+.dark .section-header-title {
+	color: oklch(0.95 0 0) !important;
 }
 
 /* External resources list */
@@ -999,7 +1060,12 @@ select:focus {
 
 .modpack-card:hover {
 	border-color: var(--primary);
-	box-shadow: 0 4px 20px oklch(0.72 0.18 172 / 0.15);
+	box-shadow: 0 4px 20px color-mix(in oklch, var(--primary), transparent 85%);
+}
+
+/* Instance card hover glow using accent color */
+.instance-card-glow:hover {
+	box-shadow: 0 0 20px color-mix(in oklch, var(--primary), transparent 75%);
 }
 
 .modpack-card-gradient {

@@ -14,6 +14,68 @@ pub enum Theme {
     System,
 }
 
+/// Color preset for accent color
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ColorPreset {
+    #[default]
+    Default,
+    Purple,
+    Green,
+    Orange,
+    Pink,
+    Blue,
+    Custom,
+}
+
+/// Custom theme colors
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeColors {
+    /// Primary hue (0-360)
+    pub primary_hue: Option<f64>,
+    /// Primary chroma (0-0.4)
+    pub primary_chroma: Option<f64>,
+}
+
+/// Font family preference
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum FontFamily {
+    #[default]
+    Pixel,
+    System,
+    Custom,
+}
+
+/// Custom font configuration
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomFont {
+    /// Font family name
+    pub family: String,
+}
+
+/// Sidebar/titlebar style preset
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum SidebarStyle {
+    #[default]
+    Default,
+    Accent,
+    Custom,
+}
+
+/// Custom sidebar color configuration
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomSidebarColor {
+    /// Sidebar hue (0-360)
+    pub hue: f64,
+    /// Sidebar chroma (0-0.35)
+    pub chroma: f64,
+}
+
 /// Global application settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,6 +98,27 @@ pub struct AppSettings {
     pub show_old_versions: bool,
     /// UI theme
     pub theme: Theme,
+    /// Color preset for accent color
+    #[serde(default)]
+    pub color_preset: Option<ColorPreset>,
+    /// Custom theme colors (used when color_preset is 'custom')
+    #[serde(default)]
+    pub custom_colors: Option<ThemeColors>,
+    /// Disable hover lift effect on interactive elements
+    #[serde(default)]
+    pub disable_hover_lift: Option<bool>,
+    /// Font family preference
+    #[serde(default)]
+    pub font_family: Option<FontFamily>,
+    /// Custom font configuration (used when font_family is 'custom')
+    #[serde(default)]
+    pub custom_font: Option<CustomFont>,
+    /// Sidebar/titlebar style
+    #[serde(default)]
+    pub sidebar_style: Option<SidebarStyle>,
+    /// Custom sidebar color (used when sidebar_style is 'custom')
+    #[serde(default)]
+    pub custom_sidebar_color: Option<CustomSidebarColor>,
     /// CurseForge API key for accessing CurseForge content
     #[serde(default)]
     pub curseforge_api_key: Option<String>,
@@ -59,6 +142,13 @@ impl Default for AppSettings {
             show_snapshots: false,
             show_old_versions: false,
             theme: Theme::Dark,
+            color_preset: None,
+            custom_colors: None,
+            disable_hover_lift: None,
+            font_family: None,
+            custom_font: None,
+            sidebar_style: None,
+            custom_sidebar_color: None,
             curseforge_api_key: None,
             setup_completed: false,
             resource_pool: ResourcePoolConfig::default(),
@@ -79,6 +169,13 @@ pub struct UpdateSettingsRequest {
     pub show_snapshots: Option<bool>,
     pub show_old_versions: Option<bool>,
     pub theme: Option<Theme>,
+    pub color_preset: Option<ColorPreset>,
+    pub custom_colors: Option<ThemeColors>,
+    pub disable_hover_lift: Option<bool>,
+    pub font_family: Option<FontFamily>,
+    pub custom_font: Option<CustomFont>,
+    pub sidebar_style: Option<SidebarStyle>,
+    pub custom_sidebar_color: Option<CustomSidebarColor>,
     pub curseforge_api_key: Option<String>,
     pub setup_completed: Option<bool>,
     pub resource_pool: Option<ResourcePoolConfig>,
