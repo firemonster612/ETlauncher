@@ -135,6 +135,14 @@ fn migrate_old_settings(old: &serde_json::Value) -> AppSettings {
             .or_else(|| old.get("setupCompleted"))
             .and_then(|v| v.as_bool())
             .unwrap_or(true),
+        // Theme customization defaults
+        color_preset: None,
+        custom_colors: None,
+        disable_hover_lift: None,
+        font_family: None,
+        custom_font: None,
+        sidebar_style: None,
+        custom_sidebar_color: None,
         // Use default resource pool config for migrated settings
         resource_pool: crate::models::ResourcePoolConfig::default(),
     }
@@ -177,6 +185,21 @@ pub fn update_settings(current: &AppSettings, updates: UpdateSettingsRequest) ->
             .show_old_versions
             .unwrap_or(current.show_old_versions),
         theme: updates.theme.unwrap_or_else(|| current.theme.clone()),
+        color_preset: updates
+            .color_preset
+            .or_else(|| current.color_preset.clone()),
+        custom_colors: updates
+            .custom_colors
+            .or_else(|| current.custom_colors.clone()),
+        disable_hover_lift: updates.disable_hover_lift.or(current.disable_hover_lift),
+        font_family: updates.font_family.or_else(|| current.font_family.clone()),
+        custom_font: updates.custom_font.or_else(|| current.custom_font.clone()),
+        sidebar_style: updates
+            .sidebar_style
+            .or_else(|| current.sidebar_style.clone()),
+        custom_sidebar_color: updates
+            .custom_sidebar_color
+            .or_else(|| current.custom_sidebar_color.clone()),
         curseforge_api_key: updates
             .curseforge_api_key
             .or_else(|| current.curseforge_api_key.clone()),

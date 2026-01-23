@@ -140,7 +140,7 @@
 	<!-- Section Header -->
 	<div class="section-header">
 		<Flame class="section-header-icon h-6 w-6" />
-		<h2 class="section-header-title">Popular Modpacks</h2>
+		<h2 class="section-header-title text-foreground">Popular Modpacks</h2>
 	</div>
 
 	{#if loading}

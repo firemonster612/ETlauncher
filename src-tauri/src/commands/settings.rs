@@ -1,5 +1,5 @@
 use serde::Serialize;
-use tauri::State;
+use tauri::{State, WebviewWindow};
 
 use crate::cache::clear_all_disk_caches;
 use crate::error::CommandError;
@@ -96,3 +96,32 @@ pub fn clear_api_caches(state: State<'_, AppState>) -> Result<CacheClearResult, 
 
 // Note: Folder picker will be handled via tauri-plugin-dialog in frontend
 // The frontend will use the dialog plugin directly
+
+/// Get the system theme (light or dark)
+/// This uses multiple detection methods for cross-platform support
+#[tauri::command]
+pub fn get_system_theme(window: WebviewWindow) -> String {
+    // On Linux, try to detect via gsettings (GNOME/GTK color-scheme)
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(output) = std::process::Command::new("gsettings")
+            .args(["get", "org.gnome.desktop.interface", "color-scheme"])
+            .output()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let scheme = stdout.trim().trim_matches('\'');
+            if scheme == "prefer-light" || scheme == "default" {
+                return "light".to_string();
+            } else if scheme == "prefer-dark" {
+                return "dark".to_string();
+            }
+        }
+    }
+
+    // Fallback to Tauri's window theme detection
+    match window.theme() {
+        Ok(tauri::Theme::Light) => "light".to_string(),
+        Ok(tauri::Theme::Dark) | Ok(_) => "dark".to_string(),
+        Err(_) => "dark".to_string(),
+    }
+}

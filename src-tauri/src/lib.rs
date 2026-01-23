@@ -56,6 +56,7 @@ pub fn run() {
             commands::settings::reset_settings,
             commands::settings::get_default_instances_path,
             commands::settings::clear_api_caches,
+            commands::settings::get_system_theme,
             // Auth commands
             commands::auth::start_device_auth,
             commands::auth::poll_device_auth,

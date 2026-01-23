@@ -67,7 +67,7 @@
 	<!-- Section Header -->
 	<div class="section-header">
 		<Sparkles class="section-header-icon h-6 w-6" />
-		<h2 class="section-header-title">MC {displayVersion} Modpacks</h2>
+		<h2 class="section-header-title text-foreground">MC {displayVersion} Modpacks</h2>
 		<!-- Navigation Arrows -->
 		{#if modpacks.length > 3}
 			<div class="ml-auto flex gap-2">

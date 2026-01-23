@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
 	<head>
 		<meta charset="utf-8" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.png" />
@@ -9,12 +9,138 @@
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link
-			href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Silkscreen:wght@400;700&display=swap"
+			href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Press+Start+2P&family=Silkscreen:wght@400;700&display=swap"
 			rel="stylesheet"
 		/>
 		<script>
-			// Force dark mode immediately to prevent flash
-			document.documentElement.classList.add('dark');
+			// Prevent flash by applying theme immediately before paint
+			(function () {
+				try {
+					// Try to get saved settings from localStorage (Tauri stores settings in a file,
+					// but we also mirror theme to localStorage for instant access)
+					const stored = localStorage.getItem('etlauncher-theme');
+					const storedAccent = localStorage.getItem('etlauncher-accent');
+
+					let theme = 'dark'; // Default
+					if (stored) {
+						const parsed = JSON.parse(stored);
+						if (parsed === 'system') {
+							theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+						} else if (parsed === 'light' || parsed === 'dark') {
+							theme = parsed;
+						}
+					}
+
+					// Apply theme class
+					const isDark = theme === 'dark';
+					if (isDark) {
+						document.documentElement.classList.add('dark');
+						document.documentElement.classList.remove('light');
+					} else {
+						document.documentElement.classList.add('light');
+						document.documentElement.classList.remove('dark');
+					}
+
+					// Apply accent color if stored
+					let hue = 172;
+					let chroma = 0.18;
+					if (storedAccent) {
+						const accent = JSON.parse(storedAccent);
+						if (accent.hue !== undefined) hue = accent.hue;
+						if (accent.chroma !== undefined) chroma = accent.chroma;
+					}
+
+					// Set base variables with !important to override CSS
+					document.documentElement.style.setProperty('--accent-hue', String(hue), 'important');
+					document.documentElement.style.setProperty(
+						'--accent-chroma',
+						String(chroma),
+						'important'
+					);
+
+					// Compute and set primary color directly for immediate effect
+					const primary = isDark
+						? 'oklch(0.72 ' + chroma + ' ' + hue + ')'
+						: 'oklch(0.55 ' + chroma + ' ' + hue + ')';
+					document.documentElement.style.setProperty('--primary', primary, 'important');
+					document.documentElement.style.setProperty('--ring', primary, 'important');
+					document.documentElement.style.setProperty('--sidebar-primary', primary, 'important');
+					document.documentElement.style.setProperty('--sidebar-accent', primary, 'important');
+					document.documentElement.style.setProperty('--sidebar-ring', primary, 'important');
+					document.documentElement.style.setProperty('--chart-1', primary, 'important');
+
+					// Apply hover lift setting
+					const storedHoverLift = localStorage.getItem('etlauncher-disable-hover-lift');
+					if (storedHoverLift === 'true') {
+						document.documentElement.classList.add('no-hover-lift');
+					}
+
+					// Apply font setting
+					const storedFont = localStorage.getItem('etlauncher-font');
+					if (storedFont === 'custom') {
+						const customFont = localStorage.getItem('etlauncher-custom-font');
+						document.documentElement.classList.add('font-custom');
+						if (customFont) {
+							document.documentElement.style.setProperty(
+								'--custom-font-family',
+								customFont,
+								'important'
+							);
+						}
+					} else if (storedFont && storedFont !== 'pixel') {
+						document.documentElement.classList.add('font-' + storedFont);
+					}
+
+					// Apply sidebar style
+					const storedSidebarStyle = localStorage.getItem('etlauncher-sidebar-style');
+					if (storedSidebarStyle && storedSidebarStyle !== 'default') {
+						let sidebarColor, sidebarForeground, sidebarBorder;
+						if (storedSidebarStyle === 'accent') {
+							if (isDark) {
+								sidebarColor = 'oklch(0.15 ' + chroma * 0.3 + ' ' + hue + ')';
+								sidebarForeground = 'oklch(0.95 0 0)';
+								sidebarBorder = 'oklch(0.25 ' + chroma * 0.4 + ' ' + hue + ')';
+							} else {
+								sidebarColor = 'oklch(0.92 ' + chroma * 0.3 + ' ' + hue + ')';
+								sidebarForeground = 'oklch(0.15 0.01 285)';
+								sidebarBorder = 'oklch(0.85 ' + chroma * 0.4 + ' ' + hue + ')';
+							}
+						} else if (storedSidebarStyle === 'custom') {
+							const storedSidebarColor = localStorage.getItem('etlauncher-sidebar-color');
+							if (storedSidebarColor) {
+								const customSidebar = JSON.parse(storedSidebarColor);
+								const sHue = customSidebar.hue || 220;
+								const sChroma = customSidebar.chroma || 0.05;
+								if (isDark) {
+									sidebarColor = 'oklch(0.12 ' + sChroma + ' ' + sHue + ')';
+									sidebarForeground = 'oklch(0.95 0 0)';
+									sidebarBorder = 'oklch(0.25 ' + sChroma + ' ' + sHue + ')';
+								} else {
+									sidebarColor = 'oklch(0.95 ' + sChroma + ' ' + sHue + ')';
+									sidebarForeground = 'oklch(0.15 0.01 285)';
+									sidebarBorder = 'oklch(0.85 ' + sChroma + ' ' + sHue + ')';
+								}
+							}
+						}
+						if (sidebarColor) {
+							document.documentElement.style.setProperty('--sidebar', sidebarColor, 'important');
+							document.documentElement.style.setProperty(
+								'--sidebar-foreground',
+								sidebarForeground,
+								'important'
+							);
+							document.documentElement.style.setProperty(
+								'--sidebar-border',
+								sidebarBorder,
+								'important'
+							);
+						}
+					}
+				} catch (e) {
+					// Fallback to dark mode if anything fails
+					document.documentElement.classList.add('dark');
+				}
+			})();
 		</script>
 		%sveltekit.head%
 	</head>
