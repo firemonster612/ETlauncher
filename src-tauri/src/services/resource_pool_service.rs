@@ -185,6 +185,8 @@ pub fn link_to_instance(
         ContentType::Mod => game_dir.join("mods").join(dest_filename),
         ContentType::Shader => game_dir.join("shaderpacks").join(dest_filename),
         ContentType::ResourcePack => game_dir.join("resourcepacks").join(dest_filename),
+        ContentType::Datapack => game_dir.join("datapacks").join(dest_filename),
+        ContentType::World => game_dir.join("saves").join(dest_filename),
     };
 
     // Ensure parent directory exists
@@ -243,6 +245,8 @@ pub fn unlink_from_instance(
         ContentType::Mod => game_dir.join("mods").join(filename),
         ContentType::Shader => game_dir.join("shaderpacks").join(filename),
         ContentType::ResourcePack => game_dir.join("resourcepacks").join(filename),
+        ContentType::Datapack => game_dir.join("datapacks").join(filename),
+        ContentType::World => game_dir.join("saves").join(filename),
     };
 
     // Remove the file/link

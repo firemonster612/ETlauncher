@@ -42,6 +42,8 @@ pub fn load_manifest(
             mods: Vec::new(),
             shaders: Vec::new(),
             resource_packs: Vec::new(),
+            datapacks: Vec::new(),
+            worlds: Vec::new(),
             last_synced_at: None,
         });
     }
@@ -86,6 +88,8 @@ pub fn add_content(
         ContentType::Mod => &mut manifest.mods,
         ContentType::Shader => &mut manifest.shaders,
         ContentType::ResourcePack => &mut manifest.resource_packs,
+        ContentType::Datapack => &mut manifest.datapacks,
+        ContentType::World => &mut manifest.worlds,
     };
 
     // Check if content already exists and merge dependency_of if so
@@ -129,6 +133,8 @@ pub fn remove_content(
         ContentType::Mod => &mut manifest.mods,
         ContentType::Shader => &mut manifest.shaders,
         ContentType::ResourcePack => &mut manifest.resource_packs,
+        ContentType::Datapack => &mut manifest.datapacks,
+        ContentType::World => &mut manifest.worlds,
     };
 
     list.retain(|c| c.filename != filename);
@@ -151,6 +157,8 @@ pub fn get_content(
         ContentType::Mod => &manifest.mods,
         ContentType::Shader => &manifest.shaders,
         ContentType::ResourcePack => &manifest.resource_packs,
+        ContentType::Datapack => &manifest.datapacks,
+        ContentType::World => &manifest.worlds,
     };
 
     Ok(list.iter().find(|c| c.filename == filename).cloned())
@@ -168,6 +176,12 @@ pub fn mark_all_as_modpack_content(state: &AppState, instance_id: &str) -> Resul
         content.source = ContentSource::ModpackOriginal;
     }
     for content in manifest.resource_packs.iter_mut() {
+        content.source = ContentSource::ModpackOriginal;
+    }
+    for content in manifest.datapacks.iter_mut() {
+        content.source = ContentSource::ModpackOriginal;
+    }
+    for content in manifest.worlds.iter_mut() {
         content.source = ContentSource::ModpackOriginal;
     }
 
@@ -214,6 +228,20 @@ pub fn get_user_added_content(
             user_content.push(content);
         }
     }
+    for content in manifest.datapacks {
+        if content.source == ContentSource::UserAdded
+            || content.source == ContentSource::UserDependency
+        {
+            user_content.push(content);
+        }
+    }
+    for content in manifest.worlds {
+        if content.source == ContentSource::UserAdded
+            || content.source == ContentSource::UserDependency
+        {
+            user_content.push(content);
+        }
+    }
 
     Ok(user_content)
 }
@@ -242,6 +270,16 @@ pub fn get_modpack_content(
             modpack_content.push(content);
         }
     }
+    for content in manifest.datapacks {
+        if content.source == ContentSource::ModpackOriginal {
+            modpack_content.push(content);
+        }
+    }
+    for content in manifest.worlds {
+        if content.source == ContentSource::ModpackOriginal {
+            modpack_content.push(content);
+        }
+    }
 
     Ok(modpack_content)
 }
@@ -253,6 +291,8 @@ pub fn clear_manifest(state: &AppState, instance_id: &str) -> Result<(), AppErro
         mods: Vec::new(),
         shaders: Vec::new(),
         resource_packs: Vec::new(),
+        datapacks: Vec::new(),
+        worlds: Vec::new(),
         last_synced_at: Some(Utc::now().timestamp()),
     };
     save_manifest(state, instance_id, &manifest)?;
@@ -299,6 +339,8 @@ pub fn update_reverse_dependencies(
         ContentType::Mod => &manifest.mods,
         ContentType::Shader => &manifest.shaders,
         ContentType::ResourcePack => &manifest.resource_packs,
+        ContentType::Datapack => &manifest.datapacks,
+        ContentType::World => &manifest.worlds,
     };
 
     for content in list {
@@ -313,6 +355,8 @@ pub fn update_reverse_dependencies(
             ContentType::Mod => &mut manifest.mods,
             ContentType::Shader => &mut manifest.shaders,
             ContentType::ResourcePack => &mut manifest.resource_packs,
+            ContentType::Datapack => &mut manifest.datapacks,
+            ContentType::World => &mut manifest.worlds,
         };
 
         if let Some(content) = list_mut
@@ -347,6 +391,8 @@ pub fn add_dependent(
         ContentType::Mod => &mut manifest.mods,
         ContentType::Shader => &mut manifest.shaders,
         ContentType::ResourcePack => &mut manifest.resource_packs,
+        ContentType::Datapack => &mut manifest.datapacks,
+        ContentType::World => &mut manifest.worlds,
     };
 
     // Find the content and add the parent if not already present
@@ -377,6 +423,8 @@ pub fn update_dependency_ids(
         ContentType::Mod => &mut manifest.mods,
         ContentType::Shader => &mut manifest.shaders,
         ContentType::ResourcePack => &mut manifest.resource_packs,
+        ContentType::Datapack => &mut manifest.datapacks,
+        ContentType::World => &mut manifest.worlds,
     };
 
     // Find the content and update dependency_ids if empty

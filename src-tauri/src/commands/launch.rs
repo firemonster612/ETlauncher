@@ -1,5 +1,5 @@
 use crate::error::CommandError;
-use crate::services::{instance_service, launch_service};
+use crate::services::{content_install_service, instance_service, launch_service};
 use crate::state::AppState;
 use tauri::{AppHandle, State};
 
@@ -23,6 +23,13 @@ pub async fn launch_instance(
             code: "ALREADY_RUNNING".to_string(),
             message: "Instance is already running".to_string(),
         });
+    }
+
+    // Sync datapacks to all worlds before launch
+    // This ensures datapacks are present in worlds created after the datapack was installed
+    if let Err(e) = content_install_service::sync_datapacks_to_worlds(&state, &instance_id) {
+        eprintln!("[Launch] Warning: Failed to sync datapacks: {:?}", e);
+        // Don't fail launch if datapack sync fails
     }
 
     // Get the instance

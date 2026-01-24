@@ -23,6 +23,7 @@ pub enum ModrinthProjectType {
     Modpack,
     Resourcepack,
     Shader,
+    Datapack,
 }
 
 /// Modrinth search hit (project)
@@ -164,6 +165,7 @@ fn parse_loaders(loaders: &[String]) -> Vec<LoaderType> {
             "fabric" => Some(LoaderType::Fabric),
             "quilt" => Some(LoaderType::Quilt),
             "liteloader" => Some(LoaderType::LiteLoader),
+            "datapack" => Some(LoaderType::Datapack),
             _ => None,
         })
         .collect()
@@ -179,6 +181,7 @@ fn extract_loaders_from_categories(categories: &[String]) -> Vec<LoaderType> {
             "fabric" => Some(LoaderType::Fabric),
             "quilt" => Some(LoaderType::Quilt),
             "liteloader" => Some(LoaderType::LiteLoader),
+            "datapack" => Some(LoaderType::Datapack),
             _ => None,
         })
         .collect()
@@ -186,7 +189,14 @@ fn extract_loaders_from_categories(categories: &[String]) -> Vec<LoaderType> {
 
 /// Filter out loader names from categories to get actual categories
 fn filter_categories(categories: Vec<String>) -> Vec<String> {
-    let loader_names = ["forge", "neoforge", "fabric", "quilt", "liteloader"];
+    let loader_names = [
+        "forge",
+        "neoforge",
+        "fabric",
+        "quilt",
+        "liteloader",
+        "datapack",
+    ];
     categories
         .into_iter()
         .filter(|c| !loader_names.contains(&c.to_lowercase().as_str()))
@@ -202,6 +212,7 @@ fn loader_to_string(loader: &LoaderType) -> Option<&'static str> {
         LoaderType::Fabric => Some("fabric"),
         LoaderType::Quilt => Some("quilt"),
         LoaderType::LiteLoader => Some("liteloader"),
+        LoaderType::Datapack => Some("datapack"),
     }
 }
 
@@ -603,16 +614,20 @@ fn project_type_to_content_type(pt: &ModrinthProjectType) -> Option<ContentType>
         ModrinthProjectType::Mod => Some(ContentType::Mod),
         ModrinthProjectType::Shader => Some(ContentType::Shader),
         ModrinthProjectType::Resourcepack => Some(ContentType::ResourcePack),
+        ModrinthProjectType::Datapack => Some(ContentType::Datapack),
         ModrinthProjectType::Modpack => None,
     }
 }
 
 /// Map ContentType to Modrinth project type string
-fn content_type_to_modrinth(ct: &ContentType) -> &'static str {
+/// Note: World is not supported on Modrinth, so it returns None
+fn content_type_to_modrinth(ct: &ContentType) -> Option<&'static str> {
     match ct {
-        ContentType::Mod => "mod",
-        ContentType::Shader => "shader",
-        ContentType::ResourcePack => "resourcepack",
+        ContentType::Mod => Some("mod"),
+        ContentType::Shader => Some("shader"),
+        ContentType::ResourcePack => Some("resourcepack"),
+        ContentType::Datapack => Some("datapack"),
+        ContentType::World => None, // Modrinth doesn't support worlds
     }
 }
 
@@ -630,16 +645,34 @@ pub async fn search_content(
 
     // Filter by content type
     if let Some(ref content_type) = params.content_type {
-        facets.push(vec![format!(
-            "project_type:{}",
-            content_type_to_modrinth(content_type)
-        )]);
+        // Check if this content type is supported on Modrinth
+        if let Some(modrinth_type) = content_type_to_modrinth(content_type) {
+            // Special case for datapacks: include both pure datapacks AND mods with datapack loader
+            // Many datapack-compatible content on Modrinth is project_type:mod with "datapack" in loaders
+            if *content_type == ContentType::Datapack {
+                facets.push(vec![
+                    "project_type:datapack".to_string(),
+                    "categories:datapack".to_string(), // Includes mods that support datapack loader
+                ]);
+            } else {
+                facets.push(vec![format!("project_type:{}", modrinth_type)]);
+            }
+        } else {
+            // Content type not supported on Modrinth (e.g., World) - return empty results
+            return Ok(ContentSearchResult {
+                items: vec![],
+                total_count: 0,
+                page,
+                page_size,
+            });
+        }
     } else {
-        // Default to mods, shaders, resourcepacks (exclude modpacks)
+        // Default to mods, shaders, resourcepacks, datapacks (exclude modpacks and worlds)
         facets.push(vec![
             "project_type:mod".to_string(),
             "project_type:shader".to_string(),
             "project_type:resourcepack".to_string(),
+            "project_type:datapack".to_string(),
         ]);
     }
 
@@ -709,6 +742,8 @@ pub async fn search_content(
                 ContentType::Mod => "mod",
                 ContentType::Shader => "shader",
                 ContentType::ResourcePack => "resourcepack",
+                ContentType::Datapack => "datapack",
+                ContentType::World => "project", // Worlds not supported on Modrinth
             };
             // Modrinth search doesn't return loaders separately - they're in categories
             let loaders = if hit.loaders.is_empty() {
@@ -780,6 +815,8 @@ pub async fn get_content(client: &Client, id_or_slug: &str) -> Result<Content, A
         ContentType::Mod => "mod",
         ContentType::Shader => "shader",
         ContentType::ResourcePack => "resourcepack",
+        ContentType::Datapack => "datapack",
+        ContentType::World => "project", // Worlds not supported on Modrinth
     };
 
     // Project endpoint returns loaders, but fallback to categories just in case

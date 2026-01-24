@@ -18,7 +18,9 @@ const MINECRAFT_GAME_ID: u32 = 432;
 pub enum CurseForgeClassId {
     Mods = 6,
     ResourcePacks = 12,
+    Worlds = 17,
     Modpacks = 4471,
+    Datapacks = 6945,
     Shaders = 6552,
 }
 
@@ -28,6 +30,8 @@ impl CurseForgeClassId {
             ContentType::Mod => CurseForgeClassId::Mods,
             ContentType::Shader => CurseForgeClassId::Shaders,
             ContentType::ResourcePack => CurseForgeClassId::ResourcePacks,
+            ContentType::Datapack => CurseForgeClassId::Datapacks,
+            ContentType::World => CurseForgeClassId::Worlds,
         }
     }
 }
@@ -57,6 +61,37 @@ fn modpack_category_to_id(category: &str) -> Option<u32> {
     }
 }
 
+/// Map category name to CurseForge datapack category ID
+#[allow(dead_code)]
+fn datapack_category_to_id(category: &str) -> Option<u32> {
+    match category.to_lowercase().as_str() {
+        "mod support" | "mod-support" => Some(6946),
+        "miscellaneous" => Some(6947),
+        "adventure" => Some(6948),
+        "fantasy" => Some(6949),
+        "library" => Some(6950),
+        "tech" | "technology" => Some(6951),
+        "magic" => Some(6952),
+        "utility" => Some(6953),
+        _ => None,
+    }
+}
+
+/// Map category name to CurseForge world category ID
+#[allow(dead_code)]
+fn world_category_to_id(category: &str) -> Option<u32> {
+    match category.to_lowercase().as_str() {
+        "adventure" => Some(248),
+        "creation" => Some(249),
+        "game map" | "game-map" => Some(250),
+        "parkour" => Some(251),
+        "puzzle" => Some(252),
+        "survival" => Some(253),
+        "modded world" | "modded-world" => Some(4464),
+        _ => None,
+    }
+}
+
 /// CurseForge mod loader type
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
 pub enum CurseForgeModLoaderType {
@@ -73,7 +108,9 @@ pub enum CurseForgeModLoaderType {
 impl CurseForgeModLoaderType {
     fn from_loader_type(lt: &LoaderType) -> Self {
         match lt {
-            LoaderType::Vanilla | LoaderType::Unknown => CurseForgeModLoaderType::Any,
+            LoaderType::Vanilla | LoaderType::Unknown | LoaderType::Datapack => {
+                CurseForgeModLoaderType::Any
+            }
             LoaderType::Forge => CurseForgeModLoaderType::Forge,
             LoaderType::NeoForge => CurseForgeModLoaderType::NeoForge,
             LoaderType::Fabric => CurseForgeModLoaderType::Fabric,
@@ -888,6 +925,8 @@ pub async fn search_content(
         ContentType::Mod => "mc-mods",
         ContentType::Shader => "shaders",
         ContentType::ResourcePack => "texture-packs",
+        ContentType::Datapack => "data-packs",
+        ContentType::World => "worlds",
     };
 
     let items = response
@@ -992,7 +1031,9 @@ pub async fn get_content(
     let content_type = match m.class_id {
         Some(6) => ContentType::Mod,
         Some(12) => ContentType::ResourcePack,
+        Some(17) => ContentType::World,
         Some(6552) => ContentType::Shader,
+        Some(6945) => ContentType::Datapack,
         _ => ContentType::Mod,
     };
 
@@ -1000,6 +1041,8 @@ pub async fn get_content(
         ContentType::Mod => "mc-mods",
         ContentType::Shader => "shaders",
         ContentType::ResourcePack => "texture-packs",
+        ContentType::Datapack => "data-packs",
+        ContentType::World => "worlds",
     };
 
     let author = m

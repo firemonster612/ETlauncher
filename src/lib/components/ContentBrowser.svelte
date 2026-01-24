@@ -313,6 +313,10 @@
 	}
 
 	async function handleContentTypeChange(type: ContentType) {
+		// Worlds are only available on CurseForge
+		if (type === 'world' && contentStore.platform === 'modrinth') {
+			contentStore.setPlatform('curseforge');
+		}
 		await contentStore.setContentType(type);
 		// Clear selection when changing content type
 		selectedItems.clear();
@@ -886,7 +890,16 @@
 			}, 1200);
 		} catch (e: unknown) {
 			console.error('[ContentBrowser] Queue failed:', e);
-			installError = e instanceof Error ? e.message : String(e);
+			// Handle different error formats from Tauri
+			if (e instanceof Error) {
+				installError = e.message;
+			} else if (typeof e === 'object' && e !== null) {
+				// Tauri errors often come as objects with message or error properties
+				const err = e as Record<string, unknown>;
+				installError = String(err.message || err.error || JSON.stringify(e));
+			} else {
+				installError = String(e);
+			}
 		} finally {
 			isInstalling = false;
 		}
@@ -1000,10 +1013,12 @@
 		pendingUninstallContent = null;
 	}
 
-	const contentTypes: { value: ContentType; label: string }[] = [
+	const contentTypes: { value: ContentType; label: string; curseforgeOnly?: boolean }[] = [
 		{ value: 'mod', label: 'Mods' },
 		{ value: 'shader', label: 'Shaders' },
 		{ value: 'resourcepack', label: 'Resource Packs' },
+		{ value: 'datapack', label: 'Datapacks' },
+		{ value: 'world', label: 'Worlds', curseforgeOnly: true },
 	];
 
 	const platforms: { value: ContentPlatform; label: string }[] = [
@@ -1036,12 +1051,22 @@
 
 		try {
 			// Fetch the latest compatible version
+			// For mods on vanilla instances, filter by 'datapack' loader to get datapack-compatible versions
 			const shouldFilterByLoader = content.contentType === 'mod';
+			let versionLoader: LoaderType | undefined;
+			if (shouldFilterByLoader) {
+				if (loaderType === 'vanilla') {
+					// Vanilla instances can only use datapack versions of mods
+					versionLoader = 'datapack';
+				} else {
+					versionLoader = loaderType;
+				}
+			}
 			const latestVersions = await contentService.getContentVersions(
 				content.platform,
 				content.id,
 				mcVersion,
-				shouldFilterByLoader && loaderType !== 'vanilla' ? loaderType : undefined
+				versionLoader
 			);
 			const latest = latestVersions[0];
 			if (!latest) {
@@ -1326,10 +1351,13 @@
 			</div>
 			<div class="flex flex-wrap gap-2">
 				{#each platforms as { value, label } (value)}
+					{@const isDisabled = value === 'modrinth' && contentStore.contentType === 'world'}
 					<Button
 						variant={contentStore.platform === value ? 'default' : 'outline'}
 						size="sm"
 						onclick={() => handlePlatformChange(value)}
+						disabled={isDisabled}
+						title={isDisabled ? 'Worlds are only available on CurseForge' : ''}
 					>
 						{label}
 					</Button>
@@ -1353,13 +1381,17 @@
 			</div>
 			<!-- Content Type Buttons -->
 			<div class="flex gap-2">
-				{#each contentTypes as { value, label } (value)}
+				{#each contentTypes as { value, label, curseforgeOnly } (value)}
 					<Button
 						variant={contentStore.contentType === value ? 'default' : 'secondary'}
 						size="sm"
 						onclick={() => handleContentTypeChange(value)}
+						title={curseforgeOnly ? 'Only available on CurseForge' : ''}
 					>
 						{label}
+						{#if curseforgeOnly}
+							<span class="text-muted-foreground ml-1 text-xs">(CF)</span>
+						{/if}
 					</Button>
 				{/each}
 			</div>

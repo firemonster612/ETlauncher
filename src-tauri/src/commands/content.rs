@@ -14,10 +14,12 @@ use tauri::{AppHandle, State};
 
 /// Validate that content installation is allowed for the given instance and content type.
 /// Mods and shaders require a mod loader; vanilla instances cannot install them.
+/// However, if the version supports "datapack" loader, it can be installed on vanilla.
 fn validate_vanilla_restrictions(
     state: &AppState,
     instance_id: &str,
     content_type: &ContentType,
+    version: Option<&ContentVersion>,
 ) -> Result<(), CommandError> {
     // Only mods and shaders require a mod loader
     if !matches!(content_type, ContentType::Mod | ContentType::Shader) {
@@ -29,6 +31,18 @@ fn validate_vanilla_restrictions(
         instance_service::get_instance(state, instance_id).map_err(CommandError::from)?;
 
     if instance.loader_type == LoaderType::Vanilla {
+        // Check if this version supports datapack loader (can work on vanilla)
+        if let Some(ver) = version {
+            let has_datapack_loader = ver
+                .loaders
+                .iter()
+                .any(|l| l.to_string().eq_ignore_ascii_case("datapack"));
+            if has_datapack_loader {
+                // This is a datapack version, allow on vanilla
+                return Ok(());
+            }
+        }
+
         let content_name = match content_type {
             ContentType::Mod => "Mods",
             ContentType::Shader => "Shaders",
@@ -242,7 +256,7 @@ pub async fn install_content(
     is_dependency: Option<bool>,
 ) -> Result<InstalledContent, CommandError> {
     // Validate vanilla restrictions (mods/shaders require a mod loader)
-    validate_vanilla_restrictions(&state, &instance_id, &content_type)?;
+    validate_vanilla_restrictions(&state, &instance_id, &content_type, Some(&version))?;
 
     content_install_service::install_content(
         &state,
@@ -316,7 +330,8 @@ pub async fn install_content_with_dependencies(
     loader: Option<LoaderType>,
 ) -> Result<Vec<String>, CommandError> {
     // Validate vanilla restrictions (mods/shaders require a mod loader)
-    validate_vanilla_restrictions(&state, &instance_id, &content.content_type)?;
+    // Pass the version so we can check if it supports datapack loader
+    validate_vanilla_restrictions(&state, &instance_id, &content.content_type, Some(&version))?;
 
     // Use the unified queue system with dependency resolution
     content_queue_service::queue_content_with_deps(
@@ -389,7 +404,9 @@ pub async fn queue_content_install(
     request: QueueInstallRequest,
 ) -> Result<(), CommandError> {
     // Validate vanilla restrictions
-    validate_vanilla_restrictions(&state, &request.instance_id, &request.content_type)?;
+    // Note: We don't have the version here, so datapack detection won't work via this path
+    // The main install path (install_content_with_dependencies) handles this properly
+    validate_vanilla_restrictions(&state, &request.instance_id, &request.content_type, None)?;
 
     content_queue_service::queue_content_install(&state, app_handle, request)
         .await

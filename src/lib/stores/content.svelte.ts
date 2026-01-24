@@ -48,6 +48,7 @@ function createContentStore() {
 	let platform = $state<ContentPlatform>('modrinth');
 	let mcVersion = $state<string | null>(null);
 	let loader = $state<LoaderType | null>(null);
+	let isVanillaInstance = $state(false); // Track vanilla instance for datapack filtering
 	let contentType = $state<ContentType>('mod');
 	let category = $state<string | null>(null);
 	let sortBy = $state<ContentSortBy>('relevance');
@@ -337,7 +338,8 @@ function createContentStore() {
 		async setInstanceContext(id: string, mcVer: string, loaderType: LoaderType) {
 			instanceId = id;
 			mcVersion = mcVer;
-			loader = loaderType === 'vanilla' ? null : loaderType;
+			isVanillaInstance = loaderType === 'vanilla';
+			loader = isVanillaInstance ? null : loaderType;
 			// Clear content type cache since filters changed
 			contentCache.clear();
 			// Scan installed content for this instance
@@ -636,6 +638,15 @@ function createContentStore() {
 			isLoadingVersions = true;
 
 			const shouldFilterByLoader = content.contentType === 'mod';
+			// For mods on vanilla instances, filter by 'datapack' to get datapack-compatible versions
+			let versionLoader: LoaderType | undefined;
+			if (shouldFilterByLoader) {
+				if (isVanillaInstance) {
+					versionLoader = 'datapack';
+				} else {
+					versionLoader = loader || undefined;
+				}
+			}
 
 			// Load details and versions in parallel
 			const detailsPromise = contentService
@@ -655,12 +666,7 @@ function createContentStore() {
 				});
 
 			const versionsPromise = contentService
-				.getContentVersions(
-					content.platform,
-					content.id,
-					mcVersion || undefined,
-					shouldFilterByLoader ? loader || undefined : undefined
-				)
+				.getContentVersions(content.platform, content.id, mcVersion || undefined, versionLoader)
 				.then((versions) => {
 					// Only update if this is still the current selection
 					if (currentSelectionId === selectionId) {
@@ -717,6 +723,7 @@ function createContentStore() {
 			platform = 'modrinth';
 			mcVersion = null;
 			loader = null;
+			isVanillaInstance = false;
 			contentType = 'mod';
 			category = null;
 			sortBy = 'relevance';

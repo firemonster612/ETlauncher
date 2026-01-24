@@ -4,7 +4,7 @@ import type { LoaderType } from './instance';
 export type ContentPlatform = 'modrinth' | 'curseforge';
 
 /** Type of content */
-export type ContentType = 'mod' | 'shader' | 'resourcepack';
+export type ContentType = 'mod' | 'shader' | 'resourcepack' | 'datapack' | 'world';
 
 /** Source of content (how it was added to the instance) */
 export type ContentSource = 'modpackOriginal' | 'userAdded' | 'userDependency';
@@ -203,6 +203,10 @@ export interface InstalledContentManifest {
 	shaders: InstalledContent[];
 	/** Installed resource packs */
 	resourcePacks: InstalledContent[];
+	/** Installed datapacks */
+	datapacks: InstalledContent[];
+	/** Installed worlds */
+	worlds: InstalledContent[];
 }
 
 /** Request to install content to an instance */
