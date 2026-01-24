@@ -14,7 +14,10 @@
 	import { Button } from '$lib/ui/button';
 	import { Select, SelectContent, SelectItem, SelectTrigger } from '$lib/ui/select';
 	import * as updateService from '$lib/services/update';
+	import { getLoaderVersions, installLoader } from '$lib/services/loader';
+	import { updateInstance } from '$lib/services/instance';
 	import { versionsStore } from '$lib/stores/versions.svelte';
+	import type { LoaderVersion, LoaderInstallProgress } from '$lib/types/loader';
 	import type {
 		ModpackInstanceUpdateCheck,
 		ModpackUpdatePlan,
@@ -52,6 +55,14 @@
 	let incompatibleDecisions = $state<Record<string, UserContentDecision>>({});
 	let isPreviewingMigration = $state(false);
 
+	// Loader version change state
+	let availableLoaderVersions = $state<LoaderVersion[]>([]);
+	let isLoadingLoaderVersions = $state(false);
+	let selectedLoaderVersion = $state<string | null>(null);
+	let isChangingLoader = $state(false);
+	let loaderChangeProgress = $state<LoaderInstallProgress | null>(null);
+	let loaderChangeError = $state<string | null>(null);
+
 	// Load versions for non-modpack instances
 	$effect(() => {
 		if (!isModpackInstance && versionsStore.versions.length === 0) {
@@ -63,6 +74,29 @@
 	$effect(() => {
 		handleCheckUpdates();
 	});
+
+	// Load available loader versions for non-vanilla instances (both modpack and custom)
+	$effect(() => {
+		if (instance.loaderType !== 'vanilla') {
+			loadLoaderVersions();
+		}
+	});
+
+	async function loadLoaderVersions() {
+		isLoadingLoaderVersions = true;
+		try {
+			availableLoaderVersions = await getLoaderVersions(
+				instance.loaderType,
+				instance.minecraftVersion
+			);
+			selectedLoaderVersion = instance.loaderVersion ?? null;
+		} catch (e) {
+			console.error('Failed to load loader versions:', e);
+			availableLoaderVersions = [];
+		} finally {
+			isLoadingLoaderVersions = false;
+		}
+	}
 
 	async function handleCheckUpdates() {
 		isChecking = true;
@@ -200,6 +234,32 @@
 		} finally {
 			isUpdating = false;
 			updateProgress = null;
+		}
+	}
+
+	async function handleChangeLoaderVersion() {
+		if (!selectedLoaderVersion || selectedLoaderVersion === instance.loaderVersion) return;
+
+		isChangingLoader = true;
+		loaderChangeError = null;
+		loaderChangeProgress = null;
+
+		try {
+			await installLoader(instance.id, instance.loaderType, selectedLoaderVersion, (progress) => {
+				loaderChangeProgress = progress;
+			});
+
+			const updatedInstance = await updateInstance(instance.id, {
+				loaderVersion: selectedLoaderVersion,
+			});
+
+			onUpdated(updatedInstance);
+			await loadLoaderVersions();
+		} catch (e) {
+			loaderChangeError = e instanceof Error ? e.message : 'Failed to change loader version';
+		} finally {
+			isChangingLoader = false;
+			loaderChangeProgress = null;
 		}
 	}
 
@@ -388,6 +448,98 @@
 			</div>
 		</section>
 
+		<!-- Loader Version Selector (only for non-vanilla modpacks) -->
+		{#if modpackCheck.currentVersion.loaderType !== 'vanilla'}
+			<section class="border-border bg-muted/10 rounded-lg border p-4">
+				<h3 class="mb-3 font-semibold">Change Loader Version</h3>
+
+				{#if isLoadingLoaderVersions}
+					<div class="text-muted-foreground flex items-center gap-2 text-sm">
+						<Loader2 class="h-4 w-4 animate-spin" />
+						Loading available versions...
+					</div>
+				{:else if isChangingLoader && loaderChangeProgress}
+					<div class="space-y-3">
+						<div class="text-muted-foreground flex items-center gap-2 text-sm">
+							<Loader2 class="h-4 w-4 animate-spin" />
+							<span>{loaderChangeProgress.stage}</span>
+						</div>
+						<div class="bg-muted h-2 w-full rounded-full">
+							<div
+								class="bg-primary h-2 rounded-full transition-all"
+								style="width: {loaderChangeProgress.progress}%"
+							></div>
+						</div>
+					</div>
+				{:else}
+					<div class="flex items-end gap-3">
+						<div class="flex-1">
+							<Select
+								type="single"
+								value={selectedLoaderVersion || ''}
+								onValueChange={(v) => {
+									selectedLoaderVersion = v;
+								}}
+								disabled={isChangingLoader || isUpdating}
+							>
+								<SelectTrigger class="w-64">
+									{#if selectedLoaderVersion}
+										{selectedLoaderVersion}
+										{#if selectedLoaderVersion === instance.loaderVersion}
+											<span class="text-muted-foreground ml-1">(Current)</span>
+										{/if}
+									{:else}
+										Select version...
+									{/if}
+								</SelectTrigger>
+								<SelectContent class="max-h-64 overflow-y-auto">
+									{#each availableLoaderVersions as version (version.version)}
+										<SelectItem value={version.version}>
+											<div class="flex items-center gap-2">
+												<span>{version.version}</span>
+												{#if version.version === instance.loaderVersion}
+													<span class="text-xs text-green-500">(Current)</span>
+												{/if}
+												{#if version.stable}
+													<span class="text-primary text-xs">(Stable)</span>
+												{/if}
+											</div>
+										</SelectItem>
+									{/each}
+								</SelectContent>
+							</Select>
+						</div>
+
+						<Button
+							size="sm"
+							disabled={!selectedLoaderVersion ||
+								selectedLoaderVersion === instance.loaderVersion ||
+								isChangingLoader ||
+								isUpdating}
+							onclick={handleChangeLoaderVersion}
+						>
+							Apply Change
+						</Button>
+					</div>
+
+					{#if loaderChangeError}
+						<div
+							class="bg-destructive/10 border-destructive text-destructive mt-3 rounded border p-3 text-sm"
+						>
+							{loaderChangeError}
+						</div>
+					{/if}
+
+					{#if selectedLoaderVersion && selectedLoaderVersion !== instance.loaderVersion}
+						<div class="mt-3 flex items-center gap-2 text-sm text-yellow-600 dark:text-yellow-500">
+							<AlertTriangle class="h-4 w-4" />
+							<span>Changing loader versions may affect mod compatibility.</span>
+						</div>
+					{/if}
+				{/if}
+			</section>
+		{/if}
+
 		<!-- Version Selector -->
 		<section class="border-border bg-muted/10 rounded-lg border p-4">
 			<div class="mb-3 flex items-center justify-between">
@@ -396,7 +548,7 @@
 					variant={canUpdateToLatest ? 'default' : 'outline'}
 					size="sm"
 					onclick={selectLatestVersion}
-					disabled={!canUpdateToLatest}
+					disabled={!canUpdateToLatest || isChangingLoader}
 				>
 					<Zap class="mr-1.5 h-3.5 w-3.5" />
 					{canUpdateToLatest ? 'Update to Latest' : 'On Latest'}
@@ -408,6 +560,7 @@
 				onValueChange={(v) => {
 					selectedVersionId = v;
 				}}
+				disabled={isChangingLoader}
 			>
 				<SelectTrigger class="w-64">
 					{#if selectedVersion}
@@ -571,6 +724,98 @@
 			</div>
 		</section>
 
+		<!-- Loader Version Selector (only for non-vanilla instances) -->
+		{#if instanceCheck.currentLoaderType !== 'vanilla'}
+			<section class="border-border bg-muted/10 rounded-lg border p-4">
+				<h3 class="mb-3 font-semibold">Change Loader Version</h3>
+
+				{#if isLoadingLoaderVersions}
+					<div class="text-muted-foreground flex items-center gap-2 text-sm">
+						<Loader2 class="h-4 w-4 animate-spin" />
+						Loading available versions...
+					</div>
+				{:else if isChangingLoader && loaderChangeProgress}
+					<div class="space-y-3">
+						<div class="text-muted-foreground flex items-center gap-2 text-sm">
+							<Loader2 class="h-4 w-4 animate-spin" />
+							<span>{loaderChangeProgress.stage}</span>
+						</div>
+						<div class="bg-muted h-2 w-full rounded-full">
+							<div
+								class="bg-primary h-2 rounded-full transition-all"
+								style="width: {loaderChangeProgress.progress}%"
+							></div>
+						</div>
+					</div>
+				{:else}
+					<div class="flex items-end gap-3">
+						<div class="flex-1">
+							<Select
+								type="single"
+								value={selectedLoaderVersion || ''}
+								onValueChange={(v) => {
+									selectedLoaderVersion = v;
+								}}
+								disabled={isChangingLoader || isUpdating}
+							>
+								<SelectTrigger class="w-64">
+									{#if selectedLoaderVersion}
+										{selectedLoaderVersion}
+										{#if selectedLoaderVersion === instance.loaderVersion}
+											<span class="text-muted-foreground ml-1">(Current)</span>
+										{/if}
+									{:else}
+										Select version...
+									{/if}
+								</SelectTrigger>
+								<SelectContent class="max-h-64 overflow-y-auto">
+									{#each availableLoaderVersions as version (version.version)}
+										<SelectItem value={version.version}>
+											<div class="flex items-center gap-2">
+												<span>{version.version}</span>
+												{#if version.version === instance.loaderVersion}
+													<span class="text-xs text-green-500">(Current)</span>
+												{/if}
+												{#if version.stable}
+													<span class="text-primary text-xs">(Stable)</span>
+												{/if}
+											</div>
+										</SelectItem>
+									{/each}
+								</SelectContent>
+							</Select>
+						</div>
+
+						<Button
+							size="sm"
+							disabled={!selectedLoaderVersion ||
+								selectedLoaderVersion === instance.loaderVersion ||
+								isChangingLoader ||
+								isUpdating}
+							onclick={handleChangeLoaderVersion}
+						>
+							Apply Change
+						</Button>
+					</div>
+
+					{#if loaderChangeError}
+						<div
+							class="bg-destructive/10 border-destructive text-destructive mt-3 rounded border p-3 text-sm"
+						>
+							{loaderChangeError}
+						</div>
+					{/if}
+
+					{#if selectedLoaderVersion && selectedLoaderVersion !== instance.loaderVersion}
+						<div class="mt-3 flex items-center gap-2 text-sm text-yellow-600 dark:text-yellow-500">
+							<AlertTriangle class="h-4 w-4" />
+							<span>Changing loader versions may affect mod compatibility.</span>
+						</div>
+					{/if}
+				{/if}
+			</section>
+		{/if}
+
 		<!-- Minecraft Version Selector -->
 		<section class="border-border bg-muted/10 rounded-lg border p-4">
 			<div class="mb-3 flex items-center justify-between">
@@ -579,7 +824,7 @@
 					variant={isOnLatestMc ? 'outline' : 'default'}
 					size="sm"
 					onclick={() => handleMcVersionChange(versionsStore.latestRelease!)}
-					disabled={isOnLatestMc || !versionsStore.latestRelease}
+					disabled={isOnLatestMc || !versionsStore.latestRelease || isChangingLoader}
 				>
 					<Zap class="mr-1.5 h-3.5 w-3.5" />
 					{isOnLatestMc ? 'On Latest' : 'Update to Latest'}
@@ -591,7 +836,12 @@
 					Loading versions...
 				</div>
 			{:else}
-				<Select type="single" value={selectedMcVersion || ''} onValueChange={handleMcVersionChange}>
+				<Select
+					type="single"
+					value={selectedMcVersion || ''}
+					onValueChange={handleMcVersionChange}
+					disabled={isChangingLoader}
+				>
 					<SelectTrigger class="w-64">
 						{#if selectedMcVersion}
 							Minecraft {selectedMcVersion}
