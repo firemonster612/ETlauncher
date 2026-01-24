@@ -15,7 +15,13 @@
 	import RisingStarsSection from '$lib/components/modpack/RisingStarsSection.svelte';
 	import PlatformToggle from '$lib/components/modpack/PlatformToggle.svelte';
 	import ModpackCard from '$lib/components/modpack/ModpackCard.svelte';
+	import VirtualGrid from '$lib/components/VirtualGrid.svelte';
 	import type { Modpack, ModpackPlatform, ModpackSortBy, LoaderType, SideFilter } from '$lib/types';
+
+	// Card dimensions - matching the CSS grid layout
+	const ITEM_HEIGHT = 280;
+	const MIN_ITEM_WIDTH = 300;
+	const GAP = 16;
 
 	let searchInput = $state('');
 	let selectedModpackDetail = $state<Modpack | null>(null);
@@ -101,11 +107,8 @@
 	];
 
 	onMount(() => {
-		// Load versions for the filter dropdown
 		versionsStore.load();
-		// Load popular modpacks for the carousel
 		modpacksStore.loadHomeData();
-		// Load explore data for the grid
 		modpacksStore.loadExploreData();
 	});
 
@@ -128,7 +131,6 @@
 	function handlePlatformChange(platform: ModpackPlatform | 'all') {
 		const newPlatform = platform === 'all' ? null : platform;
 		modpacksStore.setExplorePlatform(newPlatform);
-		// Clear filters when changing platforms since they may not apply
 		modpacksStore.setExploreMcVersion(null);
 		modpacksStore.setExploreLoader(null);
 		modpacksStore.setExploreCategory(null);
@@ -170,9 +172,7 @@
 	}
 
 	function handleModpackClick(modpack: Modpack) {
-		// Show basic modpack immediately
 		selectedModpackDetail = modpack;
-		// Start loading details + versions in parallel (non-blocking)
 		modpacksStore.selectModpack(modpack).then((detailed) => {
 			selectedModpackDetail = detailed;
 		});
@@ -225,23 +225,13 @@
 		}
 	}
 
-	// Infinite scroll handler
-	function handleScroll(e: Event) {
-		const target = e.target as HTMLElement;
-		const { scrollTop, scrollHeight, clientHeight } = target;
-		const nearBottom = scrollHeight - scrollTop - clientHeight < 300;
-
-		if (
-			nearBottom &&
-			modpacksStore.hasMoreExplore &&
-			!modpacksStore.isLoadingExplore &&
-			!searchInput
-		) {
+	function handleLoadMore() {
+		if (modpacksStore.hasMoreExplore && !modpacksStore.isLoadingExplore) {
 			modpacksStore.loadMoreExplore();
 		}
 	}
 
-	// Get modpacks to display - either search results or explore
+	// Get modpacks to display
 	let displayModpacks = $derived(
 		searchInput && modpacksStore.modpacks.length > 0
 			? modpacksStore.modpacks
@@ -256,7 +246,7 @@
 </script>
 
 <div class="flex h-full flex-col gap-6 overflow-hidden">
-	<!-- Search Bar (centered at top) -->
+	<!-- Search Bar -->
 	<div class="flex justify-center px-4">
 		<div class="relative w-full max-w-xl">
 			<Search class="text-muted-foreground absolute top-1/2 left-3 z-10 h-5 w-5 -translate-y-1/2" />
@@ -270,13 +260,9 @@
 		</div>
 	</div>
 
-	<!-- Scrollable Content -->
-	<div
-		class="flex-1 overflow-x-hidden overflow-y-auto px-4 pb-4"
-		bind:this={scrollContainer}
-		onscroll={handleScroll}
-	>
-		<!-- Popular Modpacks Section (only show when not searching) -->
+	<!-- Single Scrollable Container -->
+	<div class="flex-1 overflow-x-hidden overflow-y-auto px-4 pb-4" bind:this={scrollContainer}>
+		<!-- Header Sections (when not searching) -->
 		{#if !searchInput}
 			<PopularModpacksSection
 				modpacks={modpacksStore.popularModpacks}
@@ -284,7 +270,6 @@
 				onModpackClick={handleModpackClick}
 			/>
 
-			<!-- Latest MC Version Section -->
 			<div class="mt-8">
 				<LatestVersionSection
 					modpacks={modpacksStore.latestVersionModpacks}
@@ -294,7 +279,6 @@
 				/>
 			</div>
 
-			<!-- Rising Stars Section -->
 			<div class="mt-8">
 				<RisingStarsSection
 					modpacks={modpacksStore.risingStarsModpacks}
@@ -308,7 +292,6 @@
 		<section class="mt-8">
 			<!-- Platform Toggles + Sort -->
 			<div class="explore-filters-bar mb-4">
-				<!-- Platform Toggle Group -->
 				<div class="platform-toggle-group">
 					{#each platforms as platform (platform)}
 						<PlatformToggle
@@ -319,10 +302,8 @@
 					{/each}
 				</div>
 
-				<!-- Spacer -->
 				<div class="flex-1"></div>
 
-				<!-- Sort Dropdown -->
 				<Select.Root
 					type="single"
 					value={modpacksStore.exploreSortBy}
@@ -342,12 +323,11 @@
 				</Select.Root>
 			</div>
 
-			<!-- Advanced Filters (only for Modrinth/CurseForge) -->
+			<!-- Advanced Filters -->
 			{#if showFilters}
 				<div class="explore-filters-bar mb-4">
 					<Filter class="text-muted-foreground h-4 w-4" />
 
-					<!-- MC Version -->
 					<Select.Root
 						type="single"
 						value={modpacksStore.exploreMcVersion || ''}
@@ -364,7 +344,6 @@
 						</Select.Content>
 					</Select.Root>
 
-					<!-- Loader -->
 					<Select.Root
 						type="single"
 						value={modpacksStore.exploreLoader || 'any'}
@@ -387,7 +366,6 @@
 						</Select.Content>
 					</Select.Root>
 
-					<!-- Category -->
 					<Select.Root
 						type="single"
 						value={modpacksStore.exploreCategory || ''}
@@ -410,7 +388,6 @@
 						</Select.Content>
 					</Select.Root>
 
-					<!-- Side (Client/Server) -->
 					<Select.Root
 						type="single"
 						value={modpacksStore.exploreSide || 'any'}
@@ -435,7 +412,6 @@
 						</Select.Content>
 					</Select.Root>
 
-					<!-- Clear Filters -->
 					{#if hasActiveFilters}
 						<Button
 							variant="ghost"
@@ -470,7 +446,7 @@
 				{:else if searchInput}
 					Found {totalCount.toLocaleString()} modpacks matching "{searchInput}"
 				{:else}
-					Showing {displayModpacks.length} of {totalCount.toLocaleString()} modpacks
+					Showing {displayModpacks.length.toLocaleString()} of {totalCount.toLocaleString()} modpacks
 				{/if}
 			</div>
 
@@ -492,23 +468,25 @@
 					{/if}
 				</div>
 			{:else}
-				<div class="modpack-grid">
-					{#each displayModpacks as modpack (`${modpack.platform}-${modpack.id}`)}
+				<VirtualGrid
+					items={displayModpacks}
+					itemHeight={ITEM_HEIGHT}
+					minItemWidth={MIN_ITEM_WIDTH}
+					gap={GAP}
+					{scrollContainer}
+					onLoadMore={!searchInput && modpacksStore.hasMoreExplore ? handleLoadMore : undefined}
+					loadMoreThreshold={600}
+				>
+					{#snippet children(modpack)}
 						<ModpackCard {modpack} onclick={() => handleModpackClick(modpack)} />
-					{/each}
-				</div>
+					{/snippet}
+				</VirtualGrid>
 
 				<!-- Loading indicator for infinite scroll -->
 				{#if modpacksStore.isLoadingExplore && displayModpacks.length > 0}
-					<div class="mt-6 flex items-center justify-center">
+					<div class="mt-6 flex justify-center">
 						<Loader2 class="text-muted-foreground h-6 w-6 animate-spin" />
-						<span class="text-muted-foreground ml-2 text-sm">Loading more...</span>
 					</div>
-				{/if}
-
-				<!-- End of results indicator -->
-				{#if !modpacksStore.hasMoreExplore && !searchInput && displayModpacks.length > 0}
-					<div class="text-muted-foreground mt-6 text-center text-xs">You've reached the end</div>
 				{/if}
 			{/if}
 		</section>

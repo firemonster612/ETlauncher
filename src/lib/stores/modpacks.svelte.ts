@@ -13,10 +13,22 @@ import type {
 import * as modpackService from '$lib/services/modpack';
 import * as minecraftService from '$lib/services/minecraft';
 
-/** Cached results for a platform */
-interface PlatformCache {
+/** Cached results for explore/search */
+interface ResultsCache {
 	modpacks: Modpack[];
 	totalCount: number;
+	cachedAt: number;
+}
+
+/** Cached modpack detail */
+interface DetailCache {
+	modpack: Modpack;
+	cachedAt: number;
+}
+
+/** Cached modpack versions */
+interface VersionsCache {
+	versions: ModpackVersion[];
 	cachedAt: number;
 }
 
@@ -55,14 +67,70 @@ function createModpacksStore() {
 	let exploreSide = $state<SideFilter | null>(null);
 	const explorePageSize = 20;
 
-	// Cache per platform (persists across platform switches)
-	const platformCache = new SvelteMap<string, PlatformCache>();
+	// Cache configuration
 	const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+	const DETAIL_CACHE_TTL = 10 * 60 * 1000; // 10 minutes for details (less volatile)
 
-	/** Get cache key for current platform */
-	function getCacheKey(p: ModpackPlatform | null): string {
-		return p ?? 'all';
+	// Caches
+	const exploreCache = new SvelteMap<string, ResultsCache>();
+	const searchCache = new SvelteMap<string, ResultsCache>();
+	const detailCache = new SvelteMap<string, DetailCache>();
+	const versionsCache = new SvelteMap<string, VersionsCache>();
+
+	/** Get cache key for explore filters */
+	function getExploreCacheKey(): string {
+		return JSON.stringify({
+			platform: explorePlatform,
+			sort: exploreSortBy,
+			mcVersion: exploreMcVersion,
+			loader: exploreLoader,
+			category: exploreCategory,
+			side: exploreSide,
+		});
 	}
+
+	/** Get cache key for search */
+	function getSearchCacheKey(): string {
+		return JSON.stringify({
+			query,
+			platform,
+			mcVersion,
+			loader,
+			category,
+			sortBy,
+		});
+	}
+
+	/** Get cache key for modpack detail/versions */
+	function getModpackCacheKey(modpackPlatform: ModpackPlatform, modpackId: string): string {
+		return `${modpackPlatform}:${modpackId}`;
+	}
+
+	/** Check if cache entry is still valid */
+	function isCacheValid(cachedAt: number, ttl: number = CACHE_TTL): boolean {
+		return Date.now() - cachedAt < ttl;
+	}
+
+	/** Limit cache size by removing oldest entries */
+	function limitCacheSize<T extends { cachedAt: number }>(
+		cache: SvelteMap<string, T>,
+		maxSize: number
+	): void {
+		if (cache.size <= maxSize) return;
+
+		// Get entries sorted by age (oldest first)
+		const entries = [...cache.entries()].sort((a, b) => a[1].cachedAt - b[1].cachedAt);
+
+		// Remove oldest entries until we're under the limit
+		const toRemove = entries.slice(0, cache.size - maxSize);
+		for (const [key] of toRemove) {
+			cache.delete(key);
+		}
+	}
+
+	// Max cache sizes
+	const MAX_RESULTS_CACHE = 20; // explore/search caches
+	const MAX_DETAIL_CACHE = 50; // detail/versions caches
 
 	// Filter state
 	let query = $state('');
@@ -244,6 +312,19 @@ function createModpacksStore() {
 				currentPage = 0;
 			}
 
+			const cacheKey = getSearchCacheKey();
+
+			// Check cache first (only for first page)
+			if (resetPage) {
+				const cached = searchCache.get(cacheKey);
+				if (cached && isCacheValid(cached.cachedAt)) {
+					console.log('[modpacksStore] Using cached search results');
+					modpacks = cached.modpacks;
+					totalCount = cached.totalCount;
+					return;
+				}
+			}
+
 			isSearching = true;
 			searchError = null;
 
@@ -267,6 +348,16 @@ function createModpacksStore() {
 				});
 				modpacks = result.modpacks;
 				totalCount = result.totalCount;
+
+				// Cache first page results
+				if (currentPage === 0) {
+					searchCache.set(cacheKey, {
+						modpacks: result.modpacks,
+						totalCount: result.totalCount,
+						cachedAt: Date.now(),
+					});
+					limitCacheSize(searchCache, MAX_RESULTS_CACHE);
+				}
 			} catch (e: unknown) {
 				console.error('[modpacksStore] Search failed:', e);
 				searchError =
@@ -372,7 +463,19 @@ function createModpacksStore() {
 		async loadExploreData(resetPage = true) {
 			if (resetPage) {
 				exploreCurrentPage = 0;
-				// Don't clear modpacks immediately to prevent UI jump
+			}
+
+			const cacheKey = getExploreCacheKey();
+
+			// Check cache first (only for first page)
+			if (resetPage) {
+				const cached = exploreCache.get(cacheKey);
+				if (cached && isCacheValid(cached.cachedAt)) {
+					console.log('[modpacksStore] Using cached explore data');
+					exploreModpacks = cached.modpacks;
+					exploreTotalCount = cached.totalCount;
+					return;
+				}
 			}
 
 			isLoadingExplore = true;
@@ -394,6 +497,16 @@ function createModpacksStore() {
 				});
 				exploreModpacks = result.modpacks;
 				exploreTotalCount = result.totalCount;
+
+				// Cache first page results
+				if (exploreCurrentPage === 0) {
+					exploreCache.set(cacheKey, {
+						modpacks: result.modpacks,
+						totalCount: result.totalCount,
+						cachedAt: Date.now(),
+					});
+					limitCacheSize(exploreCache, MAX_RESULTS_CACHE);
+				}
 			} catch (e: unknown) {
 				console.error('[modpacksStore] Failed to load explore modpacks:', e);
 			} finally {
@@ -401,7 +514,7 @@ function createModpacksStore() {
 			}
 		},
 
-		/** Load more explore results */
+		/** Load more explore results (appends to existing) */
 		async loadMoreExplore() {
 			if (!this.hasMoreExplore || isLoadingExplore) return;
 
@@ -510,32 +623,10 @@ function createModpacksStore() {
 		/** Set platform filter */
 		setPlatform(newPlatform: ModpackPlatform | null) {
 			if (platform !== newPlatform) {
-				// Save current results to cache before switching
-				if (modpacks.length > 0 && !query) {
-					platformCache.set(getCacheKey(platform), {
-						modpacks: [...modpacks],
-						totalCount,
-						cachedAt: Date.now(),
-					});
-				}
-
 				platform = newPlatform;
-
-				// Check if we have cached data for the new platform (only for default view)
-				if (!query) {
-					const cached = platformCache.get(getCacheKey(newPlatform));
-					if (cached && Date.now() - cached.cachedAt < CACHE_TTL) {
-						modpacks = cached.modpacks;
-						totalCount = cached.totalCount;
-						isSearching = false;
-						return;
-					}
-				}
-
-				// No cache - will need to search
+				// Search cache will be checked in the search() function
 				modpacks = [];
 				totalCount = 0;
-				isSearching = true;
 			}
 		},
 
@@ -575,58 +666,105 @@ function createModpacksStore() {
 			const selectionId = modpack.id;
 			currentSelectionId = selectionId;
 
+			const cacheKey = getModpackCacheKey(modpack.platform, modpack.id);
+
 			const shouldLoadDetail =
 				modpack.platform === 'modrinth' ||
 				modpack.platform === 'curseforge' ||
 				modpack.platform === 'ftb' ||
 				modpack.platform === 'technic';
 
-			// Show basic modpack immediately
-			selectedModpack = modpack;
-			selectedModpackVersions = [];
-			detailError = null;
-			isLoadingDetail = shouldLoadDetail;
-			isLoadingVersions = true;
+			// Check caches first
+			const cachedDetail = detailCache.get(cacheKey);
+			const cachedVersions = versionsCache.get(cacheKey);
+			const hasValidDetailCache =
+				cachedDetail && isCacheValid(cachedDetail.cachedAt, DETAIL_CACHE_TTL);
+			const hasValidVersionsCache =
+				cachedVersions && isCacheValid(cachedVersions.cachedAt, DETAIL_CACHE_TTL);
 
-			// Load details and versions in parallel
-			const detailsPromise = shouldLoadDetail
+			// Use cached data if available
+			if (hasValidDetailCache) {
+				console.log('[modpacksStore] Using cached modpack detail');
+				selectedModpack = cachedDetail.modpack;
+				isLoadingDetail = false;
+			} else {
+				selectedModpack = modpack;
+				isLoadingDetail = shouldLoadDetail;
+			}
+
+			if (hasValidVersionsCache) {
+				console.log('[modpacksStore] Using cached modpack versions');
+				selectedModpackVersions = cachedVersions.versions;
+				isLoadingVersions = false;
+			} else {
+				selectedModpackVersions = [];
+				isLoadingVersions = true;
+			}
+
+			detailError = null;
+
+			// If both are cached, we're done
+			if (hasValidDetailCache && hasValidVersionsCache) {
+				return selectedModpack ?? modpack;
+			}
+
+			// Load uncached data in parallel
+			const detailsPromise =
+				shouldLoadDetail && !hasValidDetailCache
+					? modpackService
+							.getModpack(modpack.platform, modpack.id)
+							.then((detailed) => {
+								// Only update if this is still the current selection
+								if (currentSelectionId === selectionId) {
+									const mergedGallery =
+										(detailed.gallery?.length ?? 0) > 0 ? detailed.gallery : modpack.gallery;
+									const fullModpack = { ...modpack, ...detailed, gallery: mergedGallery };
+									selectedModpack = fullModpack;
+									isLoadingDetail = false;
+
+									// Cache the detail
+									detailCache.set(cacheKey, {
+										modpack: fullModpack,
+										cachedAt: Date.now(),
+									});
+									limitCacheSize(detailCache, MAX_DETAIL_CACHE);
+								}
+							})
+							.catch((e) => {
+								console.error('[modpacksStore] Failed to load detailed modpack info:', e);
+								if (currentSelectionId === selectionId) {
+									detailError =
+										e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
+									isLoadingDetail = false;
+								}
+							})
+					: Promise.resolve();
+
+			const versionsPromise = !hasValidVersionsCache
 				? modpackService
-						.getModpack(modpack.platform, modpack.id)
-						.then((detailed) => {
+						.getModpackVersions(modpack.platform, modpack.id)
+						.then((versions) => {
 							// Only update if this is still the current selection
 							if (currentSelectionId === selectionId) {
-								const mergedGallery =
-									(detailed.gallery?.length ?? 0) > 0 ? detailed.gallery : modpack.gallery;
-								selectedModpack = { ...modpack, ...detailed, gallery: mergedGallery };
-								isLoadingDetail = false;
+								selectedModpackVersions = versions;
+								isLoadingVersions = false;
+								console.log('[modpacksStore] Loaded versions:', versions.length);
+
+								// Cache the versions
+								versionsCache.set(cacheKey, {
+									versions,
+									cachedAt: Date.now(),
+								});
+								limitCacheSize(versionsCache, MAX_DETAIL_CACHE);
 							}
 						})
 						.catch((e) => {
-							console.error('[modpacksStore] Failed to load detailed modpack info:', e);
+							console.error('[modpacksStore] Failed to load modpack versions:', e);
 							if (currentSelectionId === selectionId) {
-								detailError =
-									e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
-								isLoadingDetail = false;
+								isLoadingVersions = false;
 							}
 						})
 				: Promise.resolve();
-
-			const versionsPromise = modpackService
-				.getModpackVersions(modpack.platform, modpack.id)
-				.then((versions) => {
-					// Only update if this is still the current selection
-					if (currentSelectionId === selectionId) {
-						selectedModpackVersions = versions;
-						isLoadingVersions = false;
-						console.log('[modpacksStore] Loaded versions:', versions.length);
-					}
-				})
-				.catch((e) => {
-					console.error('[modpacksStore] Failed to load modpack versions:', e);
-					if (currentSelectionId === selectionId) {
-						isLoadingVersions = false;
-					}
-				});
 
 			// Wait for both to complete (but they update UI as they finish)
 			await Promise.all([detailsPromise, versionsPromise]);
@@ -660,6 +798,25 @@ function createModpacksStore() {
 		/** Clear mods error */
 		clearModsError() {
 			modsError = null;
+		},
+
+		/** Clear all caches */
+		clearCaches() {
+			exploreCache.clear();
+			searchCache.clear();
+			detailCache.clear();
+			versionsCache.clear();
+			console.log('[modpacksStore] All caches cleared');
+		},
+
+		/** Get cache statistics (for debugging) */
+		getCacheStats() {
+			return {
+				explore: exploreCache.size,
+				search: searchCache.size,
+				detail: detailCache.size,
+				versions: versionsCache.size,
+			};
 		},
 
 		/** Load mods/contents for a modpack version */
