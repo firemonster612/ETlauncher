@@ -95,7 +95,7 @@
 
 <button
 	type="button"
-	class="modpack-card border-border bg-card flex w-full cursor-pointer flex-col border-2 text-left"
+	class="modpack-card border-border bg-card flex h-full w-full cursor-pointer flex-col border-2 text-left"
 	{onclick}
 >
 	<!-- 16:9 Banner Area -->
@@ -104,8 +104,11 @@
 			<img
 				src={bannerImage()}
 				alt=""
-				class="modpack-card-image h-full w-full object-cover"
+				width="300"
+				height="169"
 				loading="lazy"
+				decoding="async"
+				class="modpack-card-image h-full w-full object-cover"
 			/>
 		{:else}
 			<!-- Blurred icon background with centered icon when no banner image -->
@@ -115,15 +118,21 @@
 					<img
 						src={modpack.iconUrl}
 						alt=""
-						class="absolute inset-0 h-full w-full object-cover opacity-50 blur-sm"
+						width="64"
+						height="64"
 						loading="lazy"
+						decoding="async"
+						class="absolute inset-0 h-full w-full object-cover opacity-50 blur-sm"
 					/>
 					<!-- Main icon -->
 					<img
 						src={modpack.iconUrl}
 						alt={modpack.name}
-						class="relative z-10 h-16 w-16 rounded object-cover shadow-lg"
+						width="64"
+						height="64"
 						loading="lazy"
+						decoding="async"
+						class="relative z-10 h-16 w-16 rounded object-cover shadow-lg"
 					/>
 				{:else}
 					<Package class="text-muted-foreground/30 h-16 w-16" />
@@ -165,8 +174,11 @@
 				<img
 					src={modpack.iconUrl}
 					alt=""
-					class="h-10 w-10 flex-shrink-0 rounded object-cover"
+					width="40"
+					height="40"
 					loading="lazy"
+					decoding="async"
+					class="h-10 w-10 flex-shrink-0 rounded object-cover"
 				/>
 			{:else if !bannerImage()}
 				<!-- Icon already shown in banner area, skip here -->

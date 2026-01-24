@@ -14,8 +14,9 @@
 	let currentIndex = $state(0);
 	let currentGalleryIndex = $state(0);
 	let isPaused = $state(false);
+	let animationFrameId: number | null = null;
+	let lastTickTime = $state(0);
 	let tickCount = $state(0);
-	let intervalId: ReturnType<typeof setInterval> | null = null;
 
 	// Timing: tick every 500ms, gallery changes every 4 ticks (2s), modpack switch after 6 ticks (3s)
 	const TICK_MS = 500;
@@ -32,32 +33,58 @@
 		return thumbs;
 	});
 
-	function startInterval() {
-		if (intervalId) return;
-		intervalId = setInterval(() => {
-			if (isPaused || modpacks.length === 0) return;
+	// Only render adjacent slides for better performance (prev, current, next)
+	let visibleSlideIndices = $derived(() => {
+		if (modpacks.length === 0) return new Set<number>();
+		if (modpacks.length <= 3) {
+			return new Set(modpacks.map((_, i) => i));
+		}
+		const prev = (currentIndex - 1 + modpacks.length) % modpacks.length;
+		const next = (currentIndex + 1) % modpacks.length;
+		return new Set([prev, currentIndex, next]);
+	});
 
-			tickCount++;
-			const gallery = modpacks[currentIndex]?.gallery || [];
-			const isLastGalleryImage = gallery.length <= 1 || currentGalleryIndex >= gallery.length - 1;
-			const ticksNeeded = isLastGalleryImage ? MODPACK_SWITCH_TICKS : GALLERY_TICKS;
+	function animate(currentTime: number) {
+		if (!lastTickTime) {
+			lastTickTime = currentTime;
+		}
 
-			if (tickCount >= ticksNeeded) {
-				tickCount = 0;
-				if (gallery.length > 1 && currentGalleryIndex < gallery.length - 1) {
-					currentGalleryIndex++;
-				} else {
-					currentIndex = (currentIndex + 1) % modpacks.length;
-					currentGalleryIndex = 0;
+		const elapsed = currentTime - lastTickTime;
+
+		if (elapsed >= TICK_MS) {
+			lastTickTime = currentTime;
+
+			if (!isPaused && modpacks.length > 0) {
+				tickCount++;
+				const gallery = modpacks[currentIndex]?.gallery || [];
+				const isLastGalleryImage = gallery.length <= 1 || currentGalleryIndex >= gallery.length - 1;
+				const ticksNeeded = isLastGalleryImage ? MODPACK_SWITCH_TICKS : GALLERY_TICKS;
+
+				if (tickCount >= ticksNeeded) {
+					tickCount = 0;
+					if (gallery.length > 1 && currentGalleryIndex < gallery.length - 1) {
+						currentGalleryIndex++;
+					} else {
+						currentIndex = (currentIndex + 1) % modpacks.length;
+						currentGalleryIndex = 0;
+					}
 				}
 			}
-		}, TICK_MS);
+		}
+
+		animationFrameId = requestAnimationFrame(animate);
 	}
 
-	function stopInterval() {
-		if (intervalId) {
-			clearInterval(intervalId);
-			intervalId = null;
+	function startAnimation() {
+		if (animationFrameId) return;
+		lastTickTime = 0;
+		animationFrameId = requestAnimationFrame(animate);
+	}
+
+	function stopAnimation() {
+		if (animationFrameId) {
+			cancelAnimationFrame(animationFrameId);
+			animationFrameId = null;
 		}
 	}
 
@@ -69,16 +96,16 @@
 		isPaused = false;
 	}
 
-	// Start interval when modpacks are loaded
+	// Start animation when modpacks are loaded
 	$effect(() => {
 		if (modpacks.length > 0 && !loading) {
-			startInterval();
+			startAnimation();
 		}
-		return () => stopInterval();
+		return () => stopAnimation();
 	});
 
 	onDestroy(() => {
-		stopInterval();
+		stopAnimation();
 	});
 
 	function prev() {
@@ -166,78 +193,100 @@
 			<!-- Left: Featured Banner Carousel -->
 			<div class="featured-carousel">
 				{#each modpacks as modpack, idx (`${modpack.platform}-${modpack.id}`)}
-					<button
-						type="button"
-						class="featured-carousel-slide {idx === currentIndex ? 'active' : ''}"
-						onclick={() => onModpackClick?.(modpack)}
-					>
-						{#if modpack.gallery && modpack.gallery.length > 0 && modpack.iconUrl}
-							<!-- Has gallery + icon: show screenshot with icon overlay -->
-							{@const galleryIdx = idx === currentIndex ? currentGalleryIndex : 0}
-							{@const galleryImage = modpack.gallery[galleryIdx] || modpack.gallery[0]}
-							<div class="relative h-full w-full">
+					<!-- Only render adjacent slides for performance -->
+					{#if visibleSlideIndices().has(idx)}
+						<button
+							type="button"
+							class="featured-carousel-slide {idx === currentIndex ? 'active' : ''}"
+							onclick={() => onModpackClick?.(modpack)}
+						>
+							{#if modpack.gallery && modpack.gallery.length > 0 && modpack.iconUrl}
+								<!-- Has gallery + icon: show screenshot with icon overlay -->
+								{@const galleryIdx = idx === currentIndex ? currentGalleryIndex : 0}
+								{@const galleryImage = modpack.gallery[galleryIdx] || modpack.gallery[0]}
+								<div class="relative h-full w-full">
+									<img
+										src={galleryImage?.rawUrl || galleryImage?.url}
+										alt={modpack.name}
+										width="640"
+										height="360"
+										decoding="async"
+										class="h-full w-full object-cover transition-opacity duration-500"
+									/>
+									<!-- Icon overlay in top-left -->
+									<div class="absolute top-3 left-3 z-10">
+										<img
+											src={modpack.iconUrl}
+											alt=""
+											width="56"
+											height="56"
+											decoding="async"
+											class="h-14 w-14 border-2 border-black/30 object-cover shadow-2xl"
+											style="will-change: transform; transform: translateZ(0);"
+										/>
+									</div>
+									<!-- Gallery progress dots -->
+									{#if modpack.gallery.length > 1 && idx === currentIndex}
+										<div class="absolute top-3 right-3 z-10 flex gap-1">
+											{#each Array.from({ length: modpack.gallery.length }, (_, i) => i) as gIdx (gIdx)}
+												<div
+													class="h-1.5 w-1.5 rounded-full transition-colors {gIdx ===
+													currentGalleryIndex
+														? 'bg-white'
+														: 'bg-white/40'}"
+												></div>
+											{/each}
+										</div>
+									{/if}
+								</div>
+							{:else if modpack.bannerUrl}
 								<img
-									src={galleryImage?.rawUrl || galleryImage?.url}
+									src={modpack.bannerUrl}
 									alt={modpack.name}
-									class="h-full w-full object-cover transition-opacity duration-500"
+									width="640"
+									height="360"
+									decoding="async"
+									class="h-full w-full object-cover"
 								/>
-								<!-- Icon overlay in top-left -->
-								<div class="absolute top-3 left-3 z-10">
+							{:else if modpack.iconUrl}
+								<div
+									class="bg-card relative flex h-full w-full items-center justify-center overflow-hidden"
+								>
+									<!-- Softly blurred background icon -->
 									<img
 										src={modpack.iconUrl}
 										alt=""
-										class="h-14 w-14 border-2 border-black/30 object-cover shadow-2xl"
+										width="128"
+										height="128"
+										decoding="async"
+										class="absolute inset-0 h-full w-full object-cover opacity-60 blur-md"
+										style="will-change: transform; transform: translateZ(0);"
+									/>
+									<!-- Centered sharp icon -->
+									<img
+										src={modpack.iconUrl}
+										alt={modpack.name}
+										width="128"
+										height="128"
+										decoding="async"
+										class="relative z-10 mb-16 h-32 w-32 object-contain drop-shadow-lg"
 										style="will-change: transform; transform: translateZ(0);"
 									/>
 								</div>
-								<!-- Gallery progress dots -->
-								{#if modpack.gallery.length > 1 && idx === currentIndex}
-									<div class="absolute top-3 right-3 z-10 flex gap-1">
-										{#each Array.from({ length: modpack.gallery.length }, (_, i) => i) as gIdx (gIdx)}
-											<div
-												class="h-1.5 w-1.5 rounded-full transition-colors {gIdx ===
-												currentGalleryIndex
-													? 'bg-white'
-													: 'bg-white/40'}"
-											></div>
-										{/each}
-									</div>
-								{/if}
-							</div>
-						{:else if modpack.bannerUrl}
-							<img src={modpack.bannerUrl} alt={modpack.name} class="h-full w-full object-cover" />
-						{:else if modpack.iconUrl}
+							{:else}
+								<div class="bg-card flex h-full w-full items-center justify-center">
+									<Package class="text-muted-foreground/50 h-32 w-32" />
+								</div>
+							{/if}
+							<!-- Overlay with modpack info -->
 							<div
-								class="bg-card relative flex h-full w-full items-center justify-center overflow-hidden"
+								class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-4"
 							>
-								<!-- Softly blurred background icon -->
-								<img
-									src={modpack.iconUrl}
-									alt=""
-									class="absolute inset-0 h-full w-full object-cover opacity-60 blur-md"
-									style="will-change: transform; transform: translateZ(0);"
-								/>
-								<!-- Centered sharp icon -->
-								<img
-									src={modpack.iconUrl}
-									alt={modpack.name}
-									class="relative z-10 mb-16 h-32 w-32 object-contain drop-shadow-lg"
-									style="will-change: transform; transform: translateZ(0);"
-								/>
+								<h3 class="truncate text-lg font-bold text-white">{modpack.name}</h3>
+								<p class="text-sm text-white/80">{modpack.author}</p>
 							</div>
-						{:else}
-							<div class="bg-card flex h-full w-full items-center justify-center">
-								<Package class="text-muted-foreground/50 h-32 w-32" />
-							</div>
-						{/if}
-						<!-- Overlay with modpack info -->
-						<div
-							class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-4"
-						>
-							<h3 class="truncate text-lg font-bold text-white">{modpack.name}</h3>
-							<p class="text-sm text-white/80">{modpack.author}</p>
-						</div>
-					</button>
+						</button>
+					{/if}
 				{/each}
 
 				<!-- Navigation Arrows -->
@@ -292,8 +341,11 @@
 								<img
 									src={thumb.bannerUrl || thumb.gallery?.[0]?.rawUrl || thumb.gallery?.[0]?.url}
 									alt={thumb.name}
-									class="h-full w-full object-cover"
+									width="300"
+									height="169"
 									loading="lazy"
+									decoding="async"
+									class="h-full w-full object-cover"
 								/>
 							{:else if thumb.iconUrl}
 								<div
@@ -303,6 +355,10 @@
 									<img
 										src={thumb.iconUrl}
 										alt=""
+										width="80"
+										height="80"
+										loading="lazy"
+										decoding="async"
 										class="absolute inset-0 h-full w-full object-cover opacity-50 blur-sm"
 										style="will-change: transform; transform: translateZ(0);"
 									/>
@@ -310,6 +366,10 @@
 									<img
 										src={thumb.iconUrl}
 										alt={thumb.name}
+										width="80"
+										height="80"
+										loading="lazy"
+										decoding="async"
 										class="relative z-10 h-20 w-20 object-contain drop-shadow-lg"
 										style="will-change: transform; transform: translateZ(0);"
 									/>
