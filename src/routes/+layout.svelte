@@ -1,13 +1,11 @@
 <script lang="ts">
 	import '../app.css';
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
 	import { SidebarProvider } from '$lib/ui/sidebar';
 	import Titlebar from '$lib/components/layout/Titlebar.svelte';
-	import TutorialOverlay from '$lib/components/TutorialOverlay.svelte';
-	import TutorialWelcome from '$lib/components/TutorialWelcome.svelte';
+	import OnboardingWizard from '$lib/components/OnboardingWizard.svelte';
 	import AlertDialog from '$lib/components/AlertDialog.svelte';
-	import { tutorialStore } from '$lib/stores/tutorial.svelte';
+	import { onboardingStore } from '$lib/stores/onboarding.svelte';
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { accountsStore } from '$lib/stores/accounts.svelte';
 	import { themeStore } from '$lib/stores/theme.svelte';
@@ -18,18 +16,15 @@
 		// Initialize theme system
 		themeStore.init();
 
-		// Provide navigation function to tutorial store
-		// eslint-disable-next-line svelte/no-navigation-without-resolve
-		tutorialStore.setNavigate((path: string) => goto(path));
-
 		// Load settings and accounts in parallel
 		await Promise.all([settingsStore.load(), accountsStore.load()]);
 
 		// Apply theme from loaded settings
 		themeStore.applyFromSettings();
 
+		// Show onboarding wizard if setup not completed
 		if (settingsStore.settings && !settingsStore.settings.setupCompleted) {
-			tutorialStore.showWelcomeModal();
+			onboardingStore.start();
 		}
 	});
 
@@ -50,9 +45,8 @@
 	</SidebarProvider>
 </div>
 
-<!-- Tutorial System -->
-<TutorialWelcome open={tutorialStore.showWelcome} />
-<TutorialOverlay />
+<!-- Onboarding Wizard -->
+<OnboardingWizard />
 
 <!-- Global Alert Dialog -->
 <AlertDialog />

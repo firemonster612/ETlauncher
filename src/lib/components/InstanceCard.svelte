@@ -219,7 +219,6 @@
 					onOpenSettings(instance);
 				}}
 				title="Instance settings"
-				data-tutorial="instance-settings-btn"
 			>
 				<Settings class="h-4 w-4" />
 			</Button>
@@ -231,7 +230,6 @@
 					onOpenContentBrowser(instance);
 				}}
 				title="Add mods, shaders, resource packs"
-				data-tutorial="content-browser-btn"
 			>
 				<PackagePlus class="h-4 w-4" />
 			</Button>

@@ -12,16 +12,10 @@
 				<Sidebar.Menu>
 					{#each navItems as item (item.id)}
 						{@const isActive = page.url.pathname.startsWith(item.href)}
-						{@const tutorialId =
-							item.id === 'modpacks'
-								? 'sidebar-modpacks'
-								: item.id === 'instances'
-									? 'sidebar-instances'
-									: null}
 						<Sidebar.MenuItem>
 							<Sidebar.MenuButton {isActive} tooltipContent={item.label}>
 								{#snippet child({ props })}
-									<a href={item.href} {...props} data-tutorial={tutorialId}>
+									<a href={item.href} {...props}>
 										<item.icon class="h-5 w-5" />
 										<span>{item.label}</span>
 									</a>

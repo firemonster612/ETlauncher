@@ -1352,7 +1352,7 @@
 				</div>
 			</div>
 			<!-- Content Type Buttons -->
-			<div class="flex gap-2" data-tutorial="content-browser-types">
+			<div class="flex gap-2">
 				{#each contentTypes as { value, label } (value)}
 					<Button
 						variant={contentStore.contentType === value ? 'default' : 'secondary'}
