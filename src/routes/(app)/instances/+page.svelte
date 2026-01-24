@@ -352,7 +352,7 @@
 				<FileDown class="mr-2 h-4 w-4" />
 				Import
 			</Button>
-			<Button onclick={() => (showCreateModal = true)} data-tutorial="new-instance-btn">
+			<Button onclick={() => (showCreateModal = true)}>
 				<Plus class="mr-2 h-4 w-4" />
 				New
 			</Button>
@@ -493,8 +493,8 @@
 						<Input id="name" type="text" bind:value={createName} placeholder="My Instance" />
 					</div>
 
-					<div data-tutorial="instance-version-loader" class="space-y-4">
-						<div data-tutorial="instance-version">
+					<div class="space-y-4">
+						<div>
 							<span class="text-muted-foreground mb-1 block text-sm">Minecraft Version</span>
 							<Select.Root
 								type="single"
@@ -527,7 +527,7 @@
 							</Select.Root>
 						</div>
 
-						<div data-tutorial="instance-loader">
+						<div>
 							<LoaderSelect
 								loaderType={createLoader}
 								loaderVersion={createLoaderVersion}
@@ -545,7 +545,6 @@
 						class="flex-1"
 						onclick={closeCreateModal}
 						disabled={isCreating || instancesStore.isInstallingLoader}
-						data-tutorial="create-cancel"
 					>
 						Cancel
 					</Button>
@@ -553,7 +552,6 @@
 						class="flex-1"
 						onclick={handleCreate}
 						disabled={!createName.trim() || isCreating || instancesStore.isInstallingLoader}
-						data-tutorial="instance-create"
 					>
 						{#if instancesStore.isInstallingLoader}
 							Installing {createLoader}...
