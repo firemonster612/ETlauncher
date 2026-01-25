@@ -8,6 +8,7 @@ Thank you for your interest in contributing to ETLauncher! This document will he
 
 - **Rust 1.92.0+** - Install via [rustup](https://rustup.rs/)
 - **Bun** - Install from [bun.sh](https://bun.sh/)
+- **Node.js 22** Install from [nodejs.org](https://nodejs.org)
 
 ### Platform-Specific Dependencies
 
@@ -102,6 +103,7 @@ bun run lint           # Check for lint errors (ESLint)
 bun run lint:fix       # Fix lint errors
 bun run check          # Type check (svelte-check)
 ```
+or more simply: `bun run validate`
 
 ### Backend (Rust)
 
@@ -113,6 +115,7 @@ cargo fmt              # Fix formatting
 cargo lint             # Check for lint errors (Clippy)
 cargo check            # Check compilation
 ```
+or more simply: `bun run validate:rs`
 
 ## Pull Request Process
 
