@@ -149,7 +149,7 @@ const ALL_ENTITY_ICONS: &[&str] = &[
 ];
 
 /// Get a random entity icon path, prioritizing icons not already in use
-fn get_random_entity_icon(used_icons: &[String]) -> String {
+pub fn get_random_entity_icon(used_icons: &[String]) -> String {
     let mut rng = rand::rng();
 
     // Find icons that haven't been used yet
@@ -172,7 +172,7 @@ fn get_random_entity_icon(used_icons: &[String]) -> String {
 }
 
 /// Collect all icon paths currently in use by instances
-fn get_used_icons(state: &AppState) -> Vec<String> {
+pub fn get_used_icons(state: &AppState) -> Vec<String> {
     match get_all_instances(state) {
         Ok(instances) => instances.into_iter().filter_map(|i| i.icon_path).collect(),
         Err(_) => Vec::new(),

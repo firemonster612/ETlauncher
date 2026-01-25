@@ -1,4 +1,4 @@
-import { SvelteMap } from 'svelte/reactivity';
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import type {
 	Content,
 	ContentDownloadProgress,
@@ -46,6 +46,7 @@ function createContentStore() {
 	// Filter state (can be set from instance context)
 	let query = $state('');
 	let platform = $state<ContentPlatform>('modrinth');
+	let previousPlatform = $state<ContentPlatform | null>(null); // Track platform before switching to Worlds
 	let mcVersion = $state<string | null>(null);
 	let loader = $state<LoaderType | null>(null);
 	let isVanillaInstance = $state(false); // Track vanilla instance for datapack filtering
@@ -76,6 +77,10 @@ function createContentStore() {
 
 	// Download queue for parallel downloads
 	let downloadQueue = $state<QueuedDownload[]>([]);
+
+	// Pending installs tracking for optimistic UI updates
+	// Tracks content IDs that are being prepared for install (before they hit the queue)
+	const pendingInstalls = new SvelteSet<string>();
 
 	// Resolved dependencies state
 	let resolvedDependencies = $state<ResolvedDependency[]>([]);
@@ -192,13 +197,28 @@ function createContentStore() {
 			downloadProgress = progress;
 		},
 
-		/** Check if a content item is in the download queue (pending or downloading) */
+		/** Check if a content item is in the download queue (pending or downloading) or pending install */
 		isContentQueued(contentId: string): boolean {
+			// Check pending installs (optimistic state before queue entry)
+			if (pendingInstalls.has(contentId)) {
+				return true;
+			}
+			// Check actual download queue
 			return downloadQueue.some(
 				(item) =>
 					item.content.id === contentId &&
 					(item.status === 'pending' || item.status === 'downloading')
 			);
+		},
+
+		/** Mark a content item as pending install (optimistic UI update) */
+		markPendingInstall(contentId: string) {
+			pendingInstalls.add(contentId);
+		},
+
+		/** Clear a content item from pending installs (called when queued or failed) */
+		clearPendingInstall(contentId: string) {
+			pendingInstalls.delete(contentId);
 		},
 
 		/** Check if a content item is currently downloading */
@@ -581,6 +601,22 @@ function createContentStore() {
 				});
 			}
 
+			// Handle platform switching for Worlds tab (CurseForge only)
+			const isCurrentlyWorld = contentType === 'world';
+			const isSwitchingToWorld = type === 'world';
+
+			if (isSwitchingToWorld && !isCurrentlyWorld) {
+				// Switching TO Worlds tab - save current platform and switch to CurseForge
+				if (platform !== 'curseforge') {
+					previousPlatform = platform;
+					platform = 'curseforge';
+				}
+			} else if (!isSwitchingToWorld && isCurrentlyWorld && previousPlatform !== null) {
+				// Switching AWAY from Worlds tab - restore previous platform
+				platform = previousPlatform;
+				previousPlatform = null;
+			}
+
 			contentType = type;
 			currentPage = 0;
 
@@ -721,6 +757,7 @@ function createContentStore() {
 			currentPage = 0;
 			query = '';
 			platform = 'modrinth';
+			previousPlatform = null;
 			mcVersion = null;
 			loader = null;
 			isVanillaInstance = false;
@@ -740,6 +777,7 @@ function createContentStore() {
 			installError = null;
 			downloadProgress = null;
 			downloadQueue = [];
+			pendingInstalls.clear();
 			resolvedDependencies = [];
 			isResolvingDeps = false;
 			contentCache.clear();

@@ -3,7 +3,9 @@ use crate::models::{
     CachedFileHash, ContentType, DetectedCurseForgeProject, DetectedMod, DetectedModrinthProject,
     InstalledContent, ScanCache, ScanResult,
 };
-use crate::services::{curseforge_service, manifest_service, modrinth_service};
+use crate::services::{
+    curseforge_service, manifest_service, modrinth_service, resource_pool_service,
+};
 use crate::state::AppState;
 use crate::utils::hash::hash_files_parallel;
 use crate::utils::paths::get_instance_game_dir_with_base;
@@ -675,6 +677,10 @@ pub fn uninstall_by_filename(
 
     // Also remove from manifest so reinstall works correctly
     manifest_service::remove_content(state, instance_id, filename, content_type)?;
+
+    // Trigger garbage collection if conditions are met (24+ hours since last GC)
+    // This runs in the background and cleans up unused pool resources
+    resource_pool_service::maybe_run_gc_background(state);
 
     Ok(())
 }

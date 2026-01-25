@@ -6,10 +6,11 @@
 	interface Props {
 		modpacks: Modpack[];
 		loading?: boolean;
+		isModalOpen?: boolean;
 		onModpackClick?: (modpack: Modpack) => void;
 	}
 
-	let { modpacks, loading = false, onModpackClick }: Props = $props();
+	let { modpacks, loading = false, isModalOpen = false, onModpackClick }: Props = $props();
 
 	let currentIndex = $state(0);
 	let currentGalleryIndex = $state(0);
@@ -102,6 +103,13 @@
 			startAnimation();
 		}
 		return () => stopAnimation();
+	});
+
+	// Pause rotation when modal is open
+	$effect(() => {
+		if (isModalOpen) {
+			isPaused = true;
+		}
 	});
 
 	onDestroy(() => {

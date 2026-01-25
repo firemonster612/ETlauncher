@@ -230,10 +230,14 @@ pub struct ResourcePoolStats {
     pub unused_count: usize,
     /// Last garbage collection timestamp
     pub last_gc_at: Option<i64>,
+    /// Size of cached assets (textures, sounds, etc.) in bytes
+    pub assets_cache_size: u64,
+    /// Size of cached libraries (Java libraries) in bytes
+    pub libraries_cache_size: u64,
 }
 
 impl ResourcePoolStats {
-    /// Create stats from a pool index
+    /// Create stats from a pool index (without cache sizes - use from_index_with_cache_sizes instead)
     pub fn from_index(index: &ResourcePoolIndex) -> Self {
         Self {
             total_resources: index.resources.len(),
@@ -244,6 +248,28 @@ impl ResourcePoolStats {
             space_saved_bytes: index.calculate_space_savings(),
             unused_count: index.resources.values().filter(|r| r.is_unused()).count(),
             last_gc_at: index.last_gc_at,
+            assets_cache_size: 0,
+            libraries_cache_size: 0,
+        }
+    }
+
+    /// Create stats from a pool index with cache sizes
+    pub fn from_index_with_cache_sizes(
+        index: &ResourcePoolIndex,
+        assets_cache_size: u64,
+        libraries_cache_size: u64,
+    ) -> Self {
+        Self {
+            total_resources: index.resources.len(),
+            mod_count: index.count_by_type(ContentType::Mod),
+            shader_count: index.count_by_type(ContentType::Shader),
+            resource_pack_count: index.count_by_type(ContentType::ResourcePack),
+            total_size_bytes: index.total_size(),
+            space_saved_bytes: index.calculate_space_savings(),
+            unused_count: index.resources.values().filter(|r| r.is_unused()).count(),
+            last_gc_at: index.last_gc_at,
+            assets_cache_size,
+            libraries_cache_size,
         }
     }
 }

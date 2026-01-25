@@ -89,6 +89,9 @@ regex = "1"
 # Exponential backoff for retry logic
 backoff = { version = "0.4", features = ["tokio"] }
 
+# Directory traversal
+walkdir = "2"
+
 # Windows-specific dependencies
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }

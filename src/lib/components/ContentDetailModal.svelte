@@ -4,6 +4,7 @@
 	import { openUrl } from '@tauri-apps/plugin-opener';
 	import { renderMarkdown } from '$lib/utils/markdown';
 	import { formatDownloads, getPlatformColor, getLoaderColor } from '$lib/utils/format';
+	import { nestedScroll } from '$lib/utils/scroll';
 	import { Button } from '$lib/ui/button';
 	import ScreenshotLightbox from '$lib/components/ScreenshotLightbox.svelte';
 	import DescriptionModal from '$lib/components/DescriptionModal.svelte';
@@ -197,7 +198,7 @@
 			class="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden p-5 md:grid-cols-[2.5fr_1fr] xl:grid-cols-[3fr_1fr]"
 		>
 			<!-- Left Column: Tabs and Content -->
-			<div class="min-h-0 space-y-4 overflow-y-auto pr-1">
+			<div class="min-h-0 space-y-4 overflow-y-auto pr-1" use:nestedScroll>
 				<!-- Tab Buttons -->
 				<div class="flex items-center gap-2">
 					{#each tabs as tab (tab.id)}
@@ -322,7 +323,7 @@
 			</div>
 
 			<!-- Right Column: Sidebar -->
-			<div class="min-h-0 space-y-3 overflow-y-auto pr-1">
+			<div class="min-h-0 space-y-3 overflow-y-auto pr-1" use:nestedScroll>
 				{#if sidebar}
 					{@render sidebar()}
 				{/if}

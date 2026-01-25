@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Search, Loader2, AlertTriangle, ArrowUpDown, X, Filter } from '@lucide/svelte';
+	import { Search, Loader2, AlertTriangle, ArrowUpDown, X, Filter, Check } from '@lucide/svelte';
 	import { Button } from '$lib/ui/button';
 	import { Input } from '$lib/ui/input';
 	import * as Select from '$lib/ui/select';
@@ -88,7 +88,7 @@
 	let hasActiveFilters = $derived(
 		modpacksStore.exploreMcVersion !== null ||
 			modpacksStore.exploreLoader !== null ||
-			modpacksStore.exploreCategory !== null ||
+			modpacksStore.exploreCategories.length > 0 ||
 			modpacksStore.exploreSide !== null
 	);
 
@@ -133,7 +133,7 @@
 		modpacksStore.setExplorePlatform(newPlatform);
 		modpacksStore.setExploreMcVersion(null);
 		modpacksStore.setExploreLoader(null);
-		modpacksStore.setExploreCategory(null);
+		modpacksStore.setExploreCategories([]);
 		modpacksStore.setExploreSide(null);
 		modpacksStore.loadExploreData();
 	}
@@ -153,8 +153,8 @@
 		modpacksStore.loadExploreData();
 	}
 
-	function handleCategoryChange(category: string) {
-		modpacksStore.setExploreCategory(category || null);
+	function handleCategoriesChange(categories: string[]) {
+		modpacksStore.setExploreCategories(categories);
 		modpacksStore.loadExploreData();
 	}
 
@@ -166,7 +166,7 @@
 	function clearFilters() {
 		modpacksStore.setExploreMcVersion(null);
 		modpacksStore.setExploreLoader(null);
-		modpacksStore.setExploreCategory(null);
+		modpacksStore.setExploreCategories([]);
 		modpacksStore.setExploreSide(null);
 		modpacksStore.loadExploreData();
 	}
@@ -267,6 +267,7 @@
 			<PopularModpacksSection
 				modpacks={modpacksStore.popularModpacks}
 				loading={modpacksStore.isLoadingPopular}
+				isModalOpen={selectedModpackDetail !== null}
 				onModpackClick={handleModpackClick}
 			/>
 
@@ -309,7 +310,7 @@
 					value={modpacksStore.exploreSortBy}
 					onValueChange={(v) => handleSortChange(v as ModpackSortBy)}
 				>
-					<Select.Trigger class="sort-select w-40">
+					<Select.Trigger class="sort-select min-w-[8rem] w-fit">
 						<ArrowUpDown class="mr-1 h-3 w-3" />
 						<span class="truncate">
 							{sortOptions.find((o) => o.value === modpacksStore.exploreSortBy)?.label}
@@ -333,7 +334,7 @@
 						value={modpacksStore.exploreMcVersion || ''}
 						onValueChange={handleVersionChange}
 					>
-						<Select.Trigger class="sort-select w-32">
+						<Select.Trigger class="sort-select min-w-[6rem] w-fit">
 							<span class="truncate">{modpacksStore.exploreMcVersion || 'MC Version'}</span>
 						</Select.Trigger>
 						<Select.Content class="border-border bg-card max-h-[300px] border-2">
@@ -349,7 +350,7 @@
 						value={modpacksStore.exploreLoader || 'any'}
 						onValueChange={handleLoaderChange}
 					>
-						<Select.Trigger class="sort-select w-28">
+						<Select.Trigger class="sort-select min-w-[5rem] w-fit">
 							<span class="truncate">
 								{modpacksStore.exploreLoader
 									? modpacksStore.exploreLoader.charAt(0).toUpperCase() +
@@ -367,22 +368,35 @@
 					</Select.Root>
 
 					<Select.Root
-						type="single"
-						value={modpacksStore.exploreCategory || ''}
-						onValueChange={handleCategoryChange}
+						type="multiple"
+						value={modpacksStore.exploreCategories}
+						onValueChange={handleCategoriesChange}
 					>
-						<Select.Trigger class="sort-select w-36">
-							<span class="truncate">
-								{modpacksStore.exploreCategory
-									? modpacksStore.exploreCategory.replace(/-/g, ' ')
+						<Select.Trigger class="sort-select min-w-[6rem] w-fit">
+							<span class="truncate capitalize">
+								{modpacksStore.exploreCategories.length > 0
+									? modpacksStore.exploreCategories.length === 1
+										? modpacksStore.exploreCategories[0].replace(/-/g, ' ')
+										: `${modpacksStore.exploreCategories.length} selected`
 									: 'Category'}
 							</span>
 						</Select.Trigger>
 						<Select.Content class="border-border bg-card max-h-[300px] border-2">
-							<Select.Item value="" label="Any">Any Category</Select.Item>
 							{#each availableCategories as category (category)}
+								{@const isSelected = modpacksStore.exploreCategories.includes(category)}
 								<Select.Item value={category} label={category}>
-									<span class="capitalize">{category.replace(/-/g, ' ')}</span>
+									<span class="flex items-center gap-2">
+										<span
+											class="flex h-4 w-4 items-center justify-center border border-border {isSelected
+												? 'bg-primary border-primary'
+												: ''}"
+										>
+											{#if isSelected}
+												<Check class="h-3 w-3 text-primary-foreground" />
+											{/if}
+										</span>
+										<span class="capitalize">{category.replace(/-/g, ' ')}</span>
+									</span>
 								</Select.Item>
 							{/each}
 						</Select.Content>
@@ -393,7 +407,7 @@
 						value={modpacksStore.exploreSide || 'any'}
 						onValueChange={handleSideChange}
 					>
-						<Select.Trigger class="sort-select w-28">
+						<Select.Trigger class="sort-select min-w-[5rem] w-fit">
 							<span class="truncate">
 								{modpacksStore.exploreSide === 'client'
 									? 'Client'

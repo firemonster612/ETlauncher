@@ -22,6 +22,9 @@ use std::path::{Path, PathBuf};
 /// This prevents race conditions where a resource is added but not yet linked
 const GC_MIN_AGE_SECS: i64 = 86400; // 24 hours
 
+/// Minimum time (in seconds) between automatic garbage collection runs
+const GC_INTERVAL_SECS: i64 = 86400; // 24 hours
+
 /// Initialize the resource pool directories
 pub fn init_pool() -> Result<(), AppError> {
     fs::create_dir_all(get_resource_pool_dir_for_type(&ContentType::Mod))?;
@@ -339,7 +342,35 @@ pub fn garbage_collect(state: &AppState) -> Result<GarbageCollectionResult, AppE
 /// Get statistics about the resource pool
 pub fn get_pool_stats(state: &AppState) -> ResourcePoolStats {
     let index = state.resource_pool_index.read();
-    ResourcePoolStats::from_index(&index)
+    let assets_cache_size = calculate_directory_size(&crate::utils::paths::get_assets_dir());
+    let libraries_cache_size = calculate_directory_size(&crate::utils::paths::get_libraries_dir());
+    ResourcePoolStats::from_index_with_cache_sizes(&index, assets_cache_size, libraries_cache_size)
+}
+
+/// Calculate the total size of a directory recursively
+fn calculate_directory_size(path: &Path) -> u64 {
+    if !path.exists() {
+        return 0;
+    }
+
+    fn visit_dir(dir: &Path) -> u64 {
+        let mut total = 0;
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Ok(meta) = path.metadata() {
+                        total += meta.len();
+                    }
+                } else if path.is_dir() {
+                    total += visit_dir(&path);
+                }
+            }
+        }
+        total
+    }
+
+    visit_dir(path)
 }
 
 /// Check if a resource exists in the pool
@@ -469,4 +500,52 @@ pub struct PoolIntegrityReport {
     pub valid_resources: usize,
     pub missing_files: Vec<String>,
     pub orphaned_files: Vec<PathBuf>,
+}
+
+/// Check if garbage collection should run (24+ hours since last GC or never run)
+pub fn should_run_gc(state: &AppState) -> bool {
+    let index = state.resource_pool_index.read();
+
+    // Check if there are any unused resources to clean
+    let has_candidates = index
+        .resources
+        .values()
+        .any(|r| r.is_unused() && (chrono::Utc::now().timestamp() - r.added_at) > GC_MIN_AGE_SECS);
+
+    if !has_candidates {
+        return false;
+    }
+
+    // Check if GC has never run or it's been more than 24 hours
+    match index.last_gc_at {
+        None => true, // Never run before
+        Some(last_gc) => {
+            let now = chrono::Utc::now().timestamp();
+            now - last_gc >= GC_INTERVAL_SECS
+        }
+    }
+}
+
+/// Run garbage collection in the background if conditions are met
+/// Returns true if GC was started, false if skipped
+pub fn maybe_run_gc_background(state: &AppState) {
+    if !should_run_gc(state) {
+        return;
+    }
+
+    // Run GC - since this is called from startup, we can just run it directly
+    // The GC operation is not CPU-intensive, just file I/O
+    match garbage_collect(state) {
+        Ok(result) => {
+            if result.resources_removed > 0 {
+                println!(
+                    "[resource_pool] Auto GC: removed {} unused resources, freed {} bytes",
+                    result.resources_removed, result.bytes_freed
+                );
+            }
+        }
+        Err(e) => {
+            eprintln!("[resource_pool] Auto GC failed: {}", e);
+        }
+    }
 }

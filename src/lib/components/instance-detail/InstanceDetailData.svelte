@@ -11,6 +11,7 @@
 		Sparkles,
 	} from '@lucide/svelte';
 	import { alertDialogStore } from '$lib/stores/alertDialog.svelte';
+	import { nestedScroll } from '$lib/utils/scroll';
 	import { Button } from '$lib/ui/button';
 	import { Input } from '$lib/ui/input';
 	import * as instanceDetailService from '$lib/services/instance-detail';
@@ -276,7 +277,7 @@
 		</div>
 
 		<!-- Worlds List -->
-		<div class="flex-1 overflow-y-auto">
+		<div class="flex-1 overflow-y-auto" use:nestedScroll>
 			{#if isLoadingWorlds}
 				<div class="text-muted-foreground flex items-center justify-center gap-3 py-12">
 					<Loader2 class="h-6 w-6 animate-spin" />
@@ -413,7 +414,7 @@
 		</div>
 
 		<!-- Servers List -->
-		<div class="flex-1 overflow-y-auto">
+		<div class="flex-1 overflow-y-auto" use:nestedScroll>
 			{#if isLoadingServers}
 				<div class="text-muted-foreground flex items-center justify-center gap-3 py-12">
 					<Loader2 class="h-6 w-6 animate-spin" />

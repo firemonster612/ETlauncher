@@ -13,6 +13,7 @@
 		HardDrive,
 	} from '@lucide/svelte';
 	import { renderMarkdown } from '$lib/utils/markdown';
+	import { nestedScroll } from '$lib/utils/scroll';
 	import { openUrl } from '@tauri-apps/plugin-opener';
 	import { Button } from '$lib/ui/button';
 	import * as Select from '$lib/ui/select';
@@ -224,7 +225,7 @@
 		</div>
 
 		<!-- Two-column layout -->
-		<div class="modpack-detail-modal min-h-0 flex-1 overflow-y-auto p-5">
+		<div class="modpack-detail-modal min-h-0 flex-1 overflow-y-auto p-5" use:nestedScroll>
 			<!-- Left Column: Main Content -->
 			<div class="space-y-4">
 				<!-- Gallery Carousel -->
@@ -296,7 +297,7 @@
 						{:else if modpack.body || modpack.description}
 							<!-- svelte-ignore a11y_click_events_have_key_events -->
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div class="prose-markdown max-h-[400px] overflow-y-auto" onclick={handleLinkClick}>
+							<div class="prose-markdown max-h-[400px] overflow-y-auto" use:nestedScroll onclick={handleLinkClick}>
 								<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 								{@html renderMarkdown(modpack.body, modpack.description)}
 							</div>
@@ -345,7 +346,7 @@
 						<p class="text-muted-foreground text-sm">No mods found for this version.</p>
 					{:else}
 						<div class="border-border overflow-hidden rounded-lg border-2">
-							<div class="max-h-[400px] overflow-y-auto">
+							<div class="max-h-[400px] overflow-y-auto" use:nestedScroll>
 								{#each mods as mod (mod.id)}
 									<button
 										type="button"
@@ -381,6 +382,7 @@
 				{:else if activeTab === 'changelog'}
 					<div
 						class="border-border bg-background/70 max-h-[400px] space-y-4 overflow-y-auto rounded-lg border-2 p-4"
+						use:nestedScroll
 					>
 						{#each versions as version (version.id)}
 							<div class="border-border border-b pb-4 last:border-b-0 last:pb-0">

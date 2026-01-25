@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { X, Loader2, LayoutDashboard, Package, Image, Database, RefreshCw } from '@lucide/svelte';
 	import { Button } from '$lib/ui/button';
+	import { nestedScroll } from '$lib/utils/scroll';
 	import ScreenshotLightbox from '$lib/components/ScreenshotLightbox.svelte';
 	import InstanceDetailHero from '$lib/components/instance-detail/InstanceDetailHero.svelte';
 	import InstanceDetailOverview from '$lib/components/instance-detail/InstanceDetailOverview.svelte';
@@ -296,7 +297,7 @@
 					</div>
 				</div>
 			{:else}
-				<div class="h-full overflow-y-auto p-6">
+				<div class="h-full overflow-y-auto p-6" use:nestedScroll>
 					{#if activeTab === 'overview' && detail}
 						<InstanceDetailOverview
 							{instance}

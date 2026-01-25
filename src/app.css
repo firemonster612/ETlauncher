@@ -249,6 +249,19 @@ html:not(.no-hover-lift) [role="button"]:active {
 	transform: translateY(1px);
 }
 
+/* Alternative hover feedback when hover lift is disabled */
+/* Only target shadcn Button components (data-slot="button") to avoid conflicts */
+/* with custom buttons that have their own hover:border styles */
+html.no-hover-lift [data-slot="button"]:hover {
+	outline: 2px solid color-mix(in oklch, var(--primary), transparent 50%);
+	outline-offset: 1px;
+}
+
+html.no-hover-lift [data-slot="button"]:active {
+	outline: 2px solid var(--primary);
+	outline-offset: 0px;
+}
+
 /* Primary buttons get a glow */
 .bg-primary {
 	box-shadow:
@@ -324,6 +337,11 @@ select:focus {
 
 ::-webkit-scrollbar-thumb:hover {
 	background: color-mix(in oklch, var(--primary), transparent 50%);
+}
+
+/* Nested scroll container - allows scroll to propagate to parent when at boundaries */
+.nested-scroll {
+	overscroll-behavior: contain;
 }
 
 /* Selection color */
@@ -1060,7 +1078,8 @@ html:not(.dark) .section-header-title {
 
 /* Instance card hover glow using accent color */
 .instance-card-glow:hover {
-	box-shadow: 0 0 20px color-mix(in oklch, var(--primary), transparent 75%);
+	border-color: var(--primary) !important;
+	box-shadow: 0 2px 8px color-mix(in oklch, var(--primary), transparent 85%);
 }
 
 .modpack-card-gradient {
@@ -1093,6 +1112,7 @@ html:not(.dark) .section-header-title {
 	background: var(--background);
 	border: 1px solid var(--border);
 	padding: 0 0.5rem;
+	width: fit-content;
 }
 
 /* Content filter buttons for modpack contents tab */

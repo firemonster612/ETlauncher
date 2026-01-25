@@ -35,6 +35,10 @@ pub fn run() {
         if let Err(e) = services::migration_service::migrate_all_instances(&app_state) {
             eprintln!("Auto-migration failed: {}", e);
         }
+
+        // Run garbage collection in background if it's been 24+ hours since last GC
+        // This cleans up unused resources automatically
+        services::resource_pool_service::maybe_run_gc_background(&app_state);
     }
 
     tauri::Builder::default()
