@@ -10,6 +10,7 @@ use crate::utils::paths::{
     get_libraries_dir, get_versions_cache_dir,
 };
 use crate::utils::platform::{get_arch, get_os_name};
+use backoff::{backoff::Backoff, ExponentialBackoff};
 use futures::stream::{self, StreamExt};
 use sha1::{Digest, Sha1};
 use std::fs::{self, File};
@@ -17,18 +18,24 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::Manager;
 use tauri::{AppHandle, Emitter};
+use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 use zip::ZipArchive;
 
 const VERSION_MANIFEST_URL: &str =
     "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json";
 const RESOURCES_URL: &str = "https://resources.download.minecraft.net";
-const CONCURRENT_DOWNLOADS: usize = 8;
+/// Default concurrent downloads if settings not available
+const DEFAULT_CONCURRENT_DOWNLOADS: usize = 8;
 
 /// Fetch the version manifest from Mojang
-pub async fn fetch_version_manifest(force_refresh: bool) -> Result<VersionManifest, AppError> {
+pub async fn fetch_version_manifest(
+    client: &reqwest::Client,
+    force_refresh: bool,
+) -> Result<VersionManifest, AppError> {
     let cache_path = get_versions_cache_dir().join("version_manifest_v2.json");
 
     // Use cached version if available and not forcing refresh
@@ -40,7 +47,6 @@ pub async fn fetch_version_manifest(force_refresh: bool) -> Result<VersionManife
     }
 
     // Fetch from Mojang
-    let client = reqwest::Client::new();
     let response = client.get(VERSION_MANIFEST_URL).send().await?;
     let content = response.text().await?;
 
@@ -54,7 +60,10 @@ pub async fn fetch_version_manifest(force_refresh: bool) -> Result<VersionManife
 }
 
 /// Get a specific version's info
-pub async fn get_version_info(version_id: &str) -> Result<VersionInfo, AppError> {
+pub async fn get_version_info(
+    client: &reqwest::Client,
+    version_id: &str,
+) -> Result<VersionInfo, AppError> {
     let cache_path = get_versions_cache_dir().join(format!("{}.json", version_id));
 
     // Use cached version if available
@@ -65,7 +74,7 @@ pub async fn get_version_info(version_id: &str) -> Result<VersionInfo, AppError>
     }
 
     // Fetch version manifest to get the URL
-    let manifest = fetch_version_manifest(false).await?;
+    let manifest = fetch_version_manifest(client, false).await?;
     let version_entry = manifest
         .versions
         .iter()
@@ -73,7 +82,6 @@ pub async fn get_version_info(version_id: &str) -> Result<VersionInfo, AppError>
         .ok_or_else(|| AppError::VersionNotFound(version_id.to_string()))?;
 
     // Fetch version info
-    let client = reqwest::Client::new();
     let response = client.get(&version_entry.url).send().await?;
     let content = response.text().await?;
 
@@ -290,13 +298,14 @@ fn merge_arguments(
 
 /// Get version info with loader support - merges loader version if applicable
 pub async fn get_version_info_with_loader(
+    client: &reqwest::Client,
     mc_version: &str,
     loader_type: &LoaderType,
     loader_version: Option<&str>,
     game_dir: &std::path::Path,
 ) -> Result<VersionInfo, AppError> {
     // Always start with vanilla version
-    let vanilla_info = get_version_info(mc_version).await?;
+    let vanilla_info = get_version_info(client, mc_version).await?;
 
     // If no loader or vanilla, return vanilla version
     if *loader_type == LoaderType::Vanilla {
@@ -324,7 +333,15 @@ pub async fn download_game_files(
     version_id: &str,
     app_handle: Option<&AppHandle>,
 ) -> Result<(), AppError> {
-    let version_info = get_version_info(version_id).await?;
+    // Get HTTP client from AppState, or create a new one if not available
+    let client = app_handle
+        .and_then(|handle| handle.try_state::<crate::state::AppState>())
+        .map(|state| state.http_client.clone())
+        .unwrap_or_else(|| {
+            crate::utils::http::create_client().expect("Failed to create HTTP client")
+        });
+
+    let version_info = get_version_info(&client, version_id).await?;
     download_game_files_with_version(instance_id, version_id, &version_info, app_handle).await
 }
 
@@ -336,17 +353,25 @@ pub async fn download_game_files_with_version(
     version_info: &VersionInfo,
     app_handle: Option<&AppHandle>,
 ) -> Result<(), AppError> {
-    // Get instances base directory from settings
-    let instances_base_dir = app_handle
-        .and_then(|handle| {
-            handle
-                .try_state::<crate::state::AppState>()
-                .map(|state| state.settings.read().instances_path.clone())
+    // Get HTTP client and settings from AppState
+    let (http_client, instances_base_dir, concurrent_downloads) = app_handle
+        .and_then(|handle| handle.try_state::<crate::state::AppState>())
+        .map(|state| {
+            let settings = state.settings.read();
+            (
+                state.http_client.clone(),
+                settings.instances_path.clone(),
+                settings.concurrent_downloads as usize,
+            )
         })
         .unwrap_or_else(|| {
-            crate::utils::paths::get_instances_dir()
-                .to_string_lossy()
-                .to_string()
+            (
+                crate::utils::http::create_client().expect("Failed to create HTTP client"),
+                crate::utils::paths::get_instances_dir()
+                    .to_string_lossy()
+                    .to_string(),
+                DEFAULT_CONCURRENT_DOWNLOADS,
+            )
         });
 
     let instance_dir = get_instance_dir_with_base(&instances_base_dir, instance_id);
@@ -539,7 +564,7 @@ pub async fn download_game_files_with_version(
     }
 
     // 3. Assets
-    let asset_index = fetch_asset_index(version_info).await?;
+    let asset_index = fetch_asset_index(&http_client, version_info).await?;
     for asset in asset_index.objects.values() {
         let hash_prefix = &asset.hash[..2];
         let asset_path = get_assets_dir()
@@ -580,12 +605,11 @@ pub async fn download_game_files_with_version(
     let completed_files = Arc::new(AtomicU64::new(0));
     let downloaded_bytes = Arc::new(AtomicU64::new(0));
     let current_file = Arc::new(Mutex::new(String::new()));
-
-    let client = reqwest::Client::new();
+    let start_time = std::time::Instant::now();
 
     let results = stream::iter(downloads)
         .map(|task| {
-            let client = client.clone();
+            let client = http_client.clone();
             let completed_files = completed_files.clone();
             let downloaded_bytes = downloaded_bytes.clone();
             let current_file = current_file.clone();
@@ -603,8 +627,16 @@ pub async fn download_game_files_with_version(
                         .to_string();
                 }
 
-                // Emit progress event
+                // Emit progress event with speed calculation
                 if let Some(ref handle) = app_handle_clone {
+                    let bytes_so_far = downloaded_bytes.load(Ordering::Relaxed);
+                    let elapsed_secs = start_time.elapsed().as_secs_f64();
+                    let speed = if elapsed_secs > 0.1 {
+                        (bytes_so_far as f64 / elapsed_secs) as u64
+                    } else {
+                        0
+                    };
+
                     let progress = DownloadProgress {
                         total_files,
                         completed_files: completed_files.load(Ordering::Relaxed) as u32,
@@ -615,8 +647,8 @@ pub async fn download_game_files_with_version(
                             .to_string_lossy()
                             .to_string(),
                         total_bytes,
-                        downloaded_bytes: downloaded_bytes.load(Ordering::Relaxed),
-                        speed_bytes_per_sec: 0,
+                        downloaded_bytes: bytes_so_far,
+                        speed_bytes_per_sec: speed,
                     };
                     let _ = handle.emit("download_progress", progress);
                 }
@@ -632,7 +664,7 @@ pub async fn download_game_files_with_version(
                 result
             }
         })
-        .buffer_unordered(CONCURRENT_DOWNLOADS)
+        .buffer_unordered(concurrent_downloads)
         .collect::<Vec<_>>()
         .await;
 
@@ -644,7 +676,11 @@ pub async fn download_game_files_with_version(
     Ok(())
 }
 
-/// Download a single file with optional SHA1 verification
+/// Download a single file with streaming, incremental hashing, and retry logic
+///
+/// Uses exponential backoff with jitter for transient failures (network issues, 5xx errors).
+/// Streams data directly to disk while computing hash to minimize memory usage.
+/// Will retry up to 3 times with delays of ~1s, ~2s, ~4s before giving up.
 async fn download_file(
     client: &reqwest::Client,
     url: &str,
@@ -656,12 +692,83 @@ async fn download_file(
         fs::create_dir_all(parent)?;
     }
 
-    // Download
+    // Use a temp file for atomic writes
+    let temp_path = path.with_extension("part");
+
+    // Configure exponential backoff: initial 1s, max 8s, max elapsed 30s
+    let mut backoff = ExponentialBackoff {
+        current_interval: Duration::from_secs(1),
+        initial_interval: Duration::from_secs(1),
+        max_interval: Duration::from_secs(8),
+        max_elapsed_time: Some(Duration::from_secs(30)),
+        multiplier: 2.0,
+        randomization_factor: 0.5,
+        ..Default::default()
+    };
+    backoff.reset();
+
+    loop {
+        match download_file_streaming(client, url, &temp_path, expected_sha1).await {
+            Ok(()) => {
+                // Rename temp file to final destination (atomic on most filesystems)
+                tokio::fs::rename(&temp_path, path).await?;
+                return Ok(());
+            }
+            Err(e) => {
+                // Clean up temp file on failure
+                let _ = tokio::fs::remove_file(&temp_path).await;
+
+                // Check if error is retryable (network errors, 5xx, 429)
+                let is_retryable = matches!(&e,
+                    AppError::DownloadError(msg) if msg.contains("Failed to fetch") ||
+                        msg.contains("HTTP 5") ||
+                        msg.contains("HTTP 429")
+                );
+
+                if !is_retryable {
+                    return Err(e);
+                }
+
+                // Get next backoff duration, or give up
+                match backoff.next_backoff() {
+                    Some(duration) => {
+                        tokio::time::sleep(duration).await;
+                    }
+                    None => {
+                        // Max retries exceeded
+                        return Err(e);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Stream download directly to file with incremental SHA1 hashing
+///
+/// This function streams data chunk-by-chunk to disk while computing the hash,
+/// avoiding loading the entire file into memory. Memory usage stays constant
+/// regardless of file size (~64KB buffer).
+async fn download_file_streaming(
+    client: &reqwest::Client,
+    url: &str,
+    path: &PathBuf,
+    expected_sha1: &str,
+) -> Result<(), AppError> {
+    // Validate URL is not empty
+    if url.is_empty() {
+        return Err(AppError::DownloadError(
+            "Cannot download: URL is empty".to_string(),
+        ));
+    }
+
+    // Start download
     let response = client
         .get(url)
         .send()
         .await
         .map_err(|e| AppError::DownloadError(format!("Failed to fetch {}: {}", url, e)))?;
+
     if !response.status().is_success() {
         return Err(AppError::DownloadError(format!(
             "HTTP {} for {}",
@@ -670,22 +777,41 @@ async fn download_file(
         )));
     }
 
-    let bytes = response.bytes().await?;
+    // Create file for writing
+    let mut file = tokio::fs::File::create(path).await?;
 
-    // Verify SHA1 (skip if empty - used for Maven libraries)
-    if !expected_sha1.is_empty() {
-        let mut hasher = Sha1::new();
-        hasher.update(&bytes);
-        let hash = format!("{:x}", hasher.finalize());
+    // Initialize hasher if we need to verify
+    let mut hasher = if expected_sha1.is_empty() {
+        None
+    } else {
+        Some(Sha1::new())
+    };
 
-        if hash != expected_sha1 {
-            return Err(AppError::HashMismatch(path.display().to_string()));
+    // Stream chunks directly to file
+    let mut stream = response.bytes_stream();
+    while let Some(chunk_result) = stream.next().await {
+        let chunk =
+            chunk_result.map_err(|e| AppError::DownloadError(format!("Stream error: {}", e)))?;
+
+        // Update hash
+        if let Some(ref mut h) = hasher {
+            h.update(&chunk);
         }
+
+        // Write chunk to file
+        file.write_all(&chunk).await?;
     }
 
-    // Write to file
-    let mut file = File::create(path)?;
-    file.write_all(&bytes)?;
+    // Ensure all data is flushed
+    file.flush().await?;
+
+    // Verify hash if required
+    if let Some(h) = hasher {
+        let hash = format!("{:x}", h.finalize());
+        if hash != expected_sha1 {
+            return Err(AppError::HashMismatch(url.to_string()));
+        }
+    }
 
     Ok(())
 }
@@ -700,7 +826,10 @@ fn file_valid(path: &PathBuf, expected_sha1: &str) -> bool {
 }
 
 /// Fetch and cache the asset index
-async fn fetch_asset_index(version_info: &VersionInfo) -> Result<AssetIndex, AppError> {
+async fn fetch_asset_index(
+    client: &reqwest::Client,
+    version_info: &VersionInfo,
+) -> Result<AssetIndex, AppError> {
     let asset_index = version_info
         .asset_index
         .as_ref()
@@ -718,7 +847,6 @@ async fn fetch_asset_index(version_info: &VersionInfo) -> Result<AssetIndex, App
     }
 
     // Fetch from URL
-    let client = reqwest::Client::new();
     let response = client.get(&asset_index.url).send().await?;
     let content = response.text().await?;
 

@@ -49,6 +49,12 @@ pub struct ModpackInstallProgress {
     pub current_item: Option<String>,
     pub total_items: u32,
     pub completed_items: u32,
+    /// Total bytes to download (0 if not tracking bytes)
+    pub total_bytes: u64,
+    /// Bytes downloaded so far
+    pub downloaded_bytes: u64,
+    /// Download speed in bytes per second
+    pub speed_bytes_per_sec: u64,
 }
 
 /// Install a Modrinth modpack
@@ -200,9 +206,23 @@ pub async fn install_modrinth_modpack(
     extract_overrides(&mut archive, &game_dir, "overrides")?;
     extract_overrides(&mut archive, &game_dir, "client-overrides")?;
 
-    // Download mod files
+    // Download mod files with progress tracking
     let total_files = index.files.len() as u32;
-    emit_progress(app_handle, "Downloading mods", 25, None, total_files, 0);
+    let total_bytes: u64 = index.files.iter().map(|f| f.file_size).sum();
+    let mut downloaded_bytes: u64 = 0;
+    let start_time = std::time::Instant::now();
+
+    emit_progress_with_download(
+        app_handle,
+        "Downloading mods",
+        25,
+        None,
+        total_files,
+        0,
+        total_bytes,
+        0,
+        0,
+    );
 
     for (i, file_entry) in index.files.iter().enumerate() {
         // Check for cancellation before each file
@@ -217,13 +237,24 @@ pub async fn install_modrinth_modpack(
             .next_back()
             .unwrap_or(&file_entry.path);
 
-        emit_progress(
+        // Calculate speed based on elapsed time
+        let elapsed_secs = start_time.elapsed().as_secs_f64();
+        let speed = if elapsed_secs > 0.1 {
+            (downloaded_bytes as f64 / elapsed_secs) as u64
+        } else {
+            0
+        };
+
+        emit_progress_with_download(
             app_handle,
             "Downloading mods",
             25 + ((i as u32 * 70) / total_files.max(1)),
             Some(filename.to_string()),
             total_files,
             i as u32,
+            total_bytes,
+            downloaded_bytes,
+            speed,
         );
 
         // Determine file destination
@@ -233,7 +264,7 @@ pub async fn install_modrinth_modpack(
         }
 
         // Try each download URL
-        let mut downloaded = false;
+        let mut file_downloaded = false;
         for url in &file_entry.downloads {
             match download_file_with_hash(
                 &state.http_client,
@@ -244,14 +275,15 @@ pub async fn install_modrinth_modpack(
             .await
             {
                 Ok(_) => {
-                    downloaded = true;
+                    file_downloaded = true;
+                    downloaded_bytes += file_entry.file_size;
                     break;
                 }
                 Err(_) => continue,
             }
         }
 
-        if !downloaded && !file_entry.downloads.is_empty() {
+        if !file_downloaded && !file_entry.downloads.is_empty() {
             eprintln!("Failed to download: {}", file_entry.path);
         }
     }
@@ -454,9 +486,23 @@ pub async fn install_curseforge_modpack(
     let overrides_folder = manifest.overrides.as_deref().unwrap_or("overrides");
     extract_overrides(&mut archive, &game_dir, overrides_folder)?;
 
-    // Download mod files from CurseForge
+    // Download mod files from CurseForge with progress tracking
     let total_files = manifest.files.len() as u32;
-    emit_progress(app_handle, "Downloading mods", 25, None, total_files, 0);
+    let mut downloaded_bytes: u64 = 0;
+    let mut total_bytes: u64 = 0; // We'll accumulate as we fetch file info
+    let start_time = std::time::Instant::now();
+
+    emit_progress_with_download(
+        app_handle,
+        "Downloading mods",
+        25,
+        None,
+        total_files,
+        0,
+        0,
+        0,
+        0,
+    );
 
     let mods_dir = game_dir.join("mods");
     fs::create_dir_all(&mods_dir)?;
@@ -468,13 +514,24 @@ pub async fn install_curseforge_modpack(
             return Err(AppError::Cancelled);
         }
 
-        emit_progress(
+        // Calculate speed based on elapsed time
+        let elapsed_secs = start_time.elapsed().as_secs_f64();
+        let speed = if elapsed_secs > 0.1 {
+            (downloaded_bytes as f64 / elapsed_secs) as u64
+        } else {
+            0
+        };
+
+        emit_progress_with_download(
             app_handle,
             "Downloading mods",
             25 + ((i as u32 * 70) / total_files.max(1)),
             Some(format!("Mod {}/{}", i + 1, total_files)),
             total_files,
             i as u32,
+            total_bytes,
+            downloaded_bytes,
+            speed,
         );
 
         // Get file info from CurseForge API
@@ -487,9 +544,14 @@ pub async fn install_curseforge_modpack(
         .await;
 
         if let Ok(info) = file_info {
+            total_bytes += info.file_length;
             let dest_path = mods_dir.join(&info.filename);
-            let _ =
-                download_bytes_to_file(&state.http_client, &info.download_url, &dest_path).await;
+            if download_bytes_to_file(&state.http_client, &info.download_url, &dest_path)
+                .await
+                .is_ok()
+            {
+                downloaded_bytes += info.file_length;
+            }
         }
     }
 
@@ -634,6 +696,30 @@ fn emit_progress(
     total_items: u32,
     completed_items: u32,
 ) {
+    emit_progress_with_download(
+        app_handle,
+        stage,
+        progress,
+        current_item,
+        total_items,
+        completed_items,
+        0,
+        0,
+        0,
+    );
+}
+
+fn emit_progress_with_download(
+    app_handle: Option<&AppHandle>,
+    stage: &str,
+    progress: u32,
+    current_item: Option<String>,
+    total_items: u32,
+    completed_items: u32,
+    total_bytes: u64,
+    downloaded_bytes: u64,
+    speed_bytes_per_sec: u64,
+) {
     if let Some(handle) = app_handle {
         let _ = handle.emit(
             "modpack_install_progress",
@@ -643,6 +729,9 @@ fn emit_progress(
                 current_item,
                 total_items,
                 completed_items,
+                total_bytes,
+                downloaded_bytes,
+                speed_bytes_per_sec,
             },
         );
     }
@@ -725,6 +814,13 @@ fn extract_overrides<R: Read + std::io::Seek>(
 }
 
 async fn download_bytes(client: &Client, url: &str) -> Result<Vec<u8>, AppError> {
+    // Validate URL is not empty
+    if url.is_empty() {
+        return Err(AppError::DownloadError(
+            "Cannot download: URL is empty".to_string(),
+        ));
+    }
+
     let response = client
         .get(url)
         .send()
@@ -947,9 +1043,23 @@ pub async fn import_from_mrpack_file(
     extract_overrides(&mut archive, &game_dir, "overrides")?;
     extract_overrides(&mut archive, &game_dir, "client-overrides")?;
 
-    // Download mod files
+    // Download mod files with progress tracking
     let total_files = index.files.len() as u32;
-    emit_progress(app_handle, "Downloading mods", 25, None, total_files, 0);
+    let total_bytes: u64 = index.files.iter().map(|f| f.file_size).sum();
+    let mut downloaded_bytes: u64 = 0;
+    let start_time = std::time::Instant::now();
+
+    emit_progress_with_download(
+        app_handle,
+        "Downloading mods",
+        25,
+        None,
+        total_files,
+        0,
+        total_bytes,
+        0,
+        0,
+    );
 
     for (i, file_entry) in index.files.iter().enumerate() {
         let filename = file_entry
@@ -958,13 +1068,24 @@ pub async fn import_from_mrpack_file(
             .next_back()
             .unwrap_or(&file_entry.path);
 
-        emit_progress(
+        // Calculate speed based on elapsed time
+        let elapsed_secs = start_time.elapsed().as_secs_f64();
+        let speed = if elapsed_secs > 0.1 {
+            (downloaded_bytes as f64 / elapsed_secs) as u64
+        } else {
+            0
+        };
+
+        emit_progress_with_download(
             app_handle,
             "Downloading mods",
             25 + ((i as u32 * 70) / total_files.max(1)),
             Some(filename.to_string()),
             total_files,
             i as u32,
+            total_bytes,
+            downloaded_bytes,
+            speed,
         );
 
         // Determine file destination
@@ -974,7 +1095,7 @@ pub async fn import_from_mrpack_file(
         }
 
         // Try each download URL
-        let mut downloaded = false;
+        let mut file_downloaded = false;
         for url in &file_entry.downloads {
             match download_file_with_hash(
                 &state.http_client,
@@ -985,14 +1106,15 @@ pub async fn import_from_mrpack_file(
             .await
             {
                 Ok(_) => {
-                    downloaded = true;
+                    file_downloaded = true;
+                    downloaded_bytes += file_entry.file_size;
                     break;
                 }
                 Err(_) => continue,
             }
         }
 
-        if !downloaded && !file_entry.downloads.is_empty() {
+        if !file_downloaded && !file_entry.downloads.is_empty() {
             eprintln!("Failed to download: {}", file_entry.path);
         }
     }
@@ -1725,7 +1847,21 @@ pub async fn install_ftb_modpack(
 
     // Download mod files
     let total_files = version.files.len() as u32;
-    emit_progress(app_handle, "Downloading files", 15, None, total_files, 0);
+    let total_bytes: u64 = version.files.iter().map(|f| f.size).sum();
+    let mut downloaded_bytes: u64 = 0;
+    let start_time = std::time::Instant::now();
+
+    emit_progress_with_download(
+        app_handle,
+        "Downloading files",
+        15,
+        None,
+        total_files,
+        0,
+        total_bytes,
+        0,
+        0,
+    );
 
     for (i, file) in version.files.iter().enumerate() {
         // Check for cancellation before each file
@@ -1736,13 +1872,24 @@ pub async fn install_ftb_modpack(
 
         let filename = file.path.split('/').next_back().unwrap_or(&file.path);
 
-        emit_progress(
+        // Calculate current speed
+        let elapsed_secs = start_time.elapsed().as_secs_f64();
+        let speed_bytes_per_sec = if elapsed_secs > 0.1 {
+            (downloaded_bytes as f64 / elapsed_secs) as u64
+        } else {
+            0
+        };
+
+        emit_progress_with_download(
             app_handle,
             "Downloading files",
             15 + ((i as u32 * 70) / total_files.max(1)),
             Some(filename.to_string()),
             total_files,
             i as u32,
+            total_bytes,
+            downloaded_bytes,
+            speed_bytes_per_sec,
         );
 
         let dest_path = game_dir.join(&file.path);
@@ -1756,6 +1903,9 @@ pub async fn install_ftb_modpack(
         {
             eprintln!("[modpack_install] Failed to download {}: {}", file.path, e);
         }
+
+        // Track downloaded bytes
+        downloaded_bytes += file.size;
     }
 
     // Detect metadata if needed after files are downloaded
@@ -2064,7 +2214,21 @@ pub async fn install_technic_modpack(
         .await?;
 
         let total_files = build.mods.len() as u32;
-        emit_progress(app_handle, "Downloading mods", 15, None, total_files, 0);
+        let total_bytes: u64 = build.mods.iter().filter_map(|m| m.filesize).sum();
+        let mut downloaded_bytes: u64 = 0;
+        let start_time = std::time::Instant::now();
+
+        emit_progress_with_download(
+            app_handle,
+            "Downloading mods",
+            15,
+            None,
+            total_files,
+            0,
+            total_bytes,
+            0,
+            0,
+        );
 
         let mods_dir = game_dir.join("mods");
         fs::create_dir_all(&mods_dir)?;
@@ -2076,17 +2240,31 @@ pub async fn install_technic_modpack(
                 return Err(AppError::Cancelled);
             }
 
-            emit_progress(
+            // Calculate current speed
+            let elapsed_secs = start_time.elapsed().as_secs_f64();
+            let speed_bytes_per_sec = if elapsed_secs > 0.1 {
+                (downloaded_bytes as f64 / elapsed_secs) as u64
+            } else {
+                0
+            };
+
+            emit_progress_with_download(
                 app_handle,
                 "Downloading mods",
                 15 + ((i as u32 * 70) / total_files.max(1)),
                 Some(mod_file.name.clone()),
                 total_files,
                 i as u32,
+                total_bytes,
+                downloaded_bytes,
+                speed_bytes_per_sec,
             );
 
             // Technic Solder mods are zip files that need to be extracted
             let zip_bytes = download_bytes(&state.http_client, &mod_file.url).await?;
+
+            // Track downloaded bytes
+            downloaded_bytes += mod_file.filesize.unwrap_or(zip_bytes.len() as u64);
 
             // Extract the zip to the game directory
             let cursor = std::io::Cursor::new(&zip_bytes);
@@ -2436,9 +2614,22 @@ pub async fn install_atlauncher_modpack(
         .collect();
 
     let total_mods = mods_to_download.len() as u32;
+    let total_bytes: u64 = mods_to_download.iter().filter_map(|m| m.size).sum();
+    let mut downloaded_bytes: u64 = 0;
+    let start_time = std::time::Instant::now();
     let mut browser_downloads = Vec::new();
 
-    emit_progress(app_handle, "Downloading mods", 25, None, total_mods, 0);
+    emit_progress_with_download(
+        app_handle,
+        "Downloading mods",
+        25,
+        None,
+        total_mods,
+        0,
+        total_bytes,
+        0,
+        0,
+    );
 
     for (i, mod_entry) in mods_to_download.iter().enumerate() {
         // Check for cancellation before each file
@@ -2447,13 +2638,24 @@ pub async fn install_atlauncher_modpack(
             return Err(AppError::Cancelled);
         }
 
-        emit_progress(
+        // Calculate current speed
+        let elapsed_secs = start_time.elapsed().as_secs_f64();
+        let speed_bytes_per_sec = if elapsed_secs > 0.1 {
+            (downloaded_bytes as f64 / elapsed_secs) as u64
+        } else {
+            0
+        };
+
+        emit_progress_with_download(
             app_handle,
             "Downloading mods",
             25 + ((i as u32 * 60) / total_mods.max(1)),
             Some(mod_entry.name.clone()),
             total_mods,
             i as u32,
+            total_bytes,
+            downloaded_bytes,
+            speed_bytes_per_sec,
         );
 
         // Determine file path
@@ -2511,6 +2713,9 @@ pub async fn install_atlauncher_modpack(
                     mod_entry.name, e
                 );
             }
+
+            // Track downloaded bytes
+            downloaded_bytes += mod_entry.size.unwrap_or(0);
         }
     }
 

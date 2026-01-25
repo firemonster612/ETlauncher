@@ -162,10 +162,8 @@ pub struct ModpackInstallState {
 impl AppState {
     /// Create a new AppState with default settings
     pub fn new() -> Self {
-        let http_client = reqwest::Client::builder()
-            .user_agent("ETLauncher/1.0")
-            .build()
-            .expect("Failed to create HTTP client");
+        let http_client =
+            crate::utils::http::create_client().expect("Failed to create HTTP client");
 
         // Load the resource pool index if it exists
         let pool_index = crate::services::resource_pool_service::load_pool_index()

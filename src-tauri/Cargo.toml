@@ -86,6 +86,9 @@ quartz_nbt = { version = "0.2", features = ["serde"] }
 # Regex for HTML parsing
 regex = "1"
 
+# Exponential backoff for retry logic
+backoff = { version = "0.4", features = ["tokio"] }
+
 # Windows-specific dependencies
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }

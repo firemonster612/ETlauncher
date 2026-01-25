@@ -559,7 +559,8 @@ pub async fn check_instance_updates(
     }
 
     // Fetch the latest Minecraft version
-    let version_manifest = download_service::fetch_version_manifest(false).await?;
+    let version_manifest =
+        download_service::fetch_version_manifest(&state.http_client, false).await?;
     let latest_mc_version = version_manifest.latest.release.clone();
 
     // Check if MC update is available

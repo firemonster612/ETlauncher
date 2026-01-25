@@ -50,8 +50,8 @@ pub async fn launch_instance(
     // Get valid access token (will refresh if needed)
     emit_launch_status(app_handle, &instance_id, LaunchStatus::RefreshingToken);
 
-    let http_client = reqwest::Client::new();
-    let access_token = account_service::get_valid_access_token(&http_client, account_id).await?;
+    let access_token =
+        account_service::get_valid_access_token(&state.http_client, account_id).await?;
 
     // Get paths
     let game_dir = instance_service::get_game_directory(&state, &instance.id);
@@ -60,6 +60,7 @@ pub async fn launch_instance(
     emit_launch_status(app_handle, &instance_id, LaunchStatus::LoadingVersion);
 
     let version_info = download_service::get_version_info_with_loader(
+        &state.http_client,
         &instance.minecraft_version,
         &instance.loader_type,
         instance.loader_version.as_deref(),

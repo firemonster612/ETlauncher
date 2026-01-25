@@ -1,12 +1,16 @@
 use crate::error::CommandError;
 use crate::models::minecraft::{VersionEntry, VersionInfo, VersionManifest};
 use crate::services::download_service;
-use tauri::AppHandle;
+use crate::state::AppState;
+use tauri::{AppHandle, State};
 
 /// Fetch the version manifest from Mojang
 #[tauri::command]
-pub async fn fetch_version_manifest(force_refresh: bool) -> Result<VersionManifest, CommandError> {
-    download_service::fetch_version_manifest(force_refresh)
+pub async fn fetch_version_manifest(
+    state: State<'_, AppState>,
+    force_refresh: bool,
+) -> Result<VersionManifest, CommandError> {
+    download_service::fetch_version_manifest(&state.http_client, force_refresh)
         .await
         .map_err(CommandError::from)
 }
@@ -14,10 +18,11 @@ pub async fn fetch_version_manifest(force_refresh: bool) -> Result<VersionManife
 /// Get filtered versions (releases, optionally snapshots and old versions)
 #[tauri::command]
 pub async fn get_versions(
+    state: State<'_, AppState>,
     show_snapshots: bool,
     show_old_versions: bool,
 ) -> Result<Vec<VersionEntry>, CommandError> {
-    let manifest = download_service::fetch_version_manifest(false)
+    let manifest = download_service::fetch_version_manifest(&state.http_client, false)
         .await
         .map_err(CommandError::from)?;
 
@@ -28,8 +33,11 @@ pub async fn get_versions(
 
 /// Get detailed version info
 #[tauri::command]
-pub async fn get_version_info(version_id: String) -> Result<VersionInfo, CommandError> {
-    download_service::get_version_info(&version_id)
+pub async fn get_version_info(
+    state: State<'_, AppState>,
+    version_id: String,
+) -> Result<VersionInfo, CommandError> {
+    download_service::get_version_info(&state.http_client, &version_id)
         .await
         .map_err(CommandError::from)
 }

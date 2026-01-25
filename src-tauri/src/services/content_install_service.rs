@@ -422,6 +422,13 @@ async fn download_content_bytes(
         }
     }
 
+    // Validate URL is not empty
+    if url.is_empty() {
+        return Err(AppError::DownloadError(
+            "Cannot download content: URL is empty".to_string(),
+        ));
+    }
+
     // Start download
     let response = client
         .get(url)

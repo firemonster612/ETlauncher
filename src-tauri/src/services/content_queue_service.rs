@@ -16,8 +16,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
-/// Maximum concurrent content downloads
-const MAX_CONCURRENT_DOWNLOADS: usize = 2;
+/// Default concurrent content downloads if settings not available
+const DEFAULT_CONCURRENT_DOWNLOADS: usize = 4;
 
 /// Shared state for queue processing tasks (cloneable for spawned tasks)
 #[derive(Clone)]
@@ -449,10 +449,18 @@ pub async fn cancel_queue_item(
 
 /// Start processing queue items if we have capacity
 async fn start_queue_processing(ctx: QueueContext, app_handle: AppHandle) {
+    // Get concurrent downloads setting, or use default
+    let max_concurrent = ctx.settings.concurrent_downloads as usize;
+    let max_concurrent = if max_concurrent > 0 {
+        max_concurrent
+    } else {
+        DEFAULT_CONCURRENT_DOWNLOADS
+    };
+
     loop {
         // Check how many downloads are active
         let active_count = ctx.active.lock().await.len();
-        if active_count >= MAX_CONCURRENT_DOWNLOADS {
+        if active_count >= max_concurrent {
             break;
         }
 
