@@ -79,7 +79,7 @@ Alternatively, `.deb` and `.rpm` packages are available.
 
 ## Building from Source
 
-Requires [Rust](https://rustup.rs/) and [Bun](https://bun.sh/).
+Requires [Rust](https://rustup.rs/), [Bun](https://bun.sh/), and [Node.js](https://nodejs.org/) (for dependency install scripts).
 
 ```bash
 git clone https://github.com/firemonster612/ETlauncher.git
