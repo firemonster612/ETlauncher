@@ -77,10 +77,10 @@
 					{/each}
 				</Select.Content>
 			</Select.Root>
-			<label class="flex cursor-pointer items-center gap-2 text-sm">
-				<Checkbox bind:checked={autoScroll} />
-				Auto-scroll
-			</label>
+			<div class="flex cursor-pointer items-center gap-2 text-sm">
+				<Checkbox id="auto-scroll-checkbox" bind:checked={autoScroll} />
+				<label for="auto-scroll-checkbox">Auto-scroll</label>
+			</div>
 		</div>
 	</div>
 
@@ -124,7 +124,7 @@
 	<!-- Running instances status -->
 	{#if launchStore.launchStates.size > 0}
 		<div class="border-border bg-card border-2 p-4">
-			<h3 class="text-muted-foreground mb-2 text-sm tracking-wider uppercase">Running Instances</h3>
+			<h2 class="text-muted-foreground mb-2 text-sm tracking-wider uppercase">Running Instances</h2>
 			<div class="space-y-2">
 				{#each [...launchStore.launchStates.entries()] as [instanceId, state] (instanceId)}
 					{@const instance = instancesStore.instances.find((i) => i.id === instanceId)}

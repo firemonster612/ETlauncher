@@ -1774,10 +1774,9 @@
 									<span>{formatBytes(item.size)}</span>
 									{#if item.dependencyOf.length > 0}
 										<div class="relative">
-											<!-- svelte-ignore a11y_no_static_element_interactions -->
-											<!-- svelte-ignore a11y_click_events_have_key_events -->
-											<span
-												class="cursor-pointer text-blue-500 underline decoration-blue-500/50 underline-offset-2 hover:decoration-blue-500"
+											<button
+												type="button"
+												class="cursor-pointer border-0 bg-transparent p-0 text-blue-500 underline decoration-blue-500/50 underline-offset-2 hover:decoration-blue-500"
 												onclick={(e) => {
 													e.stopPropagation();
 													showDependentsFor =
@@ -1787,27 +1786,26 @@
 												Required by {item.dependencyOf.length} mod{item.dependencyOf.length === 1
 													? ''
 													: 's'}
-											</span>
+											</button>
 											{#if showDependentsFor === item.filename}
-												<!-- svelte-ignore a11y_no_static_element_interactions -->
-												<!-- svelte-ignore a11y_click_events_have_key_events -->
 												<div
 													class="border-border bg-popover absolute bottom-full left-0 z-10 mb-1 w-64 border p-3 shadow-lg"
 													onclick={(e) => e.stopPropagation()}
+													onkeydown={(e) => e.stopPropagation()}
+													role="tooltip"
 												>
 													<div class="mb-2 flex items-center justify-between">
 														<span class="text-sm font-medium">Required by:</span>
-														<!-- svelte-ignore a11y_no_static_element_interactions -->
-														<!-- svelte-ignore a11y_click_events_have_key_events -->
-														<span
-															class="text-muted-foreground hover:text-foreground cursor-pointer text-xs"
+														<button
+															type="button"
+															class="text-muted-foreground hover:text-foreground cursor-pointer border-0 bg-transparent p-0 text-xs"
 															onclick={(e) => {
 																e.stopPropagation();
 																showDependentsFor = null;
 															}}
 														>
 															Close
-														</span>
+														</button>
 													</div>
 													<ul class="space-y-1">
 														{#each item.dependencyOf as parentFilename (parentFilename)}
@@ -2085,17 +2083,20 @@
 
 <!-- Content Detail Modal -->
 {#if selectedContentDetail}
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="fixed inset-x-0 top-[var(--titlebar-height)] z-[60] flex h-[calc(100vh-var(--titlebar-height))] items-center justify-center overflow-hidden bg-black/50 p-4"
 		onclick={closeContentDetail}
+		onkeydown={(e) => e.key === 'Escape' && closeContentDetail()}
+		role="dialog"
+		aria-modal="true"
+		aria-label="Content details"
+		tabindex="-1"
 	>
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="bg-card border-border flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border-2 shadow-2xl"
 			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.stopPropagation()}
+			role="document"
 		>
 			<!-- Header -->
 			<div class="border-border flex-shrink-0 border-b p-5">

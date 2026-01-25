@@ -1,0 +1,85 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.3.12/schema.json",
+	"vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+	"files": {
+		"includes": [
+			"**",
+			"!**/build/",
+			"!**/dist/",
+			"!**/.svelte-kit/",
+			"!**/src-tauri/target/",
+			"!**/node_modules/",
+			"!**/*.min.js",
+			"!**/*.min.css"
+		]
+	},
+	"formatter": {
+		"enabled": true,
+		"formatWithErrors": false,
+		"indentStyle": "tab",
+		"indentWidth": 2,
+		"lineEnding": "lf",
+		"lineWidth": 100,
+		"attributePosition": "auto",
+		"bracketSameLine": false,
+		"bracketSpacing": true,
+		"expand": "auto",
+		"useEditorconfig": true,
+		"includes": [
+			"**",
+			"!**/node_modules",
+			"!**/bun.lock",
+			"!**/bun.lockb",
+			"!**/build",
+			"!**/dist",
+			"!**/.svelte-kit",
+			"!src-tauri/target",
+			"!**/*.min.js",
+			"!**/*.min.css"
+		]
+	},
+	"linter": {
+		"enabled": true,
+		"rules": { "recommended": true, "nursery": { "useSortedClasses": "warn" } }
+	},
+	"javascript": {
+		"formatter": {
+			"jsxQuoteStyle": "double",
+			"quoteProperties": "asNeeded",
+			"trailingCommas": "es5",
+			"semicolons": "always",
+			"arrowParentheses": "always",
+			"bracketSameLine": false,
+			"quoteStyle": "single",
+			"attributePosition": "auto",
+			"bracketSpacing": true
+		}
+	},
+	"css": {
+		"parser": { "tailwindDirectives": true },
+		"formatter": null,
+		"linter": null,
+		"assist": null
+	},
+	"html": {
+		"experimentalFullSupportEnabled": true,
+		"formatter": { "indentScriptAndStyle": false, "selfCloseVoidElements": "always" }
+	},
+	"overrides": [
+		{
+			"includes": ["**/*.svelte"],
+			"linter": {
+				"rules": {
+					"correctness": { "noUnusedImports": "off", "noUnusedVariables": "off" },
+					"style": { "useConst": "off", "useImportType": "off" },
+					"suspicious": { "noAssignInExpressions": "off" }
+				}
+			}
+		},
+		{
+			"includes": ["**/docs/**"],
+			"linter": { "rules": { "style": { "noDescendingSpecificity": "off" } } }
+		},
+		{ "includes": ["*.svelte"] }
+	]
+}

@@ -57,8 +57,8 @@
 		<div
 			class="bg-card border-border relative flex max-h-[90vh] w-full max-w-7xl flex-col overflow-hidden rounded-lg border-2 shadow-2xl"
 			onclick={stopClickPropagation}
-			role="presentation"
-			tabindex="-1"
+			onkeydown={(e) => e.stopPropagation()}
+			role="document"
 		>
 			<div class="border-border flex items-center justify-between gap-3 border-b px-5 py-4">
 				<h3 class="truncate font-semibold">{title}</h3>
@@ -67,8 +67,7 @@
 				</Button>
 			</div>
 
-			<!-- svelte-ignore a11y_click_events_have_key_events -->
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 			<div class="min-h-0 flex-1 overflow-y-auto p-5" onclick={handleLinkClick}>
 				<div class="prose-markdown">
 					<!-- eslint-disable-next-line svelte/no-at-html-tags -->

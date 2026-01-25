@@ -142,6 +142,9 @@
 				onmousedown={handleAreaMouseDown}
 				role="slider"
 				aria-label="Color saturation and brightness"
+				aria-valuenow={Math.round(internalSat * 100)}
+				aria-valuemin={0}
+				aria-valuemax={100}
 				tabindex="0"
 			>
 				<div
@@ -158,6 +161,9 @@
 				onmousedown={handleHueMouseDown}
 				role="slider"
 				aria-label="Color hue"
+				aria-valuenow={Math.round(internalHue)}
+				aria-valuemin={0}
+				aria-valuemax={360}
 				tabindex="0"
 			>
 				<div
