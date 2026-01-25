@@ -29,8 +29,7 @@ export function nestedScroll(node: HTMLElement) {
 		const scrollingDown = e.deltaY > 0;
 		const scrollingUp = e.deltaY < 0;
 
-		const atBoundaryInScrollDirection =
-			(atBottom && scrollingDown) || (atTop && scrollingUp);
+		const atBoundaryInScrollDirection = (atBottom && scrollingDown) || (atTop && scrollingUp);
 
 		// Clear any existing timer
 		if (scrollEndTimer) {
@@ -63,8 +62,7 @@ export function nestedScroll(node: HTMLElement) {
 			isScrolling = false;
 			// Check if we're at a boundary when scrolling ends
 			const currentAtTop = node.scrollTop <= 0;
-			const currentAtBottom =
-				node.scrollTop + node.clientHeight >= node.scrollHeight - 1;
+			const currentAtBottom = node.scrollTop + node.clientHeight >= node.scrollHeight - 1;
 			wasAtBoundary = currentAtTop || currentAtBottom;
 		}, SCROLL_END_DELAY);
 	}
