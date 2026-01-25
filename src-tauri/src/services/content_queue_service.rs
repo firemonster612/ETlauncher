@@ -98,6 +98,7 @@ pub async fn try_process_queue(state: &AppState, app_handle: AppHandle) {
 }
 
 /// Check if content is already installed by checking manifest
+/// For worlds, also verifies the folder actually exists on disk
 fn is_content_installed_sync(
     instances_base: &str,
     instance_id: &str,
@@ -120,20 +121,51 @@ fn is_content_installed_sync(
         return false;
     };
 
-    let items = match content_type {
-        ContentType::Mod => &manifest.mods,
-        ContentType::Shader => &manifest.shaders,
-        ContentType::ResourcePack => &manifest.resource_packs,
+    // Get items to check - for Mods, also check datapacks since mods with datapack-only
+    // versions get installed as datapacks
+    let items_to_check: Vec<&crate::models::content::InstalledContent> = match content_type {
+        ContentType::Mod => {
+            // Check both mods and datapacks sections
+            manifest
+                .mods
+                .iter()
+                .chain(manifest.datapacks.iter())
+                .collect()
+        }
+        ContentType::Shader => manifest.shaders.iter().collect(),
+        ContentType::ResourcePack => manifest.resource_packs.iter().collect(),
+        ContentType::Datapack => manifest.datapacks.iter().collect(),
+        ContentType::World => manifest.worlds.iter().collect(),
     };
 
-    items.iter().any(|item| match platform {
+    // Find matching item by platform ID
+    let matching_item = items_to_check.iter().find(|item| match platform {
         ContentPlatform::Modrinth => item.modrinth_id.as_deref() == Some(content_id),
         ContentPlatform::CurseForge => content_id
             .parse::<u32>()
             .ok()
             .map(|id| item.curseforge_id == Some(id))
             .unwrap_or(false),
-    })
+    });
+
+    let Some(item) = matching_item else {
+        return false;
+    };
+
+    // For worlds, verify the folder actually exists on disk
+    // This handles stale manifest entries where the folder was deleted or never extracted
+    if *content_type == ContentType::World {
+        let game_dir = instance_dir.join(".minecraft");
+        let saves_dir = game_dir.join("saves");
+        let world_folder = saves_dir.join(&item.filename);
+        let level_dat = world_folder.join("level.dat");
+
+        if !world_folder.is_dir() || !level_dat.exists() {
+            return false;
+        }
+    }
+
+    true
 }
 
 /// Queue a single item (internal helper, doesn't resolve dependencies)
@@ -245,13 +277,14 @@ pub async fn resolve_and_queue_with_deps(
 
     // 2. Check if already installed
     let instances_base = state.settings.read().instances_path.clone();
-    if is_content_installed_sync(
+    let is_installed = is_content_installed_sync(
         &instances_base,
         instance_id,
         content_id,
         &platform,
         &content.content_type,
-    ) {
+    );
+    if is_installed {
         return Ok(queue_ids);
     }
 
@@ -309,7 +342,7 @@ pub async fn resolve_and_queue_with_deps(
 
     // 4. Queue the main content (after dependencies)
     // queue_single_item atomically checks if already queued and returns None if so
-    if let Some(queue_id) = queue_single_item(
+    let queue_result = queue_single_item(
         state,
         app_handle,
         instance_id,
@@ -325,8 +358,9 @@ pub async fn resolve_and_queue_with_deps(
         is_dependency,
         parent_filename, // Pass along the parent filename (if this is a dependency)
     )
-    .await?
-    {
+    .await?;
+
+    if let Some(queue_id) = queue_result {
         queue_ids.push(queue_id);
     }
 
@@ -557,6 +591,20 @@ async fn process_download(
         Some(ContentSource::UserAdded)
     };
 
+    // Determine effective content type based on version loaders
+    // If the version only has Datapack loader, install as datapack even if project type is Mod
+    let effective_content_type = if item.content_type == ContentType::Mod {
+        let has_only_datapack = !version.loaders.is_empty()
+            && version.loaders.iter().all(|l| *l == LoaderType::Datapack);
+        if has_only_datapack {
+            ContentType::Datapack
+        } else {
+            item.content_type
+        }
+    } else {
+        item.content_type
+    };
+
     // Use the unified install_content function
     content_install_service::install_content(
         &state,
@@ -565,7 +613,7 @@ async fn process_download(
         &item.content_id,
         &item.content_name,
         &item.content_slug,
-        item.content_type,
+        effective_content_type,
         &version,
         item.is_dependency,
         item.parent_filename.as_deref(), // Pass parent filename for dependency tracking

@@ -98,6 +98,8 @@ pub fn get_resource_pool_dir_for_type(content_type: &crate::models::ContentType)
         crate::models::ContentType::Mod => "mods",
         crate::models::ContentType::Shader => "shaderpacks",
         crate::models::ContentType::ResourcePack => "resourcepacks",
+        crate::models::ContentType::Datapack => "datapacks",
+        crate::models::ContentType::World => "worlds",
     };
     get_resource_pool_dir().join(type_dir)
 }

@@ -14,6 +14,8 @@
 		SquareCheck,
 		Minus,
 		Link,
+		FileJson,
+		Globe,
 	} from '@lucide/svelte';
 	import { Button } from '$lib/ui/button';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -35,6 +37,8 @@
 	let modScanResult = $state<ScanResult | null>(null);
 	let shaderScanResult = $state<ScanResult | null>(null);
 	let resourcepackScanResult = $state<ScanResult | null>(null);
+	let datapackScanResult = $state<ScanResult | null>(null);
+	let worldScanResult = $state<ScanResult | null>(null);
 
 	// Loading states
 	let isLoading = $state(false);
@@ -74,14 +78,18 @@
 		error = null;
 
 		try {
-			const [mods, shaders, resourcepacks] = await Promise.all([
+			const [mods, shaders, resourcepacks, datapacks, worlds] = await Promise.all([
 				contentService.scanInstalledContent(instance.id, 'mod'),
 				contentService.scanInstalledContent(instance.id, 'shader'),
 				contentService.scanInstalledContent(instance.id, 'resourcepack'),
+				contentService.scanInstalledContent(instance.id, 'datapack'),
+				contentService.scanInstalledContent(instance.id, 'world'),
 			]);
 			modScanResult = mods;
 			shaderScanResult = shaders;
 			resourcepackScanResult = resourcepacks;
+			datapackScanResult = datapacks;
+			worldScanResult = worlds;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to scan content';
 			console.error('Failed to scan content:', e);
@@ -96,13 +104,14 @@
 	}
 
 	// Get current scan result based on active tab
-	const currentScanResult = $derived(
-		activeContentType === 'mod'
-			? modScanResult
-			: activeContentType === 'shader'
-				? shaderScanResult
-				: resourcepackScanResult
-	);
+	const scanResultsByType = $derived({
+		mod: modScanResult,
+		shader: shaderScanResult,
+		resourcepack: resourcepackScanResult,
+		datapack: datapackScanResult,
+		world: worldScanResult,
+	});
+	const currentScanResult = $derived(scanResultsByType[activeContentType]);
 
 	const installedItems = $derived(currentScanResult?.items ?? []);
 
@@ -145,6 +154,8 @@
 	const modCount = $derived(modScanResult?.items.length ?? 0);
 	const shaderCount = $derived(shaderScanResult?.items.length ?? 0);
 	const resourcepackCount = $derived(resourcepackScanResult?.items.length ?? 0);
+	const datapackCount = $derived(datapackScanResult?.items.length ?? 0);
+	const worldCount = $derived(worldScanResult?.items.length ?? 0);
 
 	function getItemDisplayName(item: DetectedMod): string {
 		if (item.modrinthProject?.name) {
@@ -260,6 +271,10 @@
 				return 'Shaders';
 			case 'resourcepack':
 				return 'Resource Packs';
+			case 'datapack':
+				return 'Datapacks';
+			case 'world':
+				return 'Worlds';
 		}
 	}
 </script>
@@ -292,6 +307,22 @@
 			>
 				<Image class="mr-1.5 h-4 w-4" />
 				Resource Packs ({resourcepackCount})
+			</Button>
+			<Button
+				size="sm"
+				variant={activeContentType === 'datapack' ? 'default' : 'secondary'}
+				onclick={() => (activeContentType = 'datapack')}
+			>
+				<FileJson class="mr-1.5 h-4 w-4" />
+				Datapacks ({datapackCount})
+			</Button>
+			<Button
+				size="sm"
+				variant={activeContentType === 'world' ? 'default' : 'secondary'}
+				onclick={() => (activeContentType = 'world')}
+			>
+				<Globe class="mr-1.5 h-4 w-4" />
+				Worlds ({worldCount})
 			</Button>
 		</div>
 

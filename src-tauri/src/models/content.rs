@@ -40,6 +40,8 @@ pub enum ContentType {
     Mod,
     Shader,
     ResourcePack,
+    Datapack,
+    World,
 }
 
 impl std::fmt::Display for ContentType {
@@ -48,6 +50,8 @@ impl std::fmt::Display for ContentType {
             ContentType::Mod => write!(f, "mod"),
             ContentType::Shader => write!(f, "shader"),
             ContentType::ResourcePack => write!(f, "resourcepack"),
+            ContentType::Datapack => write!(f, "datapack"),
+            ContentType::World => write!(f, "world"),
         }
     }
 }
@@ -302,6 +306,12 @@ pub struct InstalledContentManifest {
     /// Installed resource packs
     #[serde(default)]
     pub resource_packs: Vec<InstalledContent>,
+    /// Installed datapacks
+    #[serde(default)]
+    pub datapacks: Vec<InstalledContent>,
+    /// Installed worlds
+    #[serde(default)]
+    pub worlds: Vec<InstalledContent>,
     /// Last sync timestamp (when manifest was reconciled with filesystem)
     pub last_synced_at: Option<i64>,
 }

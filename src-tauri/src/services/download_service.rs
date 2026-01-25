@@ -92,7 +92,7 @@ pub fn get_loader_version_id(
     mc_version: &str,
 ) -> Option<String> {
     match loader_type {
-        LoaderType::Vanilla | LoaderType::Unknown => None,
+        LoaderType::Vanilla | LoaderType::Unknown | LoaderType::Datapack => None,
         LoaderType::Fabric => Some(format!("fabric-loader-{}-{}", loader_version, mc_version)),
         LoaderType::Quilt => Some(format!("quilt-loader-{}-{}", loader_version, mc_version)),
         LoaderType::Forge => Some(format!("{}-forge-{}", mc_version, loader_version)),

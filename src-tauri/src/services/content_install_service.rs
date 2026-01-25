@@ -7,6 +7,20 @@ use crate::models::{
 use crate::services::{
     curseforge_service, manifest_service, modrinth_service, resource_pool_service,
 };
+use crate::state::AppState;
+use crate::utils::hash::murmur2_bytes;
+use crate::utils::paths::get_instance_game_dir_with_base;
+use chrono::Utc;
+use futures::StreamExt;
+use reqwest::Client;
+use sha1::{Digest as Sha1Digest, Sha1};
+use sha2::{Digest as Sha2Digest, Sha512};
+use std::fs::{self, File};
+use std::io::{Cursor, Read, Write};
+use std::path::PathBuf;
+use tauri::{AppHandle, Emitter};
+use tokio_util::sync::CancellationToken;
+use zip::ZipArchive;
 
 /// Get the primary filename from a content version
 fn get_primary_filename(version: &ContentVersion) -> Option<String> {
@@ -17,19 +31,156 @@ fn get_primary_filename(version: &ContentVersion) -> Option<String> {
         .or_else(|| version.files.first())
         .map(|f| f.filename.clone())
 }
-use crate::state::AppState;
-use crate::utils::hash::murmur2_bytes;
-use crate::utils::paths::get_instance_game_dir_with_base;
-use chrono::Utc;
-use futures::StreamExt;
-use reqwest::Client;
-use sha1::{Digest as Sha1Digest, Sha1};
-use sha2::{Digest as Sha2Digest, Sha512};
-use std::fs::{self, File};
-use std::io::Write;
-use std::path::PathBuf;
-use tauri::{AppHandle, Emitter};
-use tokio_util::sync::CancellationToken;
+
+/// Extract a world ZIP file to the saves directory
+/// Returns the name of the extracted world folder
+fn extract_world_zip(zip_bytes: &[u8], saves_dir: &PathBuf) -> Result<String, AppError> {
+    let cursor = Cursor::new(zip_bytes);
+    let mut archive = ZipArchive::new(cursor)
+        .map_err(|e| AppError::DownloadError(format!("Failed to read world ZIP: {}", e)))?;
+
+    // Find the world folder by looking for level.dat
+    let mut world_folder_prefix: Option<String> = None;
+
+    for i in 0..archive.len() {
+        let file = archive
+            .by_index(i)
+            .map_err(|e| AppError::DownloadError(format!("Failed to read ZIP entry: {}", e)))?;
+        let name = file.name();
+
+        // Look for level.dat to identify the world folder
+        if name.ends_with("level.dat") {
+            // The world folder is the parent of level.dat
+            // Could be "WorldName/level.dat" or just "level.dat"
+            if let Some(parent) = name.strip_suffix("level.dat") {
+                let parent = parent.trim_end_matches('/');
+                if parent.is_empty() {
+                    // level.dat is at root - world files are at root level
+                    world_folder_prefix = Some(String::new());
+                } else {
+                    // level.dat is in a subfolder
+                    world_folder_prefix = Some(parent.to_string());
+                }
+            }
+            break;
+        }
+    }
+
+    let prefix = world_folder_prefix
+        .ok_or_else(|| AppError::DownloadError("No level.dat found in world ZIP".to_string()))?;
+
+    // Determine the world folder name
+    let world_name = if prefix.is_empty() {
+        // Files are at root, use the ZIP filename without extension as world name
+        "Imported World".to_string()
+    } else {
+        // Use the folder name from the ZIP
+        prefix
+            .split('/')
+            .next()
+            .unwrap_or("Imported World")
+            .to_string()
+    };
+
+    // Create destination path, handling conflicts
+    let mut dest_path = saves_dir.join(&world_name);
+    let mut counter = 1;
+    while dest_path.exists() {
+        dest_path = saves_dir.join(format!("{} ({})", world_name, counter));
+        counter += 1;
+    }
+
+    let final_world_name = dest_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&world_name)
+        .to_string();
+
+    fs::create_dir_all(&dest_path)?;
+
+    // Canonicalize dest_path to get absolute path for zip-slip protection
+    let dest_path_canonical = dest_path.canonicalize().map_err(|e| {
+        AppError::DownloadError(format!("Failed to resolve destination path: {}", e))
+    })?;
+
+    // Re-open archive for extraction
+    let cursor = Cursor::new(zip_bytes);
+    let mut archive = ZipArchive::new(cursor)
+        .map_err(|e| AppError::DownloadError(format!("Failed to read world ZIP: {}", e)))?;
+
+    // Extract files
+    for i in 0..archive.len() {
+        let mut file = archive
+            .by_index(i)
+            .map_err(|e| AppError::DownloadError(format!("Failed to read ZIP entry: {}", e)))?;
+
+        let file_path = file.name().to_string();
+
+        // Skip files outside the world folder (if prefix is set)
+        let relative_path = if prefix.is_empty() {
+            file_path.clone()
+        } else if let Some(rel) = file_path.strip_prefix(&format!("{}/", prefix)) {
+            rel.to_string()
+        } else if file_path == prefix {
+            // This is the folder itself
+            continue;
+        } else {
+            // File is outside world folder, skip
+            continue;
+        };
+
+        if relative_path.is_empty() {
+            continue;
+        }
+
+        // Zip-slip protection: ensure the resolved path is within dest_path
+        let out_path = dest_path.join(&relative_path);
+        let out_path_canonical = match out_path.canonicalize() {
+            Ok(p) => p,
+            Err(_) => {
+                // Path doesn't exist yet, check parent and construct
+                if let Some(parent) = out_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                // Re-check after creating parent dirs
+                let parent_canonical = out_path
+                    .parent()
+                    .and_then(|p| p.canonicalize().ok())
+                    .unwrap_or_else(|| dest_path_canonical.clone());
+                let file_name = out_path.file_name().ok_or_else(|| {
+                    AppError::DownloadError("Invalid file path in ZIP".to_string())
+                })?;
+                parent_canonical.join(file_name)
+            }
+        };
+
+        // Verify the path is within the destination directory (zip-slip protection)
+        if !out_path_canonical.starts_with(&dest_path_canonical) {
+            return Err(AppError::DownloadError(format!(
+                "Zip entry attempts to escape destination: {}",
+                relative_path
+            )));
+        }
+
+        if file.is_dir() {
+            fs::create_dir_all(&out_path)?;
+        } else {
+            // Ensure parent directory exists
+            if let Some(parent) = out_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+
+            let mut out_file = File::create(&out_path)?;
+            let mut buffer = Vec::new();
+            file.read_to_end(&mut buffer).map_err(|e| {
+                AppError::DownloadError(format!("Failed to read file from ZIP: {}", e))
+            })?;
+            out_file.write_all(&buffer)?;
+        }
+    }
+
+    Ok(final_world_name)
+}
 
 /// Result of downloading a file including computed hashes and bytes
 struct DownloadResult {
@@ -44,6 +195,8 @@ fn get_content_dir(game_dir: &PathBuf, content_type: &ContentType) -> PathBuf {
         ContentType::Mod => game_dir.join("mods"),
         ContentType::Shader => game_dir.join("shaderpacks"),
         ContentType::ResourcePack => game_dir.join("resourcepacks"),
+        ContentType::Datapack => game_dir.join("datapacks"),
+        ContentType::World => game_dir.join("saves"),
     }
 }
 
@@ -112,9 +265,38 @@ pub async fn install_content(
     )
     .await?;
 
-    // Determine if we're using the pool
-    let is_pooled = if pool_enabled {
-        // Add to pool first
+    // Handle worlds specially - they need to be extracted
+    // Handle datapacks specially - they need to go into each world's datapacks folder
+    let (is_pooled, installed_filename) = if content_type == ContentType::World {
+        // Extract world ZIP to saves folder
+        let world_folder_name = extract_world_zip(&download_result.bytes, &content_dir)?;
+        (false, world_folder_name)
+    } else if content_type == ContentType::Datapack {
+        // Datapacks go into each world's datapacks folder, not a global folder
+        let saves_dir = game_dir.join("saves");
+
+        if saves_dir.exists() {
+            for entry in fs::read_dir(&saves_dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                // Check if it's a world folder (has level.dat)
+                if path.is_dir() && path.join("level.dat").exists() {
+                    let world_datapacks_dir = path.join("datapacks");
+                    fs::create_dir_all(&world_datapacks_dir)?;
+                    let dest_path = world_datapacks_dir.join(&file.filename);
+                    fs::write(&dest_path, &download_result.bytes)?;
+                }
+            }
+        }
+
+        // Also store in global datapacks folder for new worlds (as a staging area)
+        fs::create_dir_all(&content_dir)?;
+        let global_path = content_dir.join(&file.filename);
+        fs::write(&global_path, &download_result.bytes)?;
+
+        (false, file.filename.clone())
+    } else if pool_enabled {
+        // Add to pool first (for non-world content)
         let _pool_path = resource_pool_service::add_resource_from_bytes(
             state,
             &download_result.bytes,
@@ -133,13 +315,13 @@ pub async fn install_content(
             link_strategy,
         )?;
 
-        link_result.success
+        (link_result.success, file.filename.clone())
     } else {
         // Write directly to instance (old behavior)
         let file_path = content_dir.join(&file.filename);
         let mut out_file = File::create(&file_path)?;
         out_file.write_all(&download_result.bytes)?;
-        false
+        (false, file.filename.clone())
     };
 
     // Emit progress event
@@ -150,7 +332,7 @@ pub async fn install_content(
                 "instanceId": instance_id,
                 "contentType": content_type,
                 "name": content_name,
-                "filename": file.filename,
+                "filename": installed_filename,
                 "isPooled": is_pooled,
             }),
         );
@@ -189,7 +371,7 @@ pub async fn install_content(
         installed_from: platform,
         version: version.version_number.clone(),
         version_id: version.id.clone(),
-        filename: file.filename.clone(),
+        filename: installed_filename,
         content_type,
         installed_at: Utc::now().timestamp(),
         is_dependency,
@@ -569,4 +751,64 @@ pub async fn install_content_with_dependencies(
     installed.push(main_installed);
 
     Ok(installed)
+}
+
+/// Sync all installed datapacks to all worlds in an instance
+/// This ensures datapacks are present in worlds created after the datapack was installed
+pub fn sync_datapacks_to_worlds(state: &AppState, instance_id: &str) -> Result<u32, AppError> {
+    let instances_base = state.settings.read().instances_path.clone();
+    let game_dir = get_instance_game_dir_with_base(&instances_base, instance_id);
+    let saves_dir = game_dir.join("saves");
+    let global_datapacks_dir = game_dir.join("datapacks");
+
+    // Get list of datapacks from global folder
+    let mut datapack_files: Vec<(String, Vec<u8>)> = Vec::new();
+
+    if global_datapacks_dir.exists() {
+        for entry in fs::read_dir(&global_datapacks_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file() && path.extension().is_some_and(|e| e == "zip") {
+                if let Some(filename) = path.file_name() {
+                    let filename = filename.to_string_lossy().to_string();
+                    // Skip cache files
+                    if filename.starts_with('.') {
+                        continue;
+                    }
+                    if let Ok(bytes) = fs::read(&path) {
+                        datapack_files.push((filename, bytes));
+                    }
+                }
+            }
+        }
+    }
+
+    if datapack_files.is_empty() {
+        return Ok(0);
+    }
+
+    let mut synced_count = 0u32;
+
+    // Copy datapacks to each world
+    if saves_dir.exists() {
+        for entry in fs::read_dir(&saves_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            // Check if it's a world folder (has level.dat)
+            if path.is_dir() && path.join("level.dat").exists() {
+                let world_datapacks_dir = path.join("datapacks");
+                fs::create_dir_all(&world_datapacks_dir)?;
+
+                for (filename, bytes) in &datapack_files {
+                    let dest_path = world_datapacks_dir.join(filename);
+                    if !dest_path.exists() {
+                        fs::write(&dest_path, bytes)?;
+                        synced_count += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(synced_count)
 }

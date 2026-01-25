@@ -550,6 +550,8 @@ fn copy_content_dir_with_pool(
         ContentType::Mod => &manifest.mods,
         ContentType::Shader => &manifest.shaders,
         ContentType::ResourcePack => &manifest.resource_packs,
+        ContentType::Datapack => &manifest.datapacks,
+        ContentType::World => &manifest.worlds,
     };
 
     let entries = fs::read_dir(src)?;

@@ -18,6 +18,8 @@ fn get_content_dir(game_dir: &PathBuf, content_type: &ContentType) -> PathBuf {
         ContentType::Mod => game_dir.join("mods"),
         ContentType::Shader => game_dir.join("shaderpacks"),
         ContentType::ResourcePack => game_dir.join("resourcepacks"),
+        ContentType::Datapack => game_dir.join("datapacks"),
+        ContentType::World => game_dir.join("saves"),
     }
 }
 
@@ -32,6 +34,8 @@ fn get_cache_path(content_dir: &PathBuf, content_type: &ContentType) -> PathBuf 
         ContentType::Mod => ".etlauncher_mods_cache.json",
         ContentType::Shader => ".etlauncher_shaders_cache.json",
         ContentType::ResourcePack => ".etlauncher_resourcepacks_cache.json",
+        ContentType::Datapack => ".etlauncher_datapacks_cache.json",
+        ContentType::World => ".etlauncher_worlds_cache.json",
     };
     content_dir.join(cache_name)
 }
@@ -42,6 +46,8 @@ fn get_content_extension(content_type: &ContentType) -> &'static str {
         ContentType::Mod => "jar",
         ContentType::Shader => "zip",
         ContentType::ResourcePack => "zip",
+        ContentType::Datapack => "zip",
+        ContentType::World => "zip",
     }
 }
 
@@ -137,6 +143,34 @@ fn collect_files_from_dir(
     (file_paths, cached_results, current_files)
 }
 
+/// Scan world folders in the saves directory
+/// Worlds are directories containing level.dat, not ZIP files
+fn scan_world_folders(saves_dir: &PathBuf) -> Vec<(String, bool)> {
+    let mut worlds = Vec::new();
+
+    if !saves_dir.exists() {
+        return worlds;
+    }
+
+    if let Ok(entries) = fs::read_dir(saves_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                // Check if this directory contains level.dat (is a valid world)
+                let level_dat = path.join("level.dat");
+                if level_dat.exists() {
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        // Worlds can't be "disabled" in the traditional sense
+                        worlds.push((name.to_string(), false));
+                    }
+                }
+            }
+        }
+    }
+
+    worlds
+}
+
 /// Scan an instance's content folder and identify items via Modrinth and CurseForge hash lookup
 pub async fn scan_content(
     state: &AppState,
@@ -154,6 +188,8 @@ pub async fn scan_content(
         ContentType::Mod => manifest.mods.iter().collect(),
         ContentType::Shader => manifest.shaders.iter().collect(),
         ContentType::ResourcePack => manifest.resource_packs.iter().collect(),
+        ContentType::Datapack => manifest.datapacks.iter().collect(),
+        ContentType::World => manifest.worlds.iter().collect(),
     };
     let manifest_by_filename: std::collections::HashMap<&str, &InstalledContent> = manifest_items
         .iter()
@@ -166,6 +202,64 @@ pub async fn scan_content(
             folder_exists: false,
             items: vec![],
             identified_count: 0,
+            unidentified_count: 0,
+            scanned_at: Utc::now().timestamp(),
+        });
+    }
+
+    // Special handling for worlds - they are folders, not files
+    // Only show worlds that were installed via the launcher (tracked in manifest)
+    if *content_type == ContentType::World {
+        let world_folders = scan_world_folders(&content_dir);
+        let mut items: Vec<DetectedMod> = Vec::new();
+        let mut identified_count = 0u32;
+
+        for (folder_name, is_disabled) in world_folders {
+            // Only include worlds that are tracked in the manifest
+            // This excludes manually created worlds from the "Installed Content" list
+            let Some(entry) = manifest_by_filename.get(folder_name.as_str()) else {
+                continue;
+            };
+
+            let modrinth_project = entry
+                .modrinth_id
+                .as_ref()
+                .map(|id| DetectedModrinthProject {
+                    project_id: id.clone(),
+                    slug: entry.slug.clone(),
+                    name: entry.name.clone(),
+                    version_id: entry.version_id.clone(),
+                    version_number: entry.version.clone(),
+                });
+            let curseforge_project = entry.curseforge_id.map(|id| DetectedCurseForgeProject {
+                project_id: id as u64,
+                file_id: 0,
+                name: entry.name.clone(),
+                filename: entry.filename.clone(),
+                slug: entry.slug.clone(),
+            });
+
+            // All manifest-tracked worlds are considered identified
+            identified_count += 1;
+
+            items.push(DetectedMod {
+                filename: folder_name,
+                size: 0, // Worlds are folders, size is not meaningful
+                sha512: String::new(),
+                murmur2_fingerprint: 0,
+                modrinth_project,
+                curseforge_project,
+                is_identified: true,
+                is_disabled,
+                is_dependency: entry.is_dependency,
+                dependency_of: entry.dependency_of.clone(),
+            });
+        }
+
+        return Ok(ScanResult {
+            folder_exists: true,
+            items,
+            identified_count,
             unidentified_count: 0,
             scanned_at: Utc::now().timestamp(),
         });
@@ -383,6 +477,8 @@ pub async fn scan_content(
                 ContentType::Mod => &m.mods,
                 ContentType::Shader => &m.shaders,
                 ContentType::ResourcePack => &m.resource_packs,
+                ContentType::Datapack => &m.datapacks,
+                ContentType::World => &m.worlds,
             };
             list.iter().map(|c| (c.filename.clone(), c)).collect()
         })
@@ -551,7 +647,7 @@ pub async fn scan_mods(state: &AppState, instance_id: &str) -> Result<ScanResult
     scan_content(state, instance_id, &ContentType::Mod).await
 }
 
-/// Uninstall content by filename (delete the file and remove from manifest)
+/// Uninstall content by filename (delete the file/folder and remove from manifest)
 pub fn uninstall_by_filename(
     state: &AppState,
     instance_id: &str,
@@ -566,7 +662,12 @@ pub fn uninstall_by_filename(
     let file_path = content_dir.join(filename);
     let disabled_path = get_disabled_dir(&content_dir).join(filename);
 
-    if file_path.exists() {
+    // Worlds are folders, other content types are files
+    if *content_type == ContentType::World {
+        if file_path.exists() && file_path.is_dir() {
+            fs::remove_dir_all(&file_path)?;
+        }
+    } else if file_path.exists() {
         fs::remove_file(&file_path)?;
     } else if disabled_path.exists() {
         fs::remove_file(&disabled_path)?;

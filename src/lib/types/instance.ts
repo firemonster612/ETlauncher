@@ -6,6 +6,7 @@ export type LoaderType =
 	| 'fabric'
 	| 'quilt'
 	| 'liteloader'
+	| 'datapack'
 	| 'unknown';
 
 /** Platform that hosts modpacks */

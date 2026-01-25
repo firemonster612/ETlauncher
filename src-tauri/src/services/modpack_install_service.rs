@@ -1065,6 +1065,8 @@ pub fn create_modpack_manifest(
         mods: Vec::new(),
         shaders: Vec::new(),
         resource_packs: Vec::new(),
+        datapacks: Vec::new(),
+        worlds: Vec::new(),
         last_synced_at: Some(Utc::now().timestamp()),
     };
 
@@ -1130,10 +1132,12 @@ fn scan_content_folder(
         }
 
         // For mods/shaders, only process .jar files
-        // For resource packs, process .zip files
+        // For resource packs, datapacks, and worlds process .zip files
         let valid_extension = match content_type {
             ContentType::Mod | ContentType::Shader => filename.ends_with(".jar"),
-            ContentType::ResourcePack => filename.ends_with(".zip"),
+            ContentType::ResourcePack | ContentType::Datapack | ContentType::World => {
+                filename.ends_with(".zip")
+            }
         };
 
         if !valid_extension {
