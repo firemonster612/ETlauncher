@@ -52,6 +52,9 @@
 			currentItem?: string;
 			totalItems: number;
 			completedItems: number;
+			totalBytes?: number;
+			downloadedBytes?: number;
+			speedBytesPerSec?: number;
 		} | null;
 		isInstalling?: boolean;
 		isCancelling?: boolean;
@@ -826,6 +829,9 @@
 								currentItem={installProgress.currentItem}
 								totalItems={installProgress.totalItems}
 								completedItems={installProgress.completedItems}
+								totalBytes={installProgress.totalBytes}
+								downloadedBytes={installProgress.downloadedBytes}
+								speedBytesPerSec={installProgress.speedBytesPerSec}
 							/>
 						{:else}
 							<div class="flex items-center gap-2 text-sm">

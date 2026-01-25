@@ -700,6 +700,17 @@ pub async fn get_modpack_versions(
                 .find(|h| h.algo == 1)
                 .map(|h| h.value.clone());
 
+            // Build download URL - CurseForge sometimes doesn't provide it for third-party distribution
+            let download_url = f.download_url.unwrap_or_else(|| {
+                // Fallback to edge CDN URL
+                format!(
+                    "https://edge.forgecdn.net/files/{}/{}/{}",
+                    f.id / 1000,
+                    f.id % 1000,
+                    urlencoding::encode(&f.file_name)
+                )
+            });
+
             ModpackVersion {
                 id: f.id.to_string(),
                 name: f.display_name,
@@ -710,11 +721,11 @@ pub async fn get_modpack_versions(
                 released_at: parse_date(&f.file_date),
                 downloads: Some(f.download_count),
                 files: vec![ModpackFile {
-                    url: f.download_url.unwrap_or_default(),
+                    url: download_url,
                     hash,
                     hash_algorithm: Some("sha1".to_string()),
                     size: f.file_length,
-                    path: f.file_name,
+                    path: f.file_name.clone(),
                     required: true,
                 }],
             }

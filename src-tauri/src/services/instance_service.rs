@@ -691,6 +691,7 @@ pub async fn setup_instance(
 
     // Get version info (with loader support if applicable)
     let version_info = download_service::get_version_info_with_loader(
+        &state.http_client,
         &instance.minecraft_version,
         &instance.loader_type,
         instance.loader_version.as_deref(),

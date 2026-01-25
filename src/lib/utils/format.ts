@@ -15,18 +15,38 @@ export function formatDownloads(downloads: number): string {
 
 /**
  * Format bytes to human-readable string (e.g., 1.5 MB, 10 KB)
+ * Uses binary units (1024) for accurate file size representation
  */
 export function formatBytes(bytes: number): string {
-	if (bytes >= 1_000_000_000) {
-		return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+	if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+/**
+ * Format download speed to human-readable string (e.g., 1.5 MB/s)
+ */
+export function formatSpeed(bytesPerSec: number): string {
+	if (bytesPerSec < 1024) return `${bytesPerSec.toFixed(0)} B/s`;
+	if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
+	return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
+}
+
+/**
+ * Format seconds to human-readable duration (e.g., 5m 30s)
+ */
+export function formatEta(seconds: number): string {
+	if (!isFinite(seconds) || seconds <= 0) return '';
+	if (seconds < 60) return `${Math.ceil(seconds)}s`;
+	if (seconds < 3600) {
+		const mins = Math.floor(seconds / 60);
+		const secs = Math.ceil(seconds % 60);
+		return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
 	}
-	if (bytes >= 1_000_000) {
-		return `${(bytes / 1_000_000).toFixed(1)} MB`;
-	}
-	if (bytes >= 1_000) {
-		return `${(bytes / 1_000).toFixed(1)} KB`;
-	}
-	return `${bytes} B`;
+	const hours = Math.floor(seconds / 3600);
+	const mins = Math.floor((seconds % 3600) / 60);
+	return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
 }
 
 /**

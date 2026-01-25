@@ -260,6 +260,7 @@
 				currentItem={progress.currentFile}
 				totalBytes={progress.totalBytes}
 				downloadedBytes={progress.downloadedBytes}
+				speedBytesPerSec={progress.speedBytesPerSec}
 				compact
 			/>
 		</div>
@@ -287,6 +288,7 @@
 					currentItem={progress.currentFile}
 					totalBytes={progress.totalBytes}
 					downloadedBytes={progress.downloadedBytes}
+					speedBytesPerSec={progress.speedBytesPerSec}
 					compact
 				/>
 			{:else if setupStatus?.status === 'installingLoader'}

@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { Loader2 } from '@lucide/svelte';
+	import { Loader2, Download } from '@lucide/svelte';
 	import { launchStore } from '$lib/stores/launch.svelte';
 	import { instancesStore } from '$lib/stores/instances.svelte';
 	import { parseIconPath, getIconUrl } from '$lib/utils/icons';
+	import { formatBytes, formatSpeed, formatEta } from '$lib/utils/format';
 
 	// Find the first instance that is currently launching (before window is ready)
 	const launchingState = $derived.by(() => {
@@ -183,19 +184,71 @@
 				</p>
 			</div>
 
-			<!-- Progress bar -->
-			<div class="w-full space-y-2">
-				<div class="bg-muted h-2 w-full overflow-hidden rounded-full">
-					<div
-						class="bg-primary h-full transition-all duration-300 ease-out"
-						style="width: {progress}%"
-					></div>
+			<!-- Progress section -->
+			<div class="w-full space-y-3">
+				<!-- Main progress bar -->
+				<div class="space-y-2">
+					<div class="bg-muted h-2 w-full overflow-hidden rounded-full">
+						<div
+							class="bg-primary h-full transition-all duration-300 ease-out"
+							style="width: {progress}%"
+						></div>
+					</div>
+					<!-- Status message -->
+					{#if launchingState}
+						<p class="text-muted-foreground text-center text-sm">
+							{getStatusMessage(launchingState.status)}
+						</p>
+					{/if}
 				</div>
-				<!-- Status message -->
-				{#if launchingState}
-					<p class="text-muted-foreground text-center text-sm">
-						{getStatusMessage(launchingState.status)}
-					</p>
+
+				<!-- Detailed download progress when downloading -->
+				{#if launchingState?.status.status === 'downloading'}
+					{@const dlProgress = launchingState.status.progress}
+					{@const hasBytes = dlProgress.totalBytes > 0}
+					{@const speed = dlProgress.speedBytesPerSec || 0}
+					{@const eta = speed > 0 && dlProgress.totalBytes > dlProgress.downloadedBytes
+						? formatEta((dlProgress.totalBytes - dlProgress.downloadedBytes) / speed)
+						: ''}
+					<div class="bg-muted/30 rounded-lg p-3 space-y-2">
+						<!-- Download header with speed and ETA -->
+						<div class="flex items-center justify-between text-xs">
+							<div class="flex items-center gap-1.5 text-muted-foreground">
+								<Download class="h-3.5 w-3.5" />
+								<span class="truncate max-w-[180px]" title={dlProgress.currentFile}>
+									{dlProgress.currentFile || 'Downloading...'}
+								</span>
+							</div>
+							{#if speed > 0}
+								<div class="flex items-center gap-2 font-mono text-muted-foreground">
+									<span>{formatSpeed(speed)}</span>
+									{#if eta}
+										<span class="text-muted-foreground/60">•</span>
+										<span>{eta}</span>
+									{/if}
+								</div>
+							{/if}
+						</div>
+
+						<!-- File progress bar -->
+						{#if hasBytes}
+							{@const fileProgress = (dlProgress.downloadedBytes / dlProgress.totalBytes) * 100}
+							<div class="bg-muted h-1.5 w-full overflow-hidden rounded-full">
+								<div
+									class="bg-primary/70 h-full transition-all duration-150 ease-out"
+									style="width: {fileProgress}%"
+								></div>
+							</div>
+							<div class="flex justify-between text-xs text-muted-foreground">
+								<span>{formatBytes(dlProgress.downloadedBytes)} / {formatBytes(dlProgress.totalBytes)}</span>
+								<span>{dlProgress.completedFiles} / {dlProgress.totalFiles} files</span>
+							</div>
+						{:else}
+							<div class="text-xs text-muted-foreground">
+								{dlProgress.completedFiles} / {dlProgress.totalFiles} files
+							</div>
+						{/if}
+					</div>
 				{/if}
 			</div>
 		</div>

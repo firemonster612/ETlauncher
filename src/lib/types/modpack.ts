@@ -176,6 +176,12 @@ export interface ModpackInstallProgress {
 	totalItems: number;
 	/** Items processed so far */
 	completedItems: number;
+	/** Total bytes to download (0 if not tracking bytes) */
+	totalBytes?: number;
+	/** Bytes downloaded so far */
+	downloadedBytes?: number;
+	/** Download speed in bytes per second */
+	speedBytesPerSec?: number;
 }
 
 /** Request to install a modpack */
