@@ -21,19 +21,44 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Create release
+      - name: Get or create release
         id: create-release
         uses: actions/github-script@v8
         with:
           script: |
+            const tag = context.ref.replace('refs/tags/', '');
+
+            // Check if a release already exists for this tag
+            try {
+              const { data: existingRelease } = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: tag,
+              });
+
+              if (!existingRelease.draft) {
+                core.setFailed(`Release for tag ${tag} already exists and is published. Delete it first or use a new tag.`);
+                return;
+              }
+
+              console.log(`Found existing draft release ${existingRelease.id} for tag ${tag}, reusing it`);
+              return existingRelease.id;
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+              // No existing release, create a new one
+            }
+
             const { data } = await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              tag_name: context.ref.replace('refs/tags/', ''),
-              name: context.ref.replace('refs/tags/', ''),
+              tag_name: tag,
+              name: tag,
               draft: true,
-              prerelease: context.ref.includes('-alpha') || context.ref.includes('-beta') || context.ref.includes('-rc'),
+              prerelease: tag.includes('-alpha') || tag.includes('-beta') || tag.includes('-rc'),
             });
+            console.log(`Created new draft release ${data.id} for tag ${tag}`);
             return data.id;
 
   build:
