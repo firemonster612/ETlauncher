@@ -63,7 +63,7 @@ function createModpacksStore() {
 	let exploreSortBy = $state<ModpackSortBy>('downloads');
 	let exploreMcVersion = $state<string | null>(null);
 	let exploreLoader = $state<LoaderType | null>(null);
-	let exploreCategory = $state<string | null>(null);
+	let exploreCategories = $state<string[]>([]);
 	let exploreSide = $state<SideFilter | null>(null);
 	const explorePageSize = 20;
 
@@ -84,7 +84,7 @@ function createModpacksStore() {
 			sort: exploreSortBy,
 			mcVersion: exploreMcVersion,
 			loader: exploreLoader,
-			category: exploreCategory,
+			categories: exploreCategories,
 			side: exploreSide,
 		});
 	}
@@ -243,8 +243,8 @@ function createModpacksStore() {
 		get exploreLoader() {
 			return exploreLoader;
 		},
-		get exploreCategory() {
-			return exploreCategory;
+		get exploreCategories() {
+			return exploreCategories;
 		},
 		get exploreSide() {
 			return exploreSide;
@@ -423,13 +423,20 @@ function createModpacksStore() {
 				isLoadingLatestVersion = true;
 				try {
 					// Use recentlyUpdated to show different modpacks than Popular section
+					// Request more than needed to account for filtering
 					const result = await modpackService.searchModpacks({
 						mcVersion: latestMcVersion,
 						sortBy: 'recentlyUpdated',
 						page: 0,
-						pageSize: 12,
+						pageSize: 24,
 					});
-					latestVersionModpacks = result.modpacks;
+					// Filter to only include modpacks that actually have the latest MC version
+					// in their mcVersions array (some API responses may not have version info populated)
+					const mcVer = latestMcVersion!; // Already null-checked above
+					const filtered = result.modpacks.filter(
+						(m) => m.mcVersions && m.mcVersions.length > 0 && m.mcVersions.includes(mcVer)
+					);
+					latestVersionModpacks = filtered.slice(0, 12);
 				} catch (e: unknown) {
 					console.error('[modpacksStore] Failed to load latest version modpacks:', e);
 				} finally {
@@ -481,11 +488,13 @@ function createModpacksStore() {
 			isLoadingExplore = true;
 
 			try {
+				// Pass first category to backend (if any), then filter client-side for multiple categories
+				const primaryCategory = exploreCategories.length > 0 ? exploreCategories[0] : undefined;
 				const result = await modpackService.searchModpacks({
 					platform: explorePlatform || undefined,
 					mcVersion: exploreMcVersion || undefined,
 					loader: exploreLoader || undefined,
-					category: exploreCategory || undefined,
+					category: primaryCategory,
 					side: exploreSide || undefined,
 					sortBy: exploreSortBy,
 					page: exploreCurrentPage,
@@ -495,7 +504,16 @@ function createModpacksStore() {
 					count: result.modpacks.length,
 					total: result.totalCount,
 				});
-				exploreModpacks = result.modpacks;
+				// Client-side filter for multiple categories (if more than one selected)
+				let filteredModpacks = result.modpacks;
+				if (exploreCategories.length > 1) {
+					filteredModpacks = result.modpacks.filter((m) =>
+						exploreCategories.every((cat) =>
+							m.categories.some((c) => c.toLowerCase() === cat.toLowerCase())
+						)
+					);
+				}
+				exploreModpacks = filteredModpacks;
 				exploreTotalCount = result.totalCount;
 
 				// Cache first page results
@@ -522,18 +540,29 @@ function createModpacksStore() {
 			isLoadingExplore = true;
 
 			try {
+				// Pass first category to backend (if any), then filter client-side for multiple categories
+				const primaryCategory = exploreCategories.length > 0 ? exploreCategories[0] : undefined;
 				const result = await modpackService.searchModpacks({
 					platform: explorePlatform || undefined,
 					mcVersion: exploreMcVersion || undefined,
 					loader: exploreLoader || undefined,
-					category: exploreCategory || undefined,
+					category: primaryCategory,
 					side: exploreSide || undefined,
 					sortBy: exploreSortBy,
 					page: exploreCurrentPage,
 					pageSize: explorePageSize,
 				});
 				console.log('[modpacksStore] Loaded more explore:', result.modpacks.length);
-				exploreModpacks = [...exploreModpacks, ...result.modpacks];
+				// Client-side filter for multiple categories (if more than one selected)
+				let filteredModpacks = result.modpacks;
+				if (exploreCategories.length > 1) {
+					filteredModpacks = result.modpacks.filter((m) =>
+						exploreCategories.every((cat) =>
+							m.categories.some((c) => c.toLowerCase() === cat.toLowerCase())
+						)
+					);
+				}
+				exploreModpacks = [...exploreModpacks, ...filteredModpacks];
 				exploreTotalCount = result.totalCount;
 			} catch (e: unknown) {
 				console.error('[modpacksStore] Load more explore failed:', e);
@@ -562,9 +591,9 @@ function createModpacksStore() {
 			exploreLoader = newLoader;
 		},
 
-		/** Set explore category filter */
-		setExploreCategory(newCategory: string | null) {
-			exploreCategory = newCategory;
+		/** Set explore categories filter (multi-select) */
+		setExploreCategories(newCategories: string[]) {
+			exploreCategories = newCategories;
 		},
 
 		/** Set explore side filter (client/server) */
@@ -577,7 +606,7 @@ function createModpacksStore() {
 			explorePlatform = null;
 			exploreMcVersion = null;
 			exploreLoader = null;
-			exploreCategory = null;
+			exploreCategories = [];
 			exploreSide = null;
 			exploreSortBy = 'downloads';
 		},

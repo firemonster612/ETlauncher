@@ -173,8 +173,8 @@
 								</div>
 							{/if}
 							<div class="min-w-0 flex-1">
-								<h3 class="truncate font-bold text-white">{modpack.name}</h3>
-								<p class="line-clamp-2 text-sm text-white/80">{modpack.description}</p>
+								<h3 class="text-foreground truncate font-bold dark:text-white">{modpack.name}</h3>
+								<p class="text-muted-foreground line-clamp-2 text-sm dark:text-white/80">{modpack.description}</p>
 								<div class="mt-2 flex flex-wrap items-center gap-2">
 									{#each (modpack.loaders || [])
 										.filter((l) => l && l !== 'unknown' && l !== 'vanilla')
@@ -183,7 +183,7 @@
 											{loader}
 										</span>
 									{/each}
-									<span class="flex items-center gap-1 text-xs text-white/70">
+									<span class="text-muted-foreground flex items-center gap-1 text-xs dark:text-white/70">
 										<Download class="h-3 w-3" />
 										{formatDownloads(modpack.downloads)}
 									</span>

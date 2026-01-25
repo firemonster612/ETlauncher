@@ -33,9 +33,20 @@
 
 	let isSaving = $state(false);
 	let saveError = $state<string | null>(null);
+	let autoSaveTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	const globalMemoryMinMb = $derived(settingsStore.settings?.memoryMinMb ?? 512);
 	const globalMemoryMaxMb = $derived(settingsStore.settings?.memoryMaxMb ?? 4096);
+
+	// Debounced auto-save function
+	function scheduleAutoSave() {
+		if (autoSaveTimeout) {
+			clearTimeout(autoSaveTimeout);
+		}
+		autoSaveTimeout = setTimeout(() => {
+			handleAutoSave();
+		}, 1000);
+	}
 
 	// Reset form when instance changes
 	$effect(() => {
@@ -52,15 +63,21 @@
 		resolutionHeight = instance.resolutionHeight || 0;
 	});
 
+	// Cleanup timeout on close
+	$effect(() => {
+		if (!isOpen && autoSaveTimeout) {
+			clearTimeout(autoSaveTimeout);
+			autoSaveTimeout = null;
+		}
+	});
+
 	function handleIconSelect(icon: EntityIcon) {
 		iconPath = makeIconPath(icon);
+		scheduleAutoSave();
 	}
 
-	async function handleSave() {
-		isSaving = true;
-		saveError = null;
-
-		const updates: UpdateInstanceRequest = {
+	function buildUpdates(): UpdateInstanceRequest {
+		return {
 			name: name !== instance.name ? name : undefined,
 			iconPath: iconPath !== instance.iconPath ? iconPath : undefined,
 			javaPath: javaPath || undefined,
@@ -71,6 +88,15 @@
 			resolutionWidth: resolutionWidth || undefined,
 			resolutionHeight: resolutionHeight || undefined,
 		};
+	}
+
+	async function handleAutoSave() {
+		if (isSaving) return;
+
+		isSaving = true;
+		saveError = null;
+
+		const updates = buildUpdates();
 
 		// Remove undefined values
 		Object.keys(updates).forEach((key) => {
@@ -79,12 +105,16 @@
 			}
 		});
 
+		// Only save if there are actual changes
+		if (Object.keys(updates).length === 0) {
+			isSaving = false;
+			return;
+		}
+
 		const result = await instancesStore.update(instance.id, updates);
 		isSaving = false;
 
-		if (result) {
-			onClose();
-		} else {
+		if (!result) {
 			saveError = instancesStore.error || 'Failed to save settings';
 		}
 	}
@@ -147,7 +177,13 @@
 			<!-- Instance Name -->
 			<div class="space-y-3">
 				<label for="instance-name" class="text-sm font-medium">Instance Name</label>
-				<Input id="instance-name" type="text" bind:value={name} placeholder="My Instance" />
+				<Input
+					id="instance-name"
+					type="text"
+					bind:value={name}
+					placeholder="My Instance"
+					oninput={scheduleAutoSave}
+				/>
 			</div>
 
 			<!-- Instance Icon -->
@@ -163,7 +199,13 @@
 				<p class="text-muted-foreground text-xs">
 					Leave empty to use the default Java installation
 				</p>
-				<Input id="java-path" type="text" bind:value={javaPath} placeholder="Auto-detect" />
+				<Input
+					id="java-path"
+					type="text"
+					bind:value={javaPath}
+					placeholder="Auto-detect"
+					oninput={scheduleAutoSave}
+				/>
 			</div>
 
 			<!-- Memory Allocation -->
@@ -178,7 +220,13 @@
 						<span>Min: <span class="text-primary">{formatMemory(memoryRange[0])}</span></span>
 						<span>Max: <span class="text-primary">{formatMemory(memoryRange[1])}</span></span>
 					</div>
-					<RangeSlider min={512} max={16384} step={512} bind:value={memoryRange} />
+					<RangeSlider
+						min={512}
+						max={16384}
+						step={512}
+						bind:value={memoryRange}
+						onValueCommit={scheduleAutoSave}
+					/>
 					<div class="text-muted-foreground flex justify-between text-xs">
 						<span>512 MB</span>
 						<span>16 GB</span>
@@ -192,7 +240,13 @@
 				<p class="text-muted-foreground text-xs">
 					Additional arguments passed to the Java Virtual Machine
 				</p>
-				<Textarea id="jvm-args" bind:value={jvmArgs} placeholder="-XX:+UseG1GC" rows={3} />
+				<Textarea
+					id="jvm-args"
+					bind:value={jvmArgs}
+					placeholder="-XX:+UseG1GC"
+					rows={3}
+					oninput={scheduleAutoSave}
+				/>
 			</div>
 
 			<!-- Game Arguments -->
@@ -204,6 +258,7 @@
 					bind:value={gameArgs}
 					placeholder="--width 1920 --height 1080"
 					rows={2}
+					oninput={scheduleAutoSave}
 				/>
 			</div>
 
@@ -218,6 +273,7 @@
 						placeholder="Width"
 						min={0}
 						class="w-24"
+						oninput={scheduleAutoSave}
 					/>
 					<span class="text-muted-foreground">×</span>
 					<Input
@@ -226,6 +282,7 @@
 						placeholder="Height"
 						min={0}
 						class="w-24"
+						oninput={scheduleAutoSave}
 					/>
 				</div>
 			</div>
@@ -252,6 +309,16 @@
 						</p>
 					{/if}
 				</div>
+			</div>
+
+			<!-- Quick Actions -->
+			<div class="border-border space-y-4 border-t pt-6">
+				<h4 class="text-muted-foreground text-sm font-medium">Quick Actions</h4>
+
+				<Button variant="outline" class="w-full" onclick={handleOpenFolder}>
+					<FolderOpen class="mr-2 h-4 w-4" />
+					Open Game Folder
+				</Button>
 
 				<!-- Reinstall Loader Button -->
 				{#if instance.loaderType !== 'vanilla' && instance.loaderVersion}
@@ -271,16 +338,6 @@
 						{/if}
 					</Button>
 				{/if}
-			</div>
-
-			<!-- Quick Actions -->
-			<div class="border-border space-y-4 border-t pt-6">
-				<h4 class="text-muted-foreground text-sm font-medium">Quick Actions</h4>
-
-				<Button variant="outline" class="w-full" onclick={handleOpenFolder}>
-					<FolderOpen class="mr-2 h-4 w-4" />
-					Open Game Folder
-				</Button>
 
 				<Button variant="outline" class="w-full" onclick={handleDuplicate}>
 					<Copy class="mr-2 h-4 w-4" />
@@ -319,10 +376,16 @@
 			</div>
 		{/if}
 
-		<Sheet.Footer class="border-border border-t px-6 pt-4">
-			<Button variant="outline" onclick={onClose} disabled={isSaving}>Cancel</Button>
-			<Button onclick={handleSave} disabled={isSaving || !name.trim()}>
-				{isSaving ? 'Saving...' : 'Save Changes'}
+		<Sheet.Footer class="border-border flex items-center justify-between border-t px-6 pt-4">
+			<span class="text-muted-foreground text-xs">
+				{#if isSaving}
+					Saving...
+				{:else}
+					Auto-saves on change
+				{/if}
+			</span>
+			<Button variant="outline" onclick={onClose} disabled={isSaving}>
+				Close
 			</Button>
 		</Sheet.Footer>
 	</Sheet.Content>

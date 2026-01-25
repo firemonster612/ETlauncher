@@ -88,7 +88,11 @@
 		loadPoolStats();
 	});
 
-	async function loadPoolStats() {
+	async function loadPoolStats(preserveScroll = false) {
+		// Save scroll position if requested
+		const scrollContainer = document.querySelector('main.overflow-y-auto') as HTMLElement | null;
+		const scrollTop = preserveScroll && scrollContainer ? scrollContainer.scrollTop : 0;
+
 		poolLoading = true;
 		try {
 			poolStats = await settingsService.getPoolStats();
@@ -96,6 +100,13 @@
 			console.error('Failed to load pool stats:', e);
 		} finally {
 			poolLoading = false;
+
+			// Restore scroll position if requested
+			if (preserveScroll && scrollContainer) {
+				requestAnimationFrame(() => {
+					scrollContainer.scrollTop = scrollTop;
+				});
+			}
 		}
 	}
 
@@ -209,7 +220,7 @@
 	}
 </script>
 
-<div class="max-w-2xl space-y-6">
+<div class="mx-auto w-full max-w-4xl space-y-6">
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl">Settings</h1>
 		{#if saveStatus === 'saving'}
@@ -698,7 +709,12 @@
 					<div class="flex items-center gap-2 text-sm">
 						<HardDrive class="h-4 w-4" />
 						<span>Pool Statistics</span>
-						<Button variant="ghost" size="icon" class="ml-auto h-6 w-6" onclick={loadPoolStats}>
+						<Button
+							variant="ghost"
+							size="icon"
+							class="ml-auto h-6 w-6"
+							onclick={() => loadPoolStats(true)}
+						>
 							<RefreshCw class="h-3 w-3" />
 						</Button>
 					</div>
@@ -720,6 +736,10 @@
 							<span class="text-primary">{formatBytes(poolStats.spaceSavedBytes)}</span>
 							<span>Unused:</span>
 							<span class="text-foreground">{poolStats.unusedCount}</span>
+							<span>Assets cache:</span>
+							<span class="text-foreground">{formatBytes(poolStats.assetsCacheSize)}</span>
+							<span>Libraries cache:</span>
+							<span class="text-foreground">{formatBytes(poolStats.librariesCacheSize)}</span>
 						</div>
 					{:else}
 						<p class="text-muted-foreground text-xs">No pool data available</p>

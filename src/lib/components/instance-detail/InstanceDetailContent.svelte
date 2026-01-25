@@ -19,6 +19,7 @@
 	} from '@lucide/svelte';
 	import { Button } from '$lib/ui/button';
 	import { SvelteSet } from 'svelte/reactivity';
+	import { nestedScroll } from '$lib/utils/scroll';
 	import { Input } from '$lib/ui/input';
 	import * as contentService from '$lib/services/content';
 	import type { Instance, ContentType, ScanResult, DetectedMod } from '$lib/types';
@@ -424,7 +425,7 @@
 			</div>
 
 			<!-- Items List -->
-			<div class="flex-1 space-y-2 overflow-y-auto">
+			<div class="flex-1 space-y-2 overflow-y-auto" use:nestedScroll>
 				{#if visibleItems.length === 0 && search.trim()}
 					<div class="border-border bg-card/50 border-2 border-dashed p-8 text-center">
 						<p class="text-muted-foreground text-sm">No matches for "{search.trim()}"</p>

@@ -126,4 +126,8 @@ export interface ResourcePoolStats {
 	unusedCount: number;
 	/** Last garbage collection timestamp */
 	lastGcAt: number | null;
+	/** Size of cached assets (textures, sounds, etc.) in bytes */
+	assetsCacheSize: number;
+	/** Size of cached libraries (Java libraries) in bytes */
+	librariesCacheSize: number;
 }

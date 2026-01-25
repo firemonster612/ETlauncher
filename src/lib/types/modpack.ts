@@ -15,8 +15,10 @@ export interface ModpackSearchParams {
 	mcVersion?: string;
 	/** Filter by mod loader */
 	loader?: LoaderType;
-	/** Filter by category */
+	/** Filter by category (single) - used by backend */
 	category?: string;
+	/** Filter by categories (multiple) - for client-side filtering */
+	categories?: string[];
 	/** Sort order */
 	sortBy?: ModpackSortBy;
 	/** Page number (0-indexed) */

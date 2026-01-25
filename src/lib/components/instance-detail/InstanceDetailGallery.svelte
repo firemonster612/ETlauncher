@@ -2,6 +2,7 @@
 	import { Loader2, Search, Trash2, Calendar, Image } from '@lucide/svelte';
 	import { convertFileSrc } from '@tauri-apps/api/core';
 	import { alertDialogStore } from '$lib/stores/alertDialog.svelte';
+	import { nestedScroll } from '$lib/utils/scroll';
 	import { Button } from '$lib/ui/button';
 	import { Input } from '$lib/ui/input';
 	import * as Select from '$lib/ui/select';
@@ -229,7 +230,7 @@
 	{/if}
 
 	<!-- Screenshots Grid -->
-	<div class="flex-1 overflow-y-auto">
+	<div class="flex-1 overflow-y-auto" use:nestedScroll>
 		{#if isLoading}
 			<div class="text-muted-foreground flex items-center justify-center gap-3 py-12">
 				<Loader2 class="h-6 w-6 animate-spin" />

@@ -113,9 +113,9 @@
 	tabindex="0"
 >
 	<!-- Icon Banner Section -->
-	<div class="from-muted/50 to-muted relative h-24 overflow-hidden bg-gradient-to-br">
+	<div class="from-muted/50 to-muted relative h-24 overflow-hidden bg-gradient-to-br" style="isolation: isolate;">
 		<!-- Blurred background icon -->
-		<div class="absolute inset-0 flex items-center justify-center opacity-20 blur-xl">
+		<div class="absolute inset-0 flex items-center justify-center opacity-20 blur-xl" style="will-change: transform; backface-visibility: hidden; transform: translateZ(0);">
 			<img
 				src={getIconSrc(instance.iconPath)}
 				alt=""

@@ -4,8 +4,9 @@ use crate::models::{
     Instance, LoaderType, ModpackPlatform, MANIFEST_VERSION,
 };
 use crate::services::{
-    atlauncher_service, curseforge_service, ftb_service, instance_service, loader_service,
-    manifest_service, modrinth_service, technic_service,
+    atlauncher_service, curseforge_service, ftb_service,
+    instance_service::{self, get_random_entity_icon, get_used_icons},
+    loader_service, manifest_service, modrinth_service, technic_service,
 };
 use crate::state::AppState;
 use chrono::Utc;
@@ -177,6 +178,9 @@ pub async fn install_modrinth_modpack(
         fs::create_dir_all(game_dir.join(subdir))?;
     }
 
+    // Get icons already in use to prioritize unused ones
+    let used_icons = get_used_icons(state);
+
     let instance = Instance {
         id: instance_id.clone(),
         name: instance_name,
@@ -186,7 +190,7 @@ pub async fn install_modrinth_modpack(
         created_at: Utc::now().timestamp(),
         last_played_at: None,
         total_play_time: 0,
-        icon_path: None,
+        icon_path: Some(get_random_entity_icon(&used_icons)),
         java_path: None,
         memory_min_mb: None,
         memory_max_mb: None,
@@ -457,6 +461,9 @@ pub async fn install_curseforge_modpack(
         fs::create_dir_all(game_dir.join(subdir))?;
     }
 
+    // Get icons already in use to prioritize unused ones
+    let used_icons = get_used_icons(state);
+
     let instance = Instance {
         id: instance_id.clone(),
         name: instance_name,
@@ -466,7 +473,7 @@ pub async fn install_curseforge_modpack(
         created_at: Utc::now().timestamp(),
         last_played_at: None,
         total_play_time: 0,
-        icon_path: None,
+        icon_path: Some(get_random_entity_icon(&used_icons)),
         java_path: None,
         memory_min_mb: None,
         memory_max_mb: None,
@@ -1014,6 +1021,9 @@ pub async fn import_from_mrpack_file(
         fs::create_dir_all(game_dir.join(subdir))?;
     }
 
+    // Get icons already in use to prioritize unused ones
+    let used_icons = get_used_icons(state);
+
     let instance = Instance {
         id: instance_id.clone(),
         name: instance_name,
@@ -1023,7 +1033,7 @@ pub async fn import_from_mrpack_file(
         created_at: Utc::now().timestamp(),
         last_played_at: None,
         total_play_time: 0,
-        icon_path: None,
+        icon_path: Some(get_random_entity_icon(&used_icons)),
         java_path: None,
         memory_min_mb: None,
         memory_max_mb: None,
@@ -1816,6 +1826,9 @@ pub async fn install_ftb_modpack(
         fs::create_dir_all(game_dir.join(subdir))?;
     }
 
+    // Get icons already in use to prioritize unused ones
+    let used_icons = get_used_icons(state);
+
     // Create initial instance (may be updated after detection)
     let mut instance = Instance {
         id: instance_id.clone(),
@@ -1830,7 +1843,7 @@ pub async fn install_ftb_modpack(
         created_at: Utc::now().timestamp(),
         last_played_at: None,
         total_play_time: 0,
-        icon_path: None,
+        icon_path: Some(get_random_entity_icon(&used_icons)),
         java_path: None,
         memory_min_mb: None,
         memory_max_mb: None,
@@ -2172,6 +2185,9 @@ pub async fn install_technic_modpack(
         fs::create_dir_all(game_dir.join(subdir))?;
     }
 
+    // Get icons already in use to prioritize unused ones
+    let used_icons = get_used_icons(state);
+
     let mut instance = Instance {
         id: instance_id.clone(),
         name: instance_name,
@@ -2185,7 +2201,7 @@ pub async fn install_technic_modpack(
         created_at: Utc::now().timestamp(),
         last_played_at: None,
         total_play_time: 0,
-        icon_path: None,
+        icon_path: Some(get_random_entity_icon(&used_icons)),
         java_path: None,
         memory_min_mb: None,
         memory_max_mb: None,
@@ -2539,6 +2555,9 @@ pub async fn install_atlauncher_modpack(
         fs::create_dir_all(game_dir.join(subdir))?;
     }
 
+    // Get icons already in use to prioritize unused ones
+    let used_icons = get_used_icons(state);
+
     let mut instance = Instance {
         id: instance_id.clone(),
         name: instance_name,
@@ -2552,7 +2571,7 @@ pub async fn install_atlauncher_modpack(
         created_at: Utc::now().timestamp(),
         last_played_at: None,
         total_play_time: 0,
-        icon_path: None,
+        icon_path: Some(get_random_entity_icon(&used_icons)),
         java_path: None,
         memory_min_mb: None,
         memory_max_mb: None,

@@ -89,10 +89,16 @@
 		showContentBrowser = true;
 	}
 
-	function closeContentBrowser() {
+	function closeContentBrowser(contentWasInstalled: boolean) {
 		showContentBrowser = false;
 		contentBrowserInstance = null;
 		contentBrowserContentType = undefined;
+
+		// Refresh instance list if content was installed
+		// This ensures the instance detail view shows updated content counts
+		if (contentWasInstalled) {
+			instancesStore.load();
+		}
 	}
 
 	function openDetailModal(instance: Instance) {

@@ -4,6 +4,7 @@
 	import { listen } from '@tauri-apps/api/event';
 	import { openUrl } from '@tauri-apps/plugin-opener';
 	import { renderMarkdown } from '$lib/utils/markdown';
+	import { nestedScroll } from '$lib/utils/scroll';
 	import {
 		Package,
 		Search,
@@ -52,11 +53,14 @@
 		mcVersion: string;
 		loaderType: LoaderType;
 		initialContentType?: ContentType;
-		onClose: () => void;
+		onClose: (contentWasInstalled: boolean) => void;
 	}
 
 	let { instanceId, instanceName, mcVersion, loaderType, initialContentType, onClose }: Props =
 		$props();
+
+	// Track if any content was installed during this session
+	let contentWasInstalled = $state(false);
 
 	let searchInput = $state('');
 	let selectedContentDetail = $state<Content | null>(null);
@@ -271,6 +275,8 @@
 			// Refresh installed content BEFORE updating status when download completes
 			// This ensures the "installed" badge shows immediately instead of a gap
 			if (event.payload.status === 'completed') {
+				// Track that content was installed during this session
+				contentWasInstalled = true;
 				await contentStore.refreshInstalledContent();
 				// Refresh mod scan for helper detection (Iris/Oculus/OptiFine) when mods complete
 				if (event.payload.contentType === 'mod') {
@@ -313,10 +319,7 @@
 	}
 
 	async function handleContentTypeChange(type: ContentType) {
-		// Worlds are only available on CurseForge
-		if (type === 'world' && contentStore.platform === 'modrinth') {
-			contentStore.setPlatform('curseforge');
-		}
+		// Platform switching for Worlds tab is now handled in setContentType
 		await contentStore.setContentType(type);
 		// Clear selection when changing content type
 		selectedItems.clear();
@@ -1049,6 +1052,9 @@
 		if (contentStore.isContentInstalled(content)) return;
 		if (contentStore.isContentQueued(content.id)) return;
 
+		// Mark as pending immediately for optimistic UI update
+		contentStore.markPendingInstall(content.id);
+
 		try {
 			// Fetch the latest compatible version
 			// For mods on vanilla instances, filter by 'datapack' loader to get datapack-compatible versions
@@ -1083,8 +1089,13 @@
 				mcVersion,
 				loaderType === 'vanilla' ? undefined : loaderType
 			);
+
+			// Clear pending state - item is now in the actual queue
+			contentStore.clearPendingInstall(content.id);
 		} catch (e: unknown) {
 			console.error('[ContentBrowser] Quick install failed:', e);
+			// Clear pending state on error
+			contentStore.clearPendingInstall(content.id);
 			// Show error inline for this content
 			quickInstallError = getErrorMessage(e);
 		}
@@ -1173,7 +1184,7 @@
 <button
 	type="button"
 	class="fixed inset-x-0 top-[var(--titlebar-height)] z-[55] h-[calc(100vh-var(--titlebar-height))] bg-black/50"
-	onclick={onClose}
+	onclick={() => onClose(contentWasInstalled)}
 	aria-label={`Close content browser for ${instanceName}`}
 ></button>
 
@@ -1184,7 +1195,7 @@
 	<!-- Close Button -->
 	<button
 		class="text-muted-foreground hover:text-foreground absolute top-2 right-2 z-10 p-2"
-		onclick={onClose}
+		onclick={() => onClose(contentWasInstalled)}
 	>
 		<X class="h-5 w-5" />
 	</button>
@@ -1420,7 +1431,7 @@
 		{/if}
 
 		<!-- Results -->
-		<div class="flex-1 overflow-y-auto p-4" onscroll={handleBrowseScroll}>
+		<div class="flex-1 overflow-y-auto p-4" use:nestedScroll onscroll={handleBrowseScroll}>
 			{#if contentStore.isSearching && contentStore.items.length === 0}
 				<!-- Skeleton loading state -->
 				<div class="text-muted-foreground mb-3 text-xs">
@@ -1613,7 +1624,7 @@
 		{/if}
 
 		<!-- Installed Items List -->
-		<div class="flex-1 overflow-y-auto p-4">
+		<div class="flex-1 overflow-y-auto p-4" use:nestedScroll>
 			{#if installedItems.length === 0 && !contentStore.isScanning}
 				<div class="border-border bg-card/50 border-2 border-dashed p-12 text-center">
 					<Package class="text-muted-foreground/50 mx-auto h-12 w-12" />
@@ -2240,7 +2251,7 @@
 				</div>
 			</div>
 
-			<div class="min-h-0 flex-1 overflow-y-auto p-5">
+			<div class="min-h-0 flex-1 overflow-y-auto p-5" use:nestedScroll>
 				<div class="space-y-4">
 					{#if detailError}
 						<div
