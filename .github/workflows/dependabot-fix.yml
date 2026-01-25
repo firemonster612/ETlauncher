@@ -43,11 +43,12 @@ jobs:
             echo "RUST_FORMATTED=true" >> $GITHUB_ENV
           fi
 
-      - name: Commit fixes
+      - name: Commit fixes via GitHub API
         if: env.LOCKFILE_CHANGED == 'true' || env.RUST_FORMATTED == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "chore: auto-fix lockfile and formatting"
-          git push
+        uses: planetscale/ghcommit-action@v0.2.0
+        with:
+          commit_message: "chore: auto-fix lockfile and formatting"
+          repo: ${{ github.repository }}
+          branch: ${{ github.head_ref }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
