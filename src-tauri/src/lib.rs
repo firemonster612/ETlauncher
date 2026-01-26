@@ -157,6 +157,11 @@ pub fn run() {
             commands::resource_pool::check_instance_needs_migration,
             commands::resource_pool::migrate_instance_to_pool,
             commands::resource_pool::migrate_all_instances_to_pool,
+            // Import/Export commands
+            commands::import::analyze_import_source,
+            commands::import::import_from_folder,
+            commands::import::import_curseforge_zip,
+            commands::import::export_curseforge_modpack,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

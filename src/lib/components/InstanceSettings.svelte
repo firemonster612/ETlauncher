@@ -7,8 +7,10 @@
 	import { RangeSlider } from '$lib/ui/slider';
 	import { Textarea } from '$lib/ui/textarea';
 	import * as Sheet from '$lib/ui/sheet';
+	import * as RadioGroup from '$lib/ui/radio-group';
 	import { instancesStore } from '$lib/stores/instances.svelte';
 	import * as instanceService from '$lib/services/instance';
+	import * as importService from '$lib/services/import';
 	import IconPicker from './IconPicker.svelte';
 	import { makeIconPath, type EntityIcon } from '$lib/utils/icons';
 	import type { Instance, UpdateInstanceRequest } from '$lib/types';
@@ -30,10 +32,15 @@
 	let gameArgs = $state('');
 	let resolutionWidth = $state(0);
 	let resolutionHeight = $state(0);
+	let description = $state('');
+	let author = $state('');
 
 	let isSaving = $state(false);
 	let saveError = $state<string | null>(null);
 	let autoSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	// Export state
+	let exportFormat = $state<'mrpack' | 'curseforge'>('mrpack');
 
 	const globalMemoryMinMb = $derived(settingsStore.settings?.memoryMinMb ?? 512);
 	const globalMemoryMaxMb = $derived(settingsStore.settings?.memoryMaxMb ?? 4096);
@@ -61,6 +68,8 @@
 		gameArgs = instance.gameArgs || '';
 		resolutionWidth = instance.resolutionWidth || 0;
 		resolutionHeight = instance.resolutionHeight || 0;
+		description = instance.description || '';
+		author = instance.author || '';
 	});
 
 	// Cleanup timeout on close
@@ -87,6 +96,8 @@
 			gameArgs: gameArgs || undefined,
 			resolutionWidth: resolutionWidth || undefined,
 			resolutionHeight: resolutionHeight || undefined,
+			description: description || undefined,
+			author: author || undefined,
 		};
 	}
 
@@ -142,21 +153,37 @@
 
 	let isExporting = $state(false);
 	let exportError = $state<string | null>(null);
+	let exportSuccess = $state(false);
 
 	async function handleExport() {
+		const extension = exportFormat === 'mrpack' ? 'mrpack' : 'zip';
+		const filterName = exportFormat === 'mrpack' ? 'Modrinth Pack' : 'CurseForge Modpack';
+
 		try {
 			const filePath = await save({
 				title: 'Export Instance',
-				defaultPath: `${instance.name}.mrpack`,
-				filters: [{ name: 'Modrinth Pack', extensions: ['mrpack'] }],
+				defaultPath: `${instance.name}.${extension}`,
+				filters: [{ name: filterName, extensions: [extension] }],
 			});
 
 			if (!filePath) return;
 
 			isExporting = true;
 			exportError = null;
-			await instanceService.exportInstance(instance.id, filePath);
+			exportSuccess = false;
+
+			if (exportFormat === 'mrpack') {
+				await instanceService.exportInstance(instance.id, filePath);
+			} else {
+				await importService.exportCurseForgeModpack(instance.id, filePath);
+			}
+
 			isExporting = false;
+			exportSuccess = true;
+			// Reset success message after 3 seconds
+			setTimeout(() => {
+				exportSuccess = false;
+			}, 3000);
 		} catch (e: unknown) {
 			isExporting = false;
 			exportError = e instanceof Error ? e.message : 'Export failed';
@@ -344,18 +371,79 @@
 					Duplicate Instance
 				</Button>
 
+				</div>
+
+			<!-- Export Section -->
+			<div class="border-border space-y-4 border-t pt-6">
+				<h4 class="text-muted-foreground text-sm font-medium">Export Instance</h4>
+
+				<div class="space-y-3">
+					<label for="export-description" class="text-sm font-medium">Description</label>
+					<p class="text-muted-foreground text-xs">Optional description for the exported modpack</p>
+					<Textarea
+						id="export-description"
+						bind:value={description}
+						placeholder="A modpack for..."
+						rows={2}
+						oninput={scheduleAutoSave}
+					/>
+				</div>
+
+				<div class="space-y-3">
+					<label for="export-author" class="text-sm font-medium">Author</label>
+					<p class="text-muted-foreground text-xs">Your name or username for the exported modpack</p>
+					<Input
+						id="export-author"
+						type="text"
+						bind:value={author}
+						placeholder="Author name"
+						oninput={scheduleAutoSave}
+					/>
+				</div>
+
+				<div class="space-y-3">
+					<p class="text-sm font-medium">Export Format</p>
+					<p class="text-muted-foreground text-xs">Choose the format for sharing your modpack</p>
+					<RadioGroup.Root bind:value={exportFormat} class="grid grid-cols-2 gap-3">
+						<label
+							for="format-mrpack"
+							class="border-border hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5"
+						>
+							<RadioGroup.Item value="mrpack" id="format-mrpack" class="mt-0.5" />
+							<div>
+								<p class="text-sm font-medium">Modrinth (.mrpack)</p>
+								<p class="text-muted-foreground text-xs">Best for Modrinth, Prism Launcher</p>
+							</div>
+						</label>
+						<label
+							for="format-curseforge"
+							class="border-border hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5"
+						>
+							<RadioGroup.Item value="curseforge" id="format-curseforge" class="mt-0.5" />
+							<div>
+								<p class="text-sm font-medium">CurseForge (.zip)</p>
+								<p class="text-muted-foreground text-xs">Best for CurseForge, ATLauncher</p>
+							</div>
+						</label>
+					</RadioGroup.Root>
+				</div>
+
 				<Button variant="outline" class="w-full" onclick={handleExport} disabled={isExporting}>
 					{#if isExporting}
 						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
 						Exporting...
 					{:else}
 						<Upload class="mr-2 h-4 w-4" />
-						Export as .mrpack
+						Export as {exportFormat === 'mrpack' ? '.mrpack' : '.zip'}
 					{/if}
 				</Button>
 
 				{#if exportError}
 					<p class="text-destructive text-sm">{exportError}</p>
+				{/if}
+
+				{#if exportSuccess}
+					<p class="text-sm text-green-500">Export completed successfully!</p>
 				{/if}
 			</div>
 		</div>

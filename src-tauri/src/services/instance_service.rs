@@ -292,6 +292,8 @@ pub fn create_instance(
         modpack_platform: None,
         modpack_id: None,
         modpack_version_id: None,
+        description: None,
+        author: None,
     };
 
     save_instance(state, &instance)?;
@@ -348,6 +350,12 @@ pub fn update_instance(
     }
     if updates.resolution_height.is_some() {
         instance.resolution_height = updates.resolution_height;
+    }
+    if updates.description.is_some() {
+        instance.description = updates.description;
+    }
+    if updates.author.is_some() {
+        instance.author = updates.author;
     }
 
     save_instance(state, &instance)?;
@@ -455,6 +463,8 @@ pub fn duplicate_instance(
         modpack_platform: source.modpack_platform,
         modpack_id: source.modpack_id,
         modpack_version_id: source.modpack_version_id,
+        description: source.description,
+        author: source.author,
     };
 
     save_instance(state, &new_instance)?;
