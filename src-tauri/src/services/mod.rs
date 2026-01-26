@@ -9,6 +9,7 @@ pub mod download_service;
 pub mod ftb_service;
 pub mod instance_detail_service;
 pub mod instance_export_service;
+pub mod instance_import_service;
 pub mod instance_service;
 pub mod java_service;
 pub mod launch_service;

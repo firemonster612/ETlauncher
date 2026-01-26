@@ -119,6 +119,12 @@ pub struct Instance {
     /// Installed modpack version ID
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modpack_version_id: Option<String>,
+    /// Instance description (used for export metadata)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Instance author (used for export metadata)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
 }
 
 impl Default for Instance {
@@ -143,6 +149,8 @@ impl Default for Instance {
             modpack_platform: None,
             modpack_id: None,
             modpack_version_id: None,
+            description: None,
+            author: None,
         }
     }
 }
@@ -172,6 +180,8 @@ pub struct UpdateInstanceRequest {
     pub game_args: Option<String>,
     pub resolution_width: Option<u32>,
     pub resolution_height: Option<u32>,
+    pub description: Option<String>,
+    pub author: Option<String>,
 }
 
 /// Instance launch status

@@ -201,6 +201,8 @@ pub async fn install_modrinth_modpack(
         modpack_platform: Some(ModpackPlatform::Modrinth),
         modpack_id: Some(modpack_id.to_string()),
         modpack_version_id: Some(version_id.to_string()),
+        description: None,
+        author: None,
     };
 
     instance_service::save_instance(state, &instance)?;
@@ -484,6 +486,8 @@ pub async fn install_curseforge_modpack(
         modpack_platform: Some(ModpackPlatform::CurseForge),
         modpack_id: Some(modpack_id.to_string()),
         modpack_version_id: Some(version_id.to_string()),
+        description: None,
+        author: None,
     };
 
     instance_service::save_instance(state, &instance)?;
@@ -763,22 +767,46 @@ fn determine_loader(
 }
 
 fn parse_curseforge_loader(loader_id: &str) -> (Option<LoaderType>, Option<String>) {
-    if loader_id.starts_with("forge-") {
-        let version = loader_id.strip_prefix("forge-").map(|s| s.to_string());
+    let lower = loader_id.to_lowercase();
+
+    if lower.starts_with("forge-") {
+        let version = loader_id.get(6..).map(|s| s.to_string());
+        println!(
+            "[modpack_install] Parsed Forge loader: version={:?}",
+            version
+        );
         return (Some(LoaderType::Forge), version);
     }
-    if loader_id.starts_with("fabric-") {
-        let version = loader_id.strip_prefix("fabric-").map(|s| s.to_string());
+    if lower.starts_with("fabric-") {
+        let version = loader_id.get(7..).map(|s| s.to_string());
+        println!(
+            "[modpack_install] Parsed Fabric loader: version={:?}",
+            version
+        );
         return (Some(LoaderType::Fabric), version);
     }
-    if loader_id.starts_with("neoforge-") {
-        let version = loader_id.strip_prefix("neoforge-").map(|s| s.to_string());
+    if lower.starts_with("neoforge-") {
+        let version = loader_id.get(9..).map(|s| s.to_string());
+        println!(
+            "[modpack_install] Parsed NeoForge loader: version={:?}",
+            version
+        );
         return (Some(LoaderType::NeoForge), version);
     }
-    if loader_id.starts_with("quilt-") {
-        let version = loader_id.strip_prefix("quilt-").map(|s| s.to_string());
+    if lower.starts_with("quilt-") {
+        let version = loader_id.get(6..).map(|s| s.to_string());
+        println!(
+            "[modpack_install] Parsed Quilt loader: version={:?}",
+            version
+        );
         return (Some(LoaderType::Quilt), version);
     }
+
+    // Log unrecognized loader for debugging
+    println!(
+        "[modpack_install] Unrecognized CurseForge loader ID: {}",
+        loader_id
+    );
     (None, None)
 }
 
@@ -1044,6 +1072,8 @@ pub async fn import_from_mrpack_file(
         modpack_platform: None,
         modpack_id: None,
         modpack_version_id: None,
+        description: None,
+        author: None,
     };
 
     instance_service::save_instance(state, &instance)?;
@@ -1180,6 +1210,320 @@ pub async fn import_from_mrpack_file(
 
     println!(
         "[modpack_install] Imported mrpack successfully: instance_id={}",
+        instance.id
+    );
+    Ok(instance)
+}
+
+/// Import an instance from a local CurseForge .zip file
+pub async fn import_curseforge_zip_file(
+    state: &AppState,
+    file_path: &std::path::Path,
+    instance_name: Option<String>,
+    app_handle: Option<&AppHandle>,
+    cancel_token: Option<&CancellationToken>,
+) -> Result<Instance, AppError> {
+    println!(
+        "[modpack_install] import_curseforge_zip_file: file_path={}",
+        file_path.display()
+    );
+
+    emit_progress(app_handle, "Reading modpack file", 0, None, 0, 0);
+
+    // Verify file exists
+    if !file_path.exists() {
+        return Err(AppError::ContentNotFound(format!(
+            "File not found: {}",
+            file_path.display()
+        )));
+    }
+
+    let zip_file = File::open(file_path)?;
+    let mut archive = ZipArchive::new(zip_file)?;
+
+    emit_progress(app_handle, "Extracting modpack", 10, None, 0, 0);
+
+    // Read manifest.json
+    let manifest: CurseForgeManifest = {
+        let mut manifest_file = archive.by_name("manifest.json")?;
+        let mut contents = String::new();
+        manifest_file.read_to_string(&mut contents)?;
+        serde_json::from_str(&contents)?
+    };
+
+    // Debug: log manifest loader info
+    println!(
+        "[modpack_install] CurseForge zip import - mc_version={}, mod_loaders={:?}",
+        manifest.minecraft.version,
+        manifest
+            .minecraft
+            .mod_loaders
+            .iter()
+            .map(|l| &l.id)
+            .collect::<Vec<_>>()
+    );
+
+    // Determine Minecraft version and loader
+    let mc_version = manifest.minecraft.version.clone();
+    let (loader_type, loader_version) = if let Some(loader) = manifest.minecraft.mod_loaders.first()
+    {
+        println!(
+            "[modpack_install] Parsing loader ID from zip: {}",
+            loader.id
+        );
+        let result = parse_curseforge_loader(&loader.id);
+        println!(
+            "[modpack_install] parse_curseforge_loader returned: type={:?}, version={:?}",
+            result.0, result.1
+        );
+        result
+    } else {
+        println!("[modpack_install] No mod_loaders found in zip manifest");
+        (None, None)
+    };
+
+    println!(
+        "[modpack_install] Before resolve: loader_type={:?}, loader_version={:?}",
+        loader_type, loader_version
+    );
+
+    // If we already have both loader type and version from the manifest, use them directly
+    // Otherwise, try to resolve the loader (for packs that don't specify complete loader info)
+    let (final_loader_type, final_loader_version) = match (&loader_type, &loader_version) {
+        (Some(lt), Some(lv)) => {
+            println!(
+                "[modpack_install] Using loader from manifest: type={:?}, version={}",
+                lt, lv
+            );
+            (*lt, Some(lv.clone()))
+        }
+        _ => {
+            // Need to resolve - check if there are mods (either in files array or we assume overrides has them)
+            let has_mods = !manifest.files.is_empty();
+            println!(
+                "[modpack_install] manifest.files.len()={}, has_mods={}",
+                manifest.files.len(),
+                has_mods
+            );
+            resolve_loader_for_pack(
+                &mc_version,
+                loader_type.unwrap_or(LoaderType::Vanilla),
+                loader_version,
+                has_mods,
+            )
+            .await?
+        }
+    };
+
+    println!(
+        "[modpack_install] CurseForge zip import final loader: type={:?}, version={:?}",
+        final_loader_type, final_loader_version
+    );
+
+    // Create instance
+    let pack_name = manifest.name.clone();
+    let instance_name = instance_name.unwrap_or(pack_name);
+    let instance_id = Uuid::new_v4().to_string();
+    println!(
+        "[modpack_install] Creating instance from CurseForge zip: id={}, name={}",
+        instance_id, instance_name
+    );
+
+    emit_progress(app_handle, "Creating instance", 15, None, 0, 0);
+
+    // Get instance directories
+    let instances_base = state.settings.read().instances_path.clone();
+    let instance_dir =
+        crate::utils::paths::get_instance_dir_with_base(&instances_base, &instance_id);
+    let game_dir =
+        crate::utils::paths::get_instance_game_dir_with_base(&instances_base, &instance_id);
+
+    // Create directories
+    fs::create_dir_all(&instance_dir)?;
+    fs::create_dir_all(&game_dir)?;
+
+    // Create standard game subdirectories
+    for subdir in [
+        "mods",
+        "resourcepacks",
+        "saves",
+        "screenshots",
+        "logs",
+        "config",
+        "shaderpacks",
+    ] {
+        fs::create_dir_all(game_dir.join(subdir))?;
+    }
+
+    // Get icons already in use to prioritize unused ones
+    let used_icons = get_used_icons(state);
+
+    let instance = Instance {
+        id: instance_id.clone(),
+        name: instance_name,
+        minecraft_version: mc_version.clone(),
+        loader_type: final_loader_type,
+        loader_version: final_loader_version.clone(),
+        created_at: Utc::now().timestamp(),
+        last_played_at: None,
+        total_play_time: 0,
+        icon_path: Some(get_random_entity_icon(&used_icons)),
+        java_path: None,
+        memory_min_mb: None,
+        memory_max_mb: None,
+        jvm_args: None,
+        game_args: None,
+        resolution_width: None,
+        resolution_height: None,
+        modpack_platform: None, // No platform since it's imported from local file
+        modpack_id: None,
+        modpack_version_id: None,
+        description: None,
+        author: None,
+    };
+
+    instance_service::save_instance(state, &instance)?;
+
+    // Extract overrides folder
+    emit_progress(app_handle, "Extracting overrides", 20, None, 0, 0);
+    let overrides_folder = manifest.overrides.as_deref().unwrap_or("overrides");
+
+    // Reopen archive for extraction
+    let zip_file = File::open(file_path)?;
+    let mut archive = ZipArchive::new(zip_file)?;
+    extract_overrides(&mut archive, &game_dir, overrides_folder)?;
+
+    // Download mod files from CurseForge API
+    let api_key = state.get_settings().curseforge_api_key;
+    if api_key.is_none() && !manifest.files.is_empty() {
+        // Clean up instance since we can't download mods
+        cleanup_failed_install(state, &instance_id, &instance_dir);
+        return Err(AppError::ApiError(
+            "CurseForge API key required to download mods. Configure it in Settings.".to_string(),
+        ));
+    }
+
+    let total_files = manifest.files.len() as u32;
+    let mut downloaded_bytes: u64 = 0;
+    let mut total_bytes: u64 = 0;
+    let start_time = std::time::Instant::now();
+
+    if let Some(api_key) = api_key {
+        emit_progress_with_download(
+            app_handle,
+            "Downloading mods",
+            25,
+            None,
+            total_files,
+            0,
+            0,
+            0,
+            0,
+        );
+
+        let mods_dir = game_dir.join("mods");
+        fs::create_dir_all(&mods_dir)?;
+
+        for (i, cf_file) in manifest.files.iter().enumerate() {
+            // Check for cancellation before each file
+            if check_cancelled(cancel_token).is_err() {
+                cleanup_failed_install(state, &instance_id, &instance_dir);
+                return Err(AppError::Cancelled);
+            }
+
+            // Calculate speed based on elapsed time
+            let elapsed_secs = start_time.elapsed().as_secs_f64();
+            let speed = if elapsed_secs > 0.1 {
+                (downloaded_bytes as f64 / elapsed_secs) as u64
+            } else {
+                0
+            };
+
+            emit_progress_with_download(
+                app_handle,
+                "Downloading mods",
+                25 + ((i as u32 * 70) / total_files.max(1)),
+                Some(format!("Mod {}/{}", i + 1, total_files)),
+                total_files,
+                i as u32,
+                total_bytes,
+                downloaded_bytes,
+                speed,
+            );
+
+            // Get file info from CurseForge API
+            let file_info = curseforge_service::get_mod_file(
+                &state.http_client,
+                &api_key,
+                cf_file.project_id,
+                cf_file.file_id,
+            )
+            .await;
+
+            if let Ok(info) = file_info {
+                total_bytes += info.file_length;
+                let dest_path = mods_dir.join(&info.filename);
+                if download_bytes_to_file(&state.http_client, &info.download_url, &dest_path)
+                    .await
+                    .is_ok()
+                {
+                    downloaded_bytes += info.file_length;
+                }
+            }
+        }
+    }
+
+    // Install mod loader if not Vanilla
+    if instance.loader_type != LoaderType::Vanilla {
+        if let Some(ref lv) = instance.loader_version {
+            emit_progress(
+                app_handle,
+                "Installing mod loader",
+                95,
+                Some(format!("{:?} {}", instance.loader_type, lv)),
+                0,
+                0,
+            );
+
+            loader_service::install_loader(
+                &game_dir,
+                instance.loader_type,
+                &mc_version,
+                lv,
+                |msg, pct| {
+                    emit_progress(
+                        app_handle,
+                        &format!("Loader: {}", msg),
+                        95 + (pct / 20),
+                        None,
+                        0,
+                        0,
+                    );
+                },
+            )
+            .await?;
+        }
+    }
+
+    emit_progress(
+        app_handle,
+        "Installation complete",
+        100,
+        None,
+        total_files,
+        total_files,
+    );
+
+    // Create manifest for imported modpack
+    if let Err(e) = create_modpack_manifest(state, &instance.id, &game_dir) {
+        eprintln!(
+            "[modpack_install] Warning: Failed to create manifest: {}",
+            e
+        );
+    }
+
+    println!(
+        "[modpack_install] Imported CurseForge zip successfully: instance_id={}",
         instance.id
     );
     Ok(instance)
@@ -1854,6 +2198,8 @@ pub async fn install_ftb_modpack(
         modpack_platform: Some(ModpackPlatform::FTB),
         modpack_id: Some(modpack_id.to_string()),
         modpack_version_id: Some(version_id.to_string()),
+        description: None,
+        author: None,
     };
 
     instance_service::save_instance(state, &instance)?;
@@ -2212,6 +2558,8 @@ pub async fn install_technic_modpack(
         modpack_platform: Some(ModpackPlatform::Technic),
         modpack_id: Some(modpack_id.to_string()),
         modpack_version_id: Some(version_id.to_string()),
+        description: None,
+        author: None,
     };
 
     instance_service::save_instance(state, &instance)?;
@@ -2582,6 +2930,8 @@ pub async fn install_atlauncher_modpack(
         modpack_platform: Some(ModpackPlatform::ATLauncher),
         modpack_id: Some(modpack_id.to_string()),
         modpack_version_id: Some(version_id.to_string()),
+        description: None,
+        author: None,
     };
 
     instance_service::save_instance(state, &instance)?;

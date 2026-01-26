@@ -274,3 +274,194 @@ fn sanitize_filename(name: &str) -> String {
         })
         .collect()
 }
+
+// === CurseForge Export ===
+
+/// CurseForge manifest for export
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CfExportManifest {
+    pub minecraft: CfExportMinecraft,
+    pub manifest_type: String,
+    pub manifest_version: u32,
+    pub name: String,
+    pub version: String,
+    pub author: String,
+    pub files: Vec<CfExportFileRef>,
+    pub overrides: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CfExportMinecraft {
+    pub version: String,
+    pub mod_loaders: Vec<CfExportModLoader>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CfExportModLoader {
+    pub id: String,
+    pub primary: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CfExportFileRef {
+    #[serde(rename = "projectID")]
+    pub project_id: u32,
+    #[serde(rename = "fileID")]
+    pub file_id: u32,
+    pub required: bool,
+}
+
+/// Export an instance to CurseForge .zip format
+pub async fn export_to_curseforge_zip(
+    state: &AppState,
+    instance_id: &str,
+    output_path: &Path,
+) -> Result<PathBuf, AppError> {
+    // Get instance data
+    let instance = instance_service::get_instance(state, instance_id)?;
+    let instances_base = state.settings.read().instances_path.clone();
+    let game_dir = get_instance_game_dir_with_base(&instances_base, instance_id);
+
+    // Scan installed mods to identify them via CurseForge
+    let scan_result =
+        content_scan_service::scan_content(state, instance_id, &ContentType::Mod).await?;
+
+    // Build the files list and collect unidentified files for overrides
+    let mut cf_files: Vec<CfExportFileRef> = Vec::new();
+    let mut unidentified_mod_files: Vec<String> = Vec::new();
+
+    for item in &scan_result.items {
+        // Skip disabled items - they shouldn't be exported
+        if item.is_disabled {
+            continue;
+        }
+
+        if let Some(cf_project) = &item.curseforge_project {
+            // Identified via CurseForge - add to files list
+            cf_files.push(CfExportFileRef {
+                project_id: cf_project.project_id as u32,
+                file_id: cf_project.file_id as u32,
+                required: true,
+            });
+            continue;
+        }
+        // Not identified via CurseForge - will be included in overrides
+        unidentified_mod_files.push(item.filename.clone());
+    }
+
+    // Build mod loader ID string
+    let mod_loaders = match &instance.loader_type {
+        LoaderType::Forge => {
+            if let Some(version) = &instance.loader_version {
+                vec![CfExportModLoader {
+                    id: format!("forge-{}", version),
+                    primary: true,
+                }]
+            } else {
+                vec![]
+            }
+        }
+        LoaderType::Fabric => {
+            if let Some(version) = &instance.loader_version {
+                vec![CfExportModLoader {
+                    id: format!("fabric-{}", version),
+                    primary: true,
+                }]
+            } else {
+                vec![]
+            }
+        }
+        LoaderType::NeoForge => {
+            if let Some(version) = &instance.loader_version {
+                vec![CfExportModLoader {
+                    id: format!("neoforge-{}", version),
+                    primary: true,
+                }]
+            } else {
+                vec![]
+            }
+        }
+        LoaderType::Quilt => {
+            if let Some(version) = &instance.loader_version {
+                vec![CfExportModLoader {
+                    id: format!("quilt-{}", version),
+                    primary: true,
+                }]
+            } else {
+                vec![]
+            }
+        }
+        _ => vec![],
+    };
+
+    // Create the CurseForge manifest
+    let manifest = CfExportManifest {
+        minecraft: CfExportMinecraft {
+            version: instance.minecraft_version.clone(),
+            mod_loaders,
+        },
+        manifest_type: "minecraftModpack".to_string(),
+        manifest_version: 1,
+        name: instance.name.clone(),
+        version: "1.0.0".to_string(),
+        author: instance
+            .author
+            .clone()
+            .unwrap_or_else(|| "Unknown".to_string()),
+        files: cf_files,
+        overrides: "overrides".to_string(),
+    };
+
+    // Determine output file path
+    let output_file = if output_path.is_dir() {
+        output_path.join(format!("{}.zip", sanitize_filename(&instance.name)))
+    } else {
+        output_path.to_path_buf()
+    };
+
+    // Create the ZIP file
+    let file = File::create(&output_file)?;
+    let mut zip = ZipWriter::new(file);
+    let options = FileOptions::<()>::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .unix_permissions(0o644);
+
+    // Write manifest.json
+    let manifest_json = serde_json::to_string_pretty(&manifest)?;
+    zip.start_file("manifest.json", options)?;
+    zip.write_all(manifest_json.as_bytes())?;
+
+    // Add unidentified mods to overrides
+    let mods_dir = game_dir.join("mods");
+    for filename in &unidentified_mod_files {
+        let file_path = mods_dir.join(filename);
+        if file_path.exists() {
+            add_file_to_zip(
+                &mut zip,
+                &file_path,
+                &format!("overrides/mods/{}", filename),
+                options,
+            )?;
+        }
+    }
+
+    // Add other override directories (config, shaderpacks, resourcepacks)
+    for dir_name in OVERRIDE_DIRS {
+        let dir_path = game_dir.join(dir_name);
+        if dir_path.exists() && dir_path.is_dir() {
+            add_directory_to_zip(
+                &mut zip,
+                &dir_path,
+                &format!("overrides/{}", dir_name),
+                options,
+            )?;
+        }
+    }
+
+    // Finalize the ZIP
+    zip.finish()?;
+
+    Ok(output_file)
+}

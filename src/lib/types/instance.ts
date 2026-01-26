@@ -52,6 +52,10 @@ export interface Instance {
 	modpackId?: string;
 	/** Installed modpack version ID */
 	modpackVersionId?: string;
+	/** Instance description (used for export metadata) */
+	description?: string;
+	/** Instance author (used for export metadata) */
+	author?: string;
 }
 
 /** Request to create a new instance */
@@ -75,6 +79,8 @@ export interface UpdateInstanceRequest {
 	gameArgs?: string;
 	resolutionWidth?: number;
 	resolutionHeight?: number;
+	description?: string;
+	author?: string;
 }
 
 /** Download progress information */
