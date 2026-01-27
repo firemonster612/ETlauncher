@@ -1,4 +1,4 @@
-import { Layers, Package, Terminal, Settings, Users } from '@lucide/svelte';
+import { Home, Layers, Package, Terminal, Settings, Users } from '@lucide/svelte';
 import type { Component } from 'svelte';
 
 export interface NavItem {
@@ -9,6 +9,7 @@ export interface NavItem {
 }
 
 export const navItems: NavItem[] = [
+	{ id: 'home', label: 'Home', href: '/', icon: Home },
 	{ id: 'instances', label: 'Instances', href: '/instances', icon: Layers },
 	{ id: 'modpacks', label: 'Modpacks', href: '/modpacks', icon: Package },
 	{ id: 'console', label: 'Console', href: '/console', icon: Terminal },

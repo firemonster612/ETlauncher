@@ -96,6 +96,9 @@ pub fn run() {
             commands::instance_detail::open_world_folder,
             commands::instance_detail::delete_screenshot,
             commands::instance_detail::delete_world,
+            // Homepage commands
+            commands::homepage::get_homepage_data,
+            commands::homepage::get_minecraft_news,
             // Minecraft commands
             commands::minecraft::fetch_version_manifest,
             commands::minecraft::get_versions,

@@ -1,6 +1,7 @@
 // Re-export all types
 export * from './account';
 export * from './content';
+export * from './homepage';
 export * from './import';
 export * from './instance';
 export * from './instance-detail';

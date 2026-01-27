@@ -1,6 +1,7 @@
 pub mod account;
 pub mod auth;
 pub mod content;
+pub mod homepage;
 pub mod import;
 pub mod instance;
 pub mod instance_detail;

@@ -1211,3 +1211,39 @@ html:not(.dark) .section-header-title {
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
+
+/* ===== Homepage Styles ===== */
+
+/* News carousel container */
+.news-carousel {
+	position: relative;
+	aspect-ratio: 21 / 9;
+}
+
+/* Homepage container */
+.homepage-container {
+	max-width: 1400px;
+	margin: 0 auto;
+}
+
+/* Thin scrollbar for horizontal scroll containers */
+.scrollbar-thin {
+	scrollbar-width: thin;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+	height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+	background: var(--muted);
+	border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+	background: var(--muted-foreground);
+}

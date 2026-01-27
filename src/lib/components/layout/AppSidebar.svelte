@@ -11,7 +11,7 @@
 			<Sidebar.GroupContent>
 				<Sidebar.Menu>
 					{#each navItems as item (item.id)}
-						{@const isActive = page.url.pathname.startsWith(item.href)}
+						{@const isActive = item.href === '/' ? page.url.pathname === '/' : page.url.pathname.startsWith(item.href)}
 						<Sidebar.MenuItem>
 							<Sidebar.MenuButton {isActive} tooltipContent={item.label}>
 								{#snippet child({ props })}
