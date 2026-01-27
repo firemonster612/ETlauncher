@@ -2,11 +2,14 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { Loader2 } from '@lucide/svelte';
+	import { Loader2, Camera } from '@lucide/svelte';
 	import NewsCarousel from '$lib/components/homepage/NewsCarousel.svelte';
+	import StatsBar from '$lib/components/homepage/StatsBar.svelte';
+	import ContinuePlayingSection from '$lib/components/homepage/ContinuePlayingSection.svelte';
 	import RecentScreenshotsSection from '$lib/components/homepage/RecentScreenshotsSection.svelte';
 	import MostPlayedInstancesSection from '$lib/components/homepage/MostPlayedInstancesSection.svelte';
 	import MostPlayedWorldsSection from '$lib/components/homepage/MostPlayedWorldsSection.svelte';
+	import FavoriteServersSection from '$lib/components/homepage/FavoriteServersSection.svelte';
 	import QuickActionsSection from '$lib/components/homepage/QuickActionsSection.svelte';
 	import { homepageStore } from '$lib/stores/homepage.svelte';
 	import { launchStore } from '$lib/stores/launch.svelte';
@@ -38,7 +41,6 @@
 	}
 
 	function handleInstanceClick(instance: Instance) {
-		// Replace history so back button doesn't return to homepage
 		goto(resolve(`/instances?id=${instance.id}`), { replaceState: true });
 	}
 
@@ -84,6 +86,13 @@
 			[...launchStore.launchStates.entries()].map(([id, state]) => [id, state.status])
 		)
 	);
+
+	// Get launch status for continue instance
+	const continueInstanceStatus = $derived(
+		homepageStore.continueInstance
+			? launchStatuses.get(homepageStore.continueInstance.id)
+			: undefined
+	);
 </script>
 
 <div class="homepage-container space-y-6">
@@ -96,29 +105,43 @@
 		<NewsCarousel articles={homepageStore.newsArticles} />
 	{/if}
 
-	<!-- Middle Row: Screenshots + Most Played Instances -->
-	<div class="grid gap-6 lg:grid-cols-2">
-		<!-- Recent Screenshots -->
+	<!-- Stats Bar -->
+	{#if homepageStore.isLoadingData}
+		<div class="bg-muted/30 h-12 animate-pulse rounded"></div>
+	{:else}
+		<StatsBar stats={homepageStore.stats} />
+	{/if}
+
+	<!-- Continue Playing + Most Played Instances Row -->
+	<div class="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+		<!-- Continue Playing -->
 		<div>
 			{#if homepageStore.isLoadingData}
 				<div class="space-y-2">
 					<div class="bg-muted/50 h-4 w-40 animate-pulse rounded"></div>
-					<div class="bg-muted/30 h-32 animate-pulse rounded"></div>
+					<div class="bg-muted/30 h-28 animate-pulse rounded"></div>
 				</div>
+			{:else if homepageStore.continueInstance}
+				<ContinuePlayingSection
+					instance={homepageStore.continueInstance}
+					launchStatus={continueInstanceStatus}
+					onLaunch={handleLaunch}
+					onKill={handleKill}
+					onCardClick={handleInstanceClick}
+				/>
 			{:else}
-				<RecentScreenshotsSection screenshots={homepageStore.recentScreenshots} />
-				{#if homepageStore.recentScreenshots.length === 0}
-					<div class="space-y-2">
-						<div class="flex items-center gap-2">
-							<div class="bg-primary h-4 w-4 rounded"></div>
-							<h2 class="text-sm font-bold uppercase tracking-wider">Recent Screenshots</h2>
-						</div>
-						<div class="border-border bg-muted/30 border-2 border-dashed p-6 text-center">
-							<p class="text-muted-foreground text-sm">No screenshots yet</p>
-							<p class="text-muted-foreground mt-1 text-xs">Press F2 in-game to take screenshots!</p>
+				<div class="space-y-2">
+					<div class="flex items-center gap-2">
+						<div class="bg-primary h-4 w-4 rounded"></div>
+						<h2 class="text-sm font-bold uppercase tracking-wider">Continue Playing</h2>
+					</div>
+					<div class="border-border bg-muted/30 flex h-28 items-center justify-center border-2 border-dashed text-center">
+						<div>
+							<p class="text-muted-foreground text-sm">No recent sessions</p>
+							<p class="text-muted-foreground mt-1 text-xs">Play an instance to see it here!</p>
 						</div>
 					</div>
-				{/if}
+				</div>
 			{/if}
 		</div>
 
@@ -127,9 +150,9 @@
 			{#if homepageStore.isLoadingData}
 				<div class="space-y-2">
 					<div class="bg-muted/50 h-4 w-32 animate-pulse rounded"></div>
-					<div class="grid grid-cols-2 gap-3">
+					<div class="flex gap-3">
 						{#each Array(4) as _}
-							<div class="bg-muted/30 h-24 animate-pulse rounded"></div>
+							<div class="bg-muted/30 h-48 w-48 flex-shrink-0 animate-pulse rounded"></div>
 						{/each}
 					</div>
 				</div>
@@ -145,16 +168,40 @@
 		</div>
 	</div>
 
-	<!-- Bottom Row: Worlds + Quick Actions -->
-	<div class="grid gap-6 lg:grid-cols-2">
-		<!-- Most Played Worlds -->
+	<!-- Recent Screenshots (full width) -->
+	<div>
+		{#if homepageStore.isLoadingData}
+			<div class="space-y-2">
+				<div class="bg-muted/50 h-4 w-40 animate-pulse rounded"></div>
+				<div class="bg-muted/30 h-44 animate-pulse rounded"></div>
+			</div>
+		{:else}
+			<RecentScreenshotsSection screenshots={homepageStore.recentScreenshots} />
+			{#if homepageStore.recentScreenshots.length === 0}
+				<div class="space-y-2">
+					<div class="flex items-center gap-2">
+						<Camera class="text-primary h-4 w-4" />
+						<h2 class="text-sm font-bold uppercase tracking-wider">Recent Screenshots</h2>
+					</div>
+					<div class="border-border bg-muted/30 border-2 border-dashed p-6 text-center">
+						<p class="text-muted-foreground text-sm">No screenshots yet</p>
+						<p class="text-muted-foreground mt-1 text-xs">Press F2 in-game to take screenshots!</p>
+					</div>
+				</div>
+			{/if}
+		{/if}
+	</div>
+
+	<!-- Recent Worlds + Favorite Servers Row -->
+	<div class="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+		<!-- Recent Worlds -->
 		<div>
 			{#if homepageStore.isLoadingData}
 				<div class="space-y-2">
 					<div class="bg-muted/50 h-4 w-32 animate-pulse rounded"></div>
-					<div class="grid gap-3" style="grid-template-columns: repeat(2, 240px);">
-						{#each Array(4) as _}
-							<div class="bg-muted/30 h-48 animate-pulse rounded"></div>
+					<div class="flex gap-3">
+						{#each Array(3) as _}
+							<div class="bg-muted/30 h-40 w-44 flex-shrink-0 animate-pulse rounded"></div>
 						{/each}
 					</div>
 				</div>
@@ -166,11 +213,21 @@
 			{/if}
 		</div>
 
-		<!-- Quick Actions -->
+		<!-- Favorite Servers -->
 		<div>
-			<QuickActionsSection />
+			{#if homepageStore.isLoadingData}
+				<div class="space-y-2">
+					<div class="bg-muted/50 h-4 w-32 animate-pulse rounded"></div>
+					<div class="bg-muted/30 h-40 animate-pulse rounded"></div>
+				</div>
+			{:else}
+				<FavoriteServersSection servers={homepageStore.favoriteServers} />
+			{/if}
 		</div>
 	</div>
+
+	<!-- Quick Actions (full width) -->
+	<QuickActionsSection />
 
 	<!-- Error display -->
 	{#if homepageStore.dataError || homepageStore.newsError}

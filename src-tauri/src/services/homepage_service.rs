@@ -1,22 +1,27 @@
 use crate::cache::{load_disk_cache, save_disk_cache};
 use crate::error::AppError;
 use crate::models::homepage::{
-    HomepageData, HomepageScreenshot, HomepageWorld, MojangNewsResponse, NewsArticle, NewsResponse,
+    HomepageData, HomepageScreenshot, HomepageServer, HomepageStats, HomepageWorld,
+    MojangNewsResponse, NewsArticle, NewsResponse,
 };
 use crate::models::Instance;
 use crate::services::{instance_detail_service, instance_service};
 use crate::state::AppState;
 use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::time::Duration;
 
 /// Maximum number of recent screenshots to return
 const MAX_SCREENSHOTS: usize = 12;
 
 /// Maximum number of most played instances to return
-const MAX_INSTANCES: usize = 4;
+const MAX_INSTANCES: usize = 6;
 
 /// Maximum number of most played worlds to return
-const MAX_WORLDS: usize = 4;
+const MAX_WORLDS: usize = 6;
+
+/// Maximum number of favorite servers to return
+const MAX_SERVERS: usize = 8;
 
 /// Cache duration for news (15 minutes)
 const NEWS_CACHE_TTL_SECS: u64 = 900;
@@ -34,11 +39,17 @@ pub fn get_homepage_data(state: &AppState) -> Result<HomepageData, AppError> {
     let recent_screenshots = get_aggregated_screenshots(state, &instances)?;
     let most_played_instances = get_most_played_instances(&instances);
     let most_played_worlds = get_most_played_worlds(state, &instances)?;
+    let continue_instance = get_continue_instance(&instances);
+    let favorite_servers = get_aggregated_servers(state, &instances)?;
+    let stats = get_homepage_stats(state, &instances)?;
 
     Ok(HomepageData {
         recent_screenshots,
         most_played_instances,
         most_played_worlds,
+        continue_instance,
+        favorite_servers,
+        stats,
     })
 }
 
@@ -111,6 +122,7 @@ fn get_most_played_worlds(
                     name: world.name,
                     last_played: world.last_played,
                     icon_base64: world.icon_base64,
+                    game_mode: world.game_mode,
                     supports_quick_play,
                 });
             }
@@ -151,6 +163,97 @@ fn supports_quick_play(minecraft_version: &str) -> bool {
 
     // Version 1.20 or later supports quick play
     major > 1 || (major == 1 && minor >= 20)
+}
+
+/// Get the last played instance for "Continue Playing" section
+fn get_continue_instance(instances: &[Instance]) -> Option<Instance> {
+    instances
+        .iter()
+        .filter(|i| i.last_played_at.is_some())
+        .max_by_key(|i| i.last_played_at)
+        .cloned()
+}
+
+/// Get aggregated servers from all instances, deduplicated by IP
+fn get_aggregated_servers(
+    state: &AppState,
+    instances: &[Instance],
+) -> Result<Vec<HomepageServer>, AppError> {
+    let mut all_servers = Vec::new();
+    let mut seen_ips = HashSet::new();
+
+    // Sort instances by last_played_at descending to prioritize servers from recently played instances
+    let mut sorted_instances: Vec<&Instance> = instances.iter().collect();
+    sorted_instances.sort_by(|a, b| {
+        match (&b.last_played_at, &a.last_played_at) {
+            (Some(b_time), Some(a_time)) => b_time.cmp(a_time),
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => Ordering::Equal,
+        }
+    });
+
+    for instance in sorted_instances {
+        let game_dir = instance_service::get_game_directory(state, &instance.id);
+        if let Ok(response) = instance_detail_service::get_servers(&game_dir) {
+            for server in response.servers {
+                // Skip hidden servers and deduplicate by IP
+                if server.hidden {
+                    continue;
+                }
+                let ip_lower = server.ip.to_lowercase();
+                if seen_ips.contains(&ip_lower) {
+                    continue;
+                }
+                seen_ips.insert(ip_lower);
+
+                all_servers.push(HomepageServer {
+                    instance_id: instance.id.clone(),
+                    instance_name: instance.name.clone(),
+                    name: server.name,
+                    ip: server.ip,
+                    icon_base64: server.icon_base64,
+                });
+
+                if all_servers.len() >= MAX_SERVERS {
+                    return Ok(all_servers);
+                }
+            }
+        }
+    }
+
+    Ok(all_servers)
+}
+
+/// Get aggregated stats for homepage
+fn get_homepage_stats(
+    state: &AppState,
+    instances: &[Instance],
+) -> Result<HomepageStats, AppError> {
+    let instance_count = instances.len() as u32;
+    let total_play_time: u64 = instances.iter().map(|i| i.total_play_time).sum();
+
+    let mut world_count: u32 = 0;
+    let mut screenshot_count: u32 = 0;
+
+    for instance in instances {
+        let game_dir = instance_service::get_game_directory(state, &instance.id);
+
+        if let Ok(response) = instance_detail_service::get_worlds(&game_dir) {
+            world_count += response.worlds.len() as u32;
+        }
+
+        if let Ok(response) = instance_detail_service::get_screenshots(&game_dir) {
+            screenshot_count += response.screenshots.len() as u32;
+        }
+    }
+
+    Ok(HomepageStats {
+        total_play_time,
+        instance_count,
+        world_count,
+        screenshot_count,
+    })
 }
 
 /// Fetch Minecraft news from Mojang API with caching

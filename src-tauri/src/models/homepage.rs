@@ -24,8 +24,35 @@ pub struct HomepageWorld {
     pub name: String,
     pub last_played: Option<i64>,
     pub icon_base64: Option<String>,
+    /// Game mode (survival, creative, adventure, spectator)
+    pub game_mode: Option<String>,
     /// Whether this world supports quick play (MC >= 1.20)
     pub supports_quick_play: bool,
+}
+
+/// Server data with instance context for homepage display
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HomepageServer {
+    pub instance_id: String,
+    pub instance_name: String,
+    pub name: String,
+    pub ip: String,
+    pub icon_base64: Option<String>,
+}
+
+/// Aggregated stats for homepage display
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HomepageStats {
+    /// Total play time across all instances in seconds
+    pub total_play_time: u64,
+    /// Total number of instances
+    pub instance_count: u32,
+    /// Total number of worlds across all instances
+    pub world_count: u32,
+    /// Total number of screenshots across all instances
+    pub screenshot_count: u32,
 }
 
 /// Aggregated homepage data
@@ -35,6 +62,12 @@ pub struct HomepageData {
     pub recent_screenshots: Vec<HomepageScreenshot>,
     pub most_played_instances: Vec<Instance>,
     pub most_played_worlds: Vec<HomepageWorld>,
+    /// Last played instance for "Continue Playing" section
+    pub continue_instance: Option<Instance>,
+    /// Aggregated servers from all instances
+    pub favorite_servers: Vec<HomepageServer>,
+    /// Aggregated stats
+    pub stats: HomepageStats,
 }
 
 /// A news article from Minecraft launcher news API

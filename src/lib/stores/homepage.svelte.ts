@@ -1,5 +1,20 @@
-import type { HomepageData, NewsArticle, HomepageScreenshot, HomepageWorld, Instance } from '$lib/types';
+import type {
+	HomepageData,
+	NewsArticle,
+	HomepageScreenshot,
+	HomepageWorld,
+	HomepageServer,
+	HomepageStats,
+	Instance,
+} from '$lib/types';
 import * as homepageService from '$lib/services/homepage';
+
+const defaultStats: HomepageStats = {
+	totalPlayTime: 0,
+	instanceCount: 0,
+	worldCount: 0,
+	screenshotCount: 0,
+};
 
 /** Create the homepage store */
 function createHomepageStore() {
@@ -7,6 +22,9 @@ function createHomepageStore() {
 	let recentScreenshots = $state<HomepageScreenshot[]>([]);
 	let mostPlayedInstances = $state<Instance[]>([]);
 	let mostPlayedWorlds = $state<HomepageWorld[]>([]);
+	let continueInstance = $state<Instance | null>(null);
+	let favoriteServers = $state<HomepageServer[]>([]);
+	let stats = $state<HomepageStats>(defaultStats);
 	let isLoadingData = $state(false);
 	let dataError = $state<string | null>(null);
 
@@ -26,6 +44,15 @@ function createHomepageStore() {
 		get mostPlayedWorlds() {
 			return mostPlayedWorlds;
 		},
+		get continueInstance() {
+			return continueInstance;
+		},
+		get favoriteServers() {
+			return favoriteServers;
+		},
+		get stats() {
+			return stats;
+		},
 		get isLoadingData() {
 			return isLoadingData;
 		},
@@ -44,7 +71,7 @@ function createHomepageStore() {
 			return newsError;
 		},
 
-		/** Load homepage data (screenshots, instances, worlds) */
+		/** Load homepage data (screenshots, instances, worlds, servers, stats) */
 		async loadData() {
 			isLoadingData = true;
 			dataError = null;
@@ -54,6 +81,9 @@ function createHomepageStore() {
 				recentScreenshots = data.recentScreenshots;
 				mostPlayedInstances = data.mostPlayedInstances;
 				mostPlayedWorlds = data.mostPlayedWorlds;
+				continueInstance = data.continueInstance;
+				favoriteServers = data.favoriteServers;
+				stats = data.stats;
 			} catch (e: unknown) {
 				dataError = e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
 				console.error('Failed to load homepage data:', e);
