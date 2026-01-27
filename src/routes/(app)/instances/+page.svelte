@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import {
 		Layers,
 		Plus,
@@ -108,7 +109,7 @@
 		detailInstance = null;
 		// Clear query param without adding to history
 		if (page.url.searchParams.has('id')) {
-			goto('/instances', { replaceState: true }).then(() => {
+			goto(resolve('/instances'), { replaceState: true }).then(() => {
 				isClosingDetailModal = false;
 			});
 		} else {
@@ -150,10 +151,10 @@
 		const action = page.url.searchParams.get('action');
 		if (action === 'create' && !showCreateModal) {
 			showCreateModal = true;
-			goto('/instances', { replaceState: true });
+			goto(resolve('/instances'), { replaceState: true });
 		} else if (action === 'import' && !showImportWizard) {
 			showImportWizard = true;
-			goto('/instances', { replaceState: true });
+			goto(resolve('/instances'), { replaceState: true });
 		}
 	});
 

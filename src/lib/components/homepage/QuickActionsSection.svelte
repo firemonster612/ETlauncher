@@ -2,25 +2,31 @@
 	import { Zap, Plus, Download, Package, Settings, Users } from '@lucide/svelte';
 	import { Button } from '$lib/ui/button';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 
-	async function createInstance() {
-		await goto('/instances?action=create');
+	function navigateWithAction(action: string) {
+		// @ts-expect-error - resolve with query params is valid, same pattern as +page.svelte:44
+		goto(resolve(`/instances?action=${action}`));
 	}
 
-	async function importInstance() {
-		await goto('/instances?action=import');
+	function createInstance() {
+		navigateWithAction('create');
+	}
+
+	function importInstance() {
+		navigateWithAction('import');
 	}
 
 	async function browseModpacks() {
-		await goto('/modpacks');
+		await goto(resolve('/modpacks'));
 	}
 
 	async function openSettings() {
-		await goto('/settings');
+		await goto(resolve('/settings'));
 	}
 
 	async function openAccounts() {
-		await goto('/accounts');
+		await goto(resolve('/accounts'));
 	}
 </script>
 

@@ -184,13 +184,11 @@ fn get_aggregated_servers(
 
     // Sort instances by last_played_at descending to prioritize servers from recently played instances
     let mut sorted_instances: Vec<&Instance> = instances.iter().collect();
-    sorted_instances.sort_by(|a, b| {
-        match (&b.last_played_at, &a.last_played_at) {
-            (Some(b_time), Some(a_time)) => b_time.cmp(a_time),
-            (Some(_), None) => Ordering::Less,
-            (None, Some(_)) => Ordering::Greater,
-            (None, None) => Ordering::Equal,
-        }
+    sorted_instances.sort_by(|a, b| match (&b.last_played_at, &a.last_played_at) {
+        (Some(b_time), Some(a_time)) => b_time.cmp(a_time),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
     });
 
     for instance in sorted_instances {
@@ -226,10 +224,7 @@ fn get_aggregated_servers(
 }
 
 /// Get aggregated stats for homepage
-fn get_homepage_stats(
-    state: &AppState,
-    instances: &[Instance],
-) -> Result<HomepageStats, AppError> {
+fn get_homepage_stats(state: &AppState, instances: &[Instance]) -> Result<HomepageStats, AppError> {
     let instance_count = instances.len() as u32;
     let total_play_time: u64 = instances.iter().map(|i| i.total_play_time).sum();
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Gamepad2, Play, Square, X, Loader2, ChevronLeft, ChevronRight } from '@lucide/svelte';
+	import { Gamepad2, Play, Square, Loader2, ChevronLeft, ChevronRight } from '@lucide/svelte';
 	import { Button } from '$lib/ui/button';
 	import { parseIconPath, getIconUrl } from '$lib/utils/icons';
 	import type { Instance, LaunchStatus } from '$lib/types';

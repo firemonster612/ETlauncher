@@ -151,7 +151,7 @@
 				<div class="space-y-2">
 					<div class="bg-muted/50 h-4 w-32 animate-pulse rounded"></div>
 					<div class="flex gap-3">
-						{#each Array(4) as _}
+						{#each [0, 1, 2, 3] as i (i)}
 							<div class="bg-muted/30 h-48 w-48 flex-shrink-0 animate-pulse rounded"></div>
 						{/each}
 					</div>
@@ -200,7 +200,7 @@
 				<div class="space-y-2">
 					<div class="bg-muted/50 h-4 w-32 animate-pulse rounded"></div>
 					<div class="flex gap-3">
-						{#each Array(3) as _}
+						{#each [0, 1, 2] as i (i)}
 							<div class="bg-muted/30 h-40 w-44 flex-shrink-0 animate-pulse rounded"></div>
 						{/each}
 					</div>
