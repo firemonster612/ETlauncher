@@ -44,7 +44,7 @@
 	},
 	"plugins": {
 		"updater": {
-			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI1QjU1NkI2NDY2RDNDNTgKUldSWVBHMUd0bGExSlpkc3BFbXVEQW5nWS9TZFJ1TitPcEt3em00ejNvcG5uemZZNFRHUlBkY1YK",
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYyQUZCNzFFNDA5MTBDRTcKUldUbkRKRkFIcmV2OGx4NTE1QmJxYUVkODltNFJGcTJYWFAxaU5GK09VS1A5cERmVUlDRENnb0gK",
 			"endpoints": [
 				"https://github.com/firemonster612/ETlauncher/releases/latest/download/latest.json"
 			],
