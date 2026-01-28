@@ -1,5 +1,6 @@
 pub mod account;
 pub mod content;
+pub mod homepage;
 pub mod instance;
 pub mod instance_detail;
 pub mod java;
@@ -11,6 +12,7 @@ pub mod settings;
 
 pub use account::*;
 pub use content::*;
+pub use homepage::*;
 pub use instance::*;
 pub use instance_detail::*;
 pub use java::*;

@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import {
 		Layers,
 		Plus,
@@ -55,6 +58,7 @@
 	// Detail modal state
 	let showDetailModal = $state(false);
 	let detailInstance = $state<Instance | null>(null);
+	let isClosingDetailModal = $state(false);
 
 	// Export state
 	let showExportModal = $state(false);
@@ -99,8 +103,18 @@
 	}
 
 	function closeDetailModal() {
+		// Set flag to prevent effect from reopening modal during URL clear
+		isClosingDetailModal = true;
 		showDetailModal = false;
 		detailInstance = null;
+		// Clear query param without adding to history
+		if (page.url.searchParams.has('id')) {
+			goto(resolve('/instances'), { replaceState: true }).then(() => {
+				isClosingDetailModal = false;
+			});
+		} else {
+			isClosingDetailModal = false;
+		}
 	}
 
 	function handleInstanceUpdated(updatedInstance: Instance) {
@@ -118,6 +132,30 @@
 		versionsStore.load();
 		accountsStore.load();
 		// launchStore is initialized at app layout level
+	});
+
+	// Open detail modal if id query param is present
+	$effect(() => {
+		const instanceId = page.url.searchParams.get('id');
+		if (instanceId && instancesStore.instances.length > 0 && !detailInstance && !isClosingDetailModal) {
+			const instance = instancesStore.instances.find((i) => i.id === instanceId);
+			if (instance) {
+				detailInstance = instance;
+				showDetailModal = true;
+			}
+		}
+	});
+
+	// Handle action query param (create/import from homepage)
+	$effect(() => {
+		const action = page.url.searchParams.get('action');
+		if (action === 'create' && !showCreateModal) {
+			showCreateModal = true;
+			goto(resolve('/instances'), { replaceState: true });
+		} else if (action === 'import' && !showImportWizard) {
+			showImportWizard = true;
+			goto(resolve('/instances'), { replaceState: true });
+		}
 	});
 
 	// Set default version when versions load

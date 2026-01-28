@@ -7,6 +7,7 @@ pub mod content_scan_service;
 pub mod curseforge_service;
 pub mod download_service;
 pub mod ftb_service;
+pub mod homepage_service;
 pub mod instance_detail_service;
 pub mod instance_export_service;
 pub mod instance_import_service;
