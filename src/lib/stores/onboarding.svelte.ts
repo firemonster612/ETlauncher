@@ -5,6 +5,7 @@ export type OnboardingStep =
 	| 'theme'
 	| 'font'
 	| 'curseforge'
+	| 'updates'
 	| 'features'
 	| 'complete';
 
@@ -14,6 +15,7 @@ const STEPS: OnboardingStep[] = [
 	'theme',
 	'font',
 	'curseforge',
+	'updates',
 	'features',
 	'complete',
 ];

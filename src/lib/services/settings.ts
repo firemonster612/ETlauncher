@@ -29,6 +29,8 @@ export async function updateSettings(updates: Partial<AppSettings>): Promise<App
 		setupCompleted: updates.setupCompleted,
 		curseforgeApiKey: updates.curseforgeApiKey,
 		resourcePool: updates.resourcePool,
+		autoUpdate: updates.autoUpdate,
+		includePreReleases: updates.includePreReleases,
 	};
 
 	return invoke<AppSettings>('update_settings', { updates: request });

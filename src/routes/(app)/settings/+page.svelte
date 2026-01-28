@@ -20,7 +20,11 @@
 		Sun,
 		Moon,
 		Palette,
+		Download,
+		Loader2,
 	} from '@lucide/svelte';
+	import { getVersion } from '@tauri-apps/api/app';
+	import { updaterStore } from '$lib/stores/updater.svelte';
 	import * as settingsService from '$lib/services/settings';
 	import ColorPicker from '$lib/components/ColorPicker.svelte';
 	import type {
@@ -55,6 +59,9 @@
 	let sidebarHue = $state(220);
 	let sidebarChroma = $state(0.05);
 
+	// App version
+	let appVersion = $state<string | null>(null);
+
 	// Color presets configuration
 	const colorPresets: { id: ColorPreset; label: string; hue: number; chroma: number }[] = [
 		{ id: 'default', label: 'Cyan', hue: 172, chroma: 0.18 },
@@ -83,9 +90,15 @@
 		}
 	});
 
-	onMount(() => {
+	onMount(async () => {
 		settingsStore.load();
 		loadPoolStats();
+		try {
+			appVersion = await getVersion();
+		} catch (e) {
+			console.error('Failed to get app version:', e);
+			appVersion = 'Unknown';
+		}
 	});
 
 	async function loadPoolStats(preserveScroll = false) {
@@ -640,6 +653,84 @@
 					A built-in API key is planned for a future release. For now, each user needs their own key
 					due to CurseForge's API terms of service.
 				</p>
+			</div>
+		</section>
+
+		<!-- Updates Settings -->
+		<section class="border-border bg-card space-y-4 border-2 p-4">
+			<h3 class="text-muted-foreground text-sm tracking-wider uppercase">Updates</h3>
+
+			<div class="flex items-center justify-between">
+				<div>
+					<span class="text-sm">Automatic Updates</span>
+					<p class="text-muted-foreground text-xs">Check for updates when the launcher starts</p>
+				</div>
+				<Checkbox
+					checked={settings.autoUpdate ?? true}
+					onCheckedChange={(checked) => saveSettings({ autoUpdate: !!checked })}
+				/>
+			</div>
+
+			<div class="flex items-center justify-between">
+				<div>
+					<span class="text-sm">Include Pre-releases</span>
+					<p class="text-muted-foreground text-xs">
+						Receive alpha, beta, and release candidate versions
+					</p>
+				</div>
+				<Checkbox
+					checked={settings.includePreReleases ?? false}
+					onCheckedChange={(checked) => saveSettings({ includePreReleases: !!checked })}
+				/>
+			</div>
+
+			<!-- Version and Check Now -->
+			<div class="bg-muted/50 space-y-3 p-3">
+				<div class="flex items-center justify-between">
+					<div>
+						<span class="text-sm">Current Version</span>
+						<p class="text-muted-foreground text-xs">v{appVersion ?? '...'}</p>
+					</div>
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={() => updaterStore.checkForUpdates()}
+						disabled={updaterStore.isChecking}
+					>
+						{#if updaterStore.isChecking}
+							<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+							Checking...
+						{:else}
+							<RefreshCw class="mr-2 h-4 w-4" />
+							Check Now
+						{/if}
+					</Button>
+				</div>
+
+				<!-- Update Available -->
+				{#if updaterStore.updateAvailable}
+					<div class="border-primary bg-primary/10 flex items-center justify-between rounded border p-3">
+						<div>
+							<span class="text-sm font-medium">Update Available</span>
+							<p class="text-muted-foreground text-xs">
+								Version {updaterStore.latestVersion} is ready to download
+							</p>
+						</div>
+						<Button
+							size="sm"
+							onclick={() => updaterStore.downloadAndInstall()}
+							disabled={updaterStore.isDownloading}
+						>
+							{#if updaterStore.isDownloading}
+								<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+								{Math.round(updaterStore.downloadProgress)}%
+							{:else}
+								<Download class="mr-2 h-4 w-4" />
+								Update Now
+							{/if}
+						</Button>
+					</div>
+				{/if}
 			</div>
 		</section>
 

@@ -83,6 +83,10 @@ export interface AppSettings {
 	curseforgeApiKey?: string;
 	/** Resource pool configuration for shared content management */
 	resourcePool: ResourcePoolConfig;
+	/** Whether auto-updates are enabled (default: true) */
+	autoUpdate: boolean;
+	/** Whether to include pre-release versions in updates */
+	includePreReleases: boolean;
 }
 
 /** Request to update settings (partial update) */
@@ -106,6 +110,8 @@ export interface UpdateSettingsRequest {
 	setupCompleted?: boolean;
 	curseforgeApiKey?: string;
 	resourcePool?: ResourcePoolConfig;
+	autoUpdate?: boolean;
+	includePreReleases?: boolean;
 }
 
 /** Resource pool statistics */

@@ -28,6 +28,7 @@
 		Key,
 		Eye,
 		EyeOff,
+		RefreshCw,
 	} from '@lucide/svelte';
 	import type { Theme, ColorPreset, ThemeColors, FontFamily, SidebarStyle } from '$lib/types';
 
@@ -48,6 +49,10 @@
 	// CurseForge API key state
 	let curseforgeApiKey = $state('');
 	let showApiKey = $state(false);
+
+	// Auto-update state
+	let autoUpdate = $state(true);
+	let includePreReleases = $state(false);
 
 	// Features carousel state
 	let currentFeatureIndex = $state(0);
@@ -117,6 +122,8 @@
 				sidebarChroma = s.customSidebarColor.chroma ?? 0.05;
 			}
 			curseforgeApiKey = s.curseforgeApiKey ?? '';
+			autoUpdate = s.autoUpdate ?? true;
+			includePreReleases = s.includePreReleases ?? false;
 		}
 	});
 
@@ -239,6 +246,8 @@
 			sidebarStyle: selectedSidebarStyle,
 			customSidebarColor: selectedSidebarStyle === 'custom' ? getCustomSidebarColor() : undefined,
 			curseforgeApiKey: curseforgeApiKey.trim() || undefined,
+			autoUpdate,
+			includePreReleases,
 			setupCompleted: true,
 		});
 
@@ -287,7 +296,7 @@
 	}
 
 	// Get step number for display (1-indexed, login step is special)
-	const stepLabels = ['Welcome', 'Sign In', 'Theme', 'Font', 'CurseForge', 'Features', 'Done'];
+	const stepLabels = ['Welcome', 'Sign In', 'Theme', 'Font', 'CurseForge', 'Updates', 'Features', 'Done'];
 
 	// CurseForge handlers
 	async function openCurseForgeConsole() {
@@ -709,6 +718,76 @@
 							</p>
 						</div>
 					</div>
+				{:else if onboardingStore.currentStep === 'updates'}
+					<!-- Updates Step -->
+					<div class="animate-in fade-in slide-in-from-right-4 space-y-6 duration-300">
+						<div class="text-center">
+							<h2 class="text-xl font-bold">Automatic Updates</h2>
+							<p class="text-muted-foreground mt-1 text-sm">
+								Keep ETLauncher up to date with the latest features and fixes
+							</p>
+						</div>
+
+						<div
+							class="bg-primary/10 mx-auto flex h-16 w-16 items-center justify-center rounded-full"
+						>
+							<RefreshCw class="text-primary h-8 w-8" />
+						</div>
+
+						<div class="space-y-4">
+							<!-- Auto Update Toggle -->
+							<button
+								class="flex w-full items-center justify-between rounded-lg border-2 p-4 text-left transition-all {autoUpdate
+									? 'border-primary bg-primary/10'
+									: 'border-border hover:border-primary/50'}"
+								onclick={() => (autoUpdate = !autoUpdate)}
+							>
+								<div class="flex-1">
+									<span class="text-sm font-medium">Automatic Updates</span>
+									<p class="text-muted-foreground mt-0.5 text-xs">
+										Check for updates when the launcher starts
+									</p>
+								</div>
+								<div
+									class="flex h-6 w-6 items-center justify-center rounded-full {autoUpdate
+										? 'bg-primary text-primary-foreground'
+										: 'bg-muted'}"
+								>
+									{#if autoUpdate}
+										<Check class="h-4 w-4" />
+									{/if}
+								</div>
+							</button>
+
+							<!-- Pre-release Toggle -->
+							<button
+								class="flex w-full items-center justify-between rounded-lg border-2 p-4 text-left transition-all {includePreReleases
+									? 'border-primary bg-primary/10'
+									: 'border-border hover:border-primary/50'}"
+								onclick={() => (includePreReleases = !includePreReleases)}
+							>
+								<div class="flex-1">
+									<span class="text-sm font-medium">Include Pre-releases</span>
+									<p class="text-muted-foreground mt-0.5 text-xs">
+										Receive alpha, beta, and release candidate versions
+									</p>
+								</div>
+								<div
+									class="flex h-6 w-6 items-center justify-center rounded-full {includePreReleases
+										? 'bg-primary text-primary-foreground'
+										: 'bg-muted'}"
+								>
+									{#if includePreReleases}
+										<Check class="h-4 w-4" />
+									{/if}
+								</div>
+							</button>
+
+							<p class="text-muted-foreground text-center text-xs">
+								You can change these settings anytime in the Settings page.
+							</p>
+						</div>
+					</div>
 				{:else if onboardingStore.currentStep === 'features'}
 					<!-- Features Overview Step -->
 					<div class="animate-in fade-in slide-in-from-right-4 space-y-6 duration-300">
@@ -828,6 +907,14 @@
 										Not configured
 									{/if}
 								</span>
+							</div>
+							<div class="flex items-center justify-between text-sm">
+								<span class="text-muted-foreground">Auto-update</span>
+								<span class="font-medium">{autoUpdate ? 'Enabled' : 'Disabled'}</span>
+							</div>
+							<div class="flex items-center justify-between text-sm">
+								<span class="text-muted-foreground">Pre-releases</span>
+								<span class="font-medium">{includePreReleases ? 'Enabled' : 'Disabled'}</span>
 							</div>
 						</div>
 
