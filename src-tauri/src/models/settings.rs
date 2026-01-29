@@ -128,6 +128,17 @@ pub struct AppSettings {
     /// Resource pool configuration for shared content management
     #[serde(default)]
     pub resource_pool: ResourcePoolConfig,
+    /// Whether auto-updates are enabled (default: true)
+    #[serde(default = "default_true")]
+    pub auto_update: bool,
+    /// Whether to include pre-release versions in updates
+    #[serde(default)]
+    pub include_pre_releases: bool,
+}
+
+/// Default value helper for serde
+fn default_true() -> bool {
+    true
 }
 
 impl Default for AppSettings {
@@ -152,6 +163,8 @@ impl Default for AppSettings {
             curseforge_api_key: None,
             setup_completed: false,
             resource_pool: ResourcePoolConfig::default(),
+            auto_update: true,
+            include_pre_releases: false,
         }
     }
 }
@@ -179,4 +192,6 @@ pub struct UpdateSettingsRequest {
     pub curseforge_api_key: Option<String>,
     pub setup_completed: Option<bool>,
     pub resource_pool: Option<ResourcePoolConfig>,
+    pub auto_update: Option<bool>,
+    pub include_pre_releases: Option<bool>,
 }

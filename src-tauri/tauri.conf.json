@@ -1,7 +1,7 @@
 {
 	"$schema": "https://schema.tauri.app/config/2",
 	"productName": "etlauncher",
-	"version": "0.1.0",
+	"version": "0.1.0-beta",
 	"identifier": "com.efox.etlauncher",
 	"build": {
 		"beforeDevCommand": "bun run dev",
@@ -28,7 +28,8 @@
 	},
 	"bundle": {
 		"active": true,
-		"targets": "all",
+		"targets": ["nsis", "app", "dmg"],
+		"createUpdaterArtifacts": true,
 		"icon": [
 			"icons/32x32.png",
 			"icons/128x128.png",
@@ -39,6 +40,17 @@
 		"macOS": {
 			"entitlements": "entitlements.plist",
 			"signingIdentity": "-"
+		}
+	},
+	"plugins": {
+		"updater": {
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJGRjk3MzYwNkI5RTA0MTAKUldRUUJKNXJZSFA1djd4T0hpV0Q5dktkbEtpNTlwOFJlWEpRYUxxZ2pxM3V4SE0zdW9rVUpOWEEK",
+			"endpoints": [
+				"https://github.com/firemonster612/ETlauncher/releases/latest/download/latest.json"
+			],
+			"windows": {
+				"installMode": "passive"
+			}
 		}
 	}
 }

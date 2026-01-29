@@ -145,6 +145,9 @@ fn migrate_old_settings(old: &serde_json::Value) -> AppSettings {
         custom_sidebar_color: None,
         // Use default resource pool config for migrated settings
         resource_pool: crate::models::ResourcePoolConfig::default(),
+        // Use defaults for auto-update settings
+        auto_update: true,
+        include_pre_releases: false,
     }
 }
 
@@ -207,6 +210,10 @@ pub fn update_settings(current: &AppSettings, updates: UpdateSettingsRequest) ->
         resource_pool: updates
             .resource_pool
             .unwrap_or_else(|| current.resource_pool.clone()),
+        auto_update: updates.auto_update.unwrap_or(current.auto_update),
+        include_pre_releases: updates
+            .include_pre_releases
+            .unwrap_or(current.include_pre_releases),
     }
 }
 
