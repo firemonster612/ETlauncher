@@ -23,18 +23,20 @@
   <br>
 </div>
 
-A fast, modern Minecraft launcher that brings together modpacks from CurseForge, Modrinth, ATLauncher, FTB, and Technic in one place. Built with Tauri and Rust for native performance across Windows, macOS, and Linux.
+A fast, modern Minecraft launcher that brings together modpacks from CurseForge, Modrinth, FTB, and Technic in one place. Built with Tauri and Rust for native performance across Windows, macOS, and Linux.
 
 ## Features
 
-- 5 modpack platforms in one place
-- One-click mod installation with dependency resolution
-- Smart Java management
-- Multiple Microsoft accounts
-- Powerful instance management
-- Update checking for packs and mods
-- Resource pool for disk space savings (mods/shaders/resource packs shared across instances)
-- Native cross-platform (Tauri + Rust)
+- **4 modpack platforms in one place** — CurseForge, Modrinth, FTB, and Technic
+- **Content browser** — Search mods, shaders, and resource packs with category filtering
+- **Automatic dependency resolution** — Required libraries installed with one click
+- **Multi-loader support** — Fabric, Forge, Quilt, and NeoForge
+- **Instance import/export** — .mrpack format support
+- **Resource pool** — Shared storage across instances saves disk space
+- **Update checking** — For modpacks and individual mods
+- **Auto-updates** — Launcher keeps itself current
+- **Theme customization** — Color presets and custom themes
+- **Cross-platform** — Windows, macOS, and Linux
 
 ## Screenshots
 
