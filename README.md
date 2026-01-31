@@ -79,6 +79,8 @@ chmod +x ETlauncher_x.x.x_amd64.AppImage
 
 Alternatively, `.deb` and `.rpm` packages are available.
 
+> **Note:** Only the AppImage version supports automatic updates. DEB and RPM installations will notify you when updates are available, but you'll need to download and install the new version manually. Reinstalling will not delete any user data (instances, accounts, settings).
+
 ## Building from Source
 
 Requires [Rust](https://rustup.rs/), [Bun](https://bun.sh/), and [Node.js](https://nodejs.org/) (for dependency install scripts).

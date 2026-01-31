@@ -151,6 +151,8 @@ pub fn run() {
             commands::update::execute_modpack_update,
             commands::update::check_instance_updates,
             commands::update::execute_instance_update,
+            commands::update::get_exe_path,
+            commands::update::is_appimage,
             // OptiFine commands
             commands::optifine::check_optifine_available,
             commands::optifine::install_optifine,
