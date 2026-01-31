@@ -26,12 +26,14 @@
 		Link,
 	} from '@lucide/svelte';
 	import { Button } from '$lib/ui/button';
+	import { Checkbox } from '$lib/ui/checkbox';
 	import { Input } from '$lib/ui/input';
 	import * as Select from '$lib/ui/select';
 	import { Skeleton } from '$lib/ui/skeleton';
 	import { contentStore } from '$lib/stores/content.svelte';
 	import * as contentService from '$lib/services/content';
 	import { getErrorMessage } from '$lib/utils/error';
+	import { getCategoriesForContext } from '$lib/constants/categories';
 	import ScreenshotLightbox from '$lib/components/ScreenshotLightbox.svelte';
 	import DescriptionModal from '$lib/components/DescriptionModal.svelte';
 	import type {
@@ -84,8 +86,16 @@
 	// Multi-select state for installed tab
 	let selectedItems = new SvelteSet<string>();
 
+	// Category dropdown state
+	let categoryDropdownOpen = $state(false);
+
 	// Derived: installed items list from scan result
 	const installedItems = $derived(contentStore.scanResult?.items ?? []);
+
+	// Derived: available categories for current platform and content type
+	const availableCategories = $derived(
+		getCategoriesForContext(contentStore.platform, contentStore.contentType)
+	);
 
 	const visibleInstalledItems = $derived(
 		installedSearchInput.trim()
@@ -671,6 +681,16 @@
 
 	function handleSortChange(sort: ContentSortBy) {
 		contentStore.setSortBy(sort);
+		contentStore.search();
+	}
+
+	function handleCategoryToggle(category: string) {
+		contentStore.toggleCategory(category);
+		contentStore.search();
+	}
+
+	function handleClearCategories() {
+		contentStore.clearCategories();
 		contentStore.search();
 	}
 
@@ -1373,6 +1393,62 @@
 						{label}
 					</Button>
 				{/each}
+				{#if availableCategories.length > 0}
+					<div class="relative">
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-8 gap-1 text-xs"
+							onclick={() => (categoryDropdownOpen = !categoryDropdownOpen)}
+						>
+							{#if contentStore.categories.length === 0}
+								All Categories
+							{:else if contentStore.categories.length === 1}
+								{availableCategories.find((c) => c.value === contentStore.categories[0])?.label ??
+									'1 Category'}
+							{:else}
+								{contentStore.categories.length} Categories
+							{/if}
+							<ChevronDown class="h-3 w-3" />
+						</Button>
+						{#if categoryDropdownOpen}
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div
+								class="fixed inset-0 z-[59]"
+								onclick={() => (categoryDropdownOpen = false)}
+								onkeydown={(e) => e.key === 'Escape' && (categoryDropdownOpen = false)}
+							></div>
+							<div
+								class="bg-card border-border absolute top-full left-0 z-[60] mt-1 w-56 rounded-md border-2 shadow-lg"
+							>
+								<div class="border-border border-b p-2">
+									<button
+										type="button"
+										class="text-muted-foreground hover:text-foreground w-full text-left text-xs"
+										onclick={handleClearCategories}
+									>
+										Clear all
+									</button>
+								</div>
+								<div class="max-h-64 overflow-y-auto p-1">
+									{#each availableCategories as { value, label } (value)}
+										<button
+											type="button"
+											class="hover:bg-muted/50 flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm"
+											onclick={() => handleCategoryToggle(value)}
+										>
+											<Checkbox
+												checked={contentStore.categories.includes(value)}
+												class="pointer-events-none"
+											/>
+											<span>{label}</span>
+										</button>
+									{/each}
+								</div>
+							</div>
+						{/if}
+					</div>
+				{/if}
 				<div class="ml-auto">
 					<Select.Root
 						type="single"
@@ -1382,7 +1458,7 @@
 						<Select.Trigger class="border-border bg-background h-8 border-2 text-xs">
 							Sort: {sortOptions.find((o) => o.value === contentStore.sortBy)?.label}
 						</Select.Trigger>
-						<Select.Content class="border-border bg-card border-2">
+						<Select.Content class="border-border bg-card z-[60] border-2">
 							{#each sortOptions as { value, label } (value)}
 								<Select.Item {value} {label}>{label}</Select.Item>
 							{/each}
