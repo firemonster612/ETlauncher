@@ -4,6 +4,7 @@
 	import ModpackInstallBar from '$lib/components/ModpackInstallBar.svelte';
 	import LaunchingDialog from '$lib/components/LaunchingDialog.svelte';
 	import UpdateNotification from '$lib/components/UpdateNotification.svelte';
+	import UpgradeSuccessBanner from '$lib/components/UpgradeSuccessBanner.svelte';
 	import { SidebarInset } from '$lib/ui/sidebar';
 	import { launchStore } from '$lib/stores/launch.svelte';
 	import { modpackInstallStore } from '$lib/stores/modpackInstall.svelte';
@@ -24,8 +25,8 @@
 			// Wait for settings to load
 			await settingsStore.load();
 			if (settingsStore.settings?.autoUpdate) {
-				// Silent check - don't show errors for automatic checks
-				updaterStore.checkForUpdates(true);
+				// Silent check - don't show errors for automatic checks, but show notification
+				updaterStore.checkForUpdates({ silent: true, showNotification: true });
 			}
 		};
 		checkForUpdates();
@@ -39,6 +40,7 @@
 
 <AppSidebar />
 <SidebarInset class="overflow-hidden">
+	<UpgradeSuccessBanner />
 	<main
 		class="flex-1 overflow-x-hidden overflow-y-auto p-6"
 		class:pb-24={modpackInstallStore.isInstalling}

@@ -154,3 +154,18 @@ pub async fn execute_instance_update(
     .await
     .map_err(CommandError::from)
 }
+
+/// Get the current executable path (used to detect if running from AppImage)
+#[tauri::command]
+pub fn get_exe_path() -> Result<String, CommandError> {
+    std::env::current_exe()
+        .map(|p| p.to_string_lossy().to_string())
+        .map_err(|e| CommandError::from(crate::error::AppError::IoError(e)))
+}
+
+/// Check if running from an AppImage (Linux only)
+#[tauri::command]
+pub fn is_appimage() -> bool {
+    // The APPIMAGE environment variable is set when running from an AppImage
+    std::env::var("APPIMAGE").is_ok()
+}

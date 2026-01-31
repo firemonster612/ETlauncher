@@ -694,7 +694,7 @@
 					<Button
 						variant="outline"
 						size="sm"
-						onclick={() => updaterStore.checkForUpdates()}
+						onclick={() => updaterStore.checkForUpdates({ showNotification: false })}
 						disabled={updaterStore.isChecking}
 					>
 						{#if updaterStore.isChecking}
