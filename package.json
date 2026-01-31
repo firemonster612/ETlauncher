@@ -1,6 +1,6 @@
 {
 	"name": "etlauncher",
-	"version": "0.1.0-beta",
+	"version": "0.1.0",
 	"description": "An Alien's Minecraft Launcher",
 	"type": "module",
 	"scripts": {
