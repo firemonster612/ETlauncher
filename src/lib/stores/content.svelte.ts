@@ -51,7 +51,7 @@ function createContentStore() {
 	let loader = $state<LoaderType | null>(null);
 	let isVanillaInstance = $state(false); // Track vanilla instance for datapack filtering
 	let contentType = $state<ContentType>('mod');
-	let category = $state<string | null>(null);
+	let categories = $state<string[]>([]);
 	let sortBy = $state<ContentSortBy>('relevance');
 
 	// Instance context (for auto-filtering)
@@ -129,8 +129,8 @@ function createContentStore() {
 		get contentType() {
 			return contentType;
 		},
-		get category() {
-			return category;
+		get categories() {
+			return categories;
 		},
 		get sortBy() {
 			return sortBy;
@@ -495,20 +495,34 @@ function createContentStore() {
 				// CurseForge resource packs don't have modLoaderType, and shaders use different ecosystems.
 				const loaderFilter = contentType === 'mod' ? loader || undefined : undefined;
 
+				// Pass first category to backend (if any), then filter client-side for multiple categories
+				const primaryCategory = categories.length > 0 ? categories[0] : undefined;
+
 				const params: ContentSearchParams = {
 					query: query || undefined,
 					platform: platform || undefined,
 					mcVersion: mcVersion || undefined,
 					loader: loaderFilter,
 					contentType,
-					category: category || undefined,
+					category: primaryCategory,
 					sortBy,
 					page: currentPage,
 					pageSize,
 				};
 
 				const result = await contentService.searchContent(params);
-				items = result.items;
+
+				// Client-side filter for multiple categories (if more than one selected)
+				let filteredItems = result.items;
+				if (categories.length > 1) {
+					filteredItems = result.items.filter((item) =>
+						categories.every((cat) =>
+							item.categories.some((c) => c.toLowerCase() === cat.toLowerCase())
+						)
+					);
+				}
+
+				items = filteredItems;
 				totalCount = result.totalCount;
 			} catch (e: unknown) {
 				searchError =
@@ -529,20 +543,34 @@ function createContentStore() {
 			try {
 				const loaderFilter = contentType === 'mod' ? loader || undefined : undefined;
 
+				// Pass first category to backend (if any), then filter client-side for multiple categories
+				const primaryCategory = categories.length > 0 ? categories[0] : undefined;
+
 				const params: ContentSearchParams = {
 					query: query || undefined,
 					platform: platform || undefined,
 					mcVersion: mcVersion || undefined,
 					loader: loaderFilter,
 					contentType,
-					category: category || undefined,
+					category: primaryCategory,
 					sortBy,
 					page: currentPage,
 					pageSize,
 				};
 
 				const result = await contentService.searchContent(params);
-				items = [...items, ...result.items];
+
+				// Client-side filter for multiple categories (if more than one selected)
+				let filteredItems = result.items;
+				if (categories.length > 1) {
+					filteredItems = result.items.filter((item) =>
+						categories.every((cat) =>
+							item.categories.some((c) => c.toLowerCase() === cat.toLowerCase())
+						)
+					);
+				}
+
+				items = [...items, ...filteredItems];
 				totalCount = result.totalCount;
 			} catch (e: unknown) {
 				searchError =
@@ -572,6 +600,8 @@ function createContentStore() {
 				}
 
 				platform = newPlatform;
+				// Reset categories since they differ between platforms
+				categories = [];
 
 				// Check if we have cached data for the new platform
 				const cached = contentCache.get(getCacheKey(newPlatform, contentType));
@@ -619,6 +649,8 @@ function createContentStore() {
 
 			contentType = type;
 			currentPage = 0;
+			// Reset categories since they differ between content types
+			categories = [];
 
 			// Check if we have valid cached data for the new content type
 			const cached = contentCache.get(getCacheKey(platform, type));
@@ -639,9 +671,24 @@ function createContentStore() {
 			}
 		},
 
-		/** Set category filter */
-		setCategory(newCategory: string | null) {
-			category = newCategory;
+		/** Toggle a category in the filter (add if not present, remove if present) */
+		toggleCategory(category: string) {
+			const index = categories.indexOf(category);
+			if (index === -1) {
+				categories = [...categories, category];
+			} else {
+				categories = categories.filter((c) => c !== category);
+			}
+		},
+
+		/** Set all categories at once */
+		setCategories(newCategories: string[]) {
+			categories = newCategories;
+		},
+
+		/** Clear all selected categories */
+		clearCategories() {
+			categories = [];
 		},
 
 		/** Set sort order */
@@ -653,7 +700,7 @@ function createContentStore() {
 		clearFilters() {
 			query = '';
 			platform = 'modrinth';
-			category = null;
+			categories = [];
 			sortBy = 'relevance';
 			contentType = 'mod';
 			// Keep mcVersion and loader from instance context
@@ -762,7 +809,7 @@ function createContentStore() {
 			loader = null;
 			isVanillaInstance = false;
 			contentType = 'mod';
-			category = null;
+			categories = [];
 			sortBy = 'relevance';
 			instanceId = null;
 			currentSelectionId = null;
