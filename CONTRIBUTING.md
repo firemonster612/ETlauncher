@@ -68,10 +68,16 @@ xcode-select --install
 4. **Build for production**
 
    ```bash
-   bun run tauri build
+   bun run tauri:build
    ```
 
    Built artifacts will be in `src-tauri/target/release/bundle/`.
+
+   The build script automatically:
+   - Uses the portable AppImage format for better Linux compatibility (including Wayland)
+   - Sets `NO_STRIP=1` on Linux to avoid issues with outdated strip binaries on non-LTS distros
+   - Handles missing signing keys gracefully (signing is only required for releases)
+   - Strips the AppImage binary after building on Linux
 
 ## Project Structure
 
@@ -88,6 +94,9 @@ ETlauncher/
 │   │   ├── main.rs         # Application entry
 │   │   └── services/       # Rust services
 │   └── Cargo.toml
+├── scripts/                # Build scripts
+│   ├── tauri-build.ts      # Cross-platform build wrapper
+│   └── strip-appimage.sh   # Linux AppImage stripping
 ├── static/                 # Static assets
 └── package.json
 ```
