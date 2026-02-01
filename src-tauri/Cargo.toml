@@ -1,6 +1,6 @@
 [package]
 name = "etlauncher"
-version = "0.1.1"
+version = "0.1.2"
 description = "An Alien's Minecraft Launcher"
 authors = ["firemonster612"]
 edition = "2021"
