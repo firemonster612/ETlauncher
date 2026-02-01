@@ -124,10 +124,57 @@ fn detect_gtk_theme() -> Option<String> {
     None
 }
 
+/// Probe if EGL works on this system by attempting to get the default display.
+/// Returns true if EGL is functional, false if it would fail.
+#[cfg(target_os = "linux")]
+fn probe_egl_works() -> bool {
+    use std::ffi::c_void;
+
+    // EGL constants
+    const EGL_DEFAULT_DISPLAY: *mut c_void = std::ptr::null_mut();
+    const EGL_NO_DISPLAY: *mut c_void = std::ptr::null_mut();
+
+    // Try to load libEGL dynamically
+    let lib = match unsafe { libloading::Library::new("libEGL.so.1") } {
+        Ok(lib) => lib,
+        Err(_) => return false, // No EGL library = can't use EGL
+    };
+
+    // Get eglGetDisplay function
+    type EglGetDisplay = unsafe extern "C" fn(*mut c_void) -> *mut c_void;
+    let egl_get_display: libloading::Symbol<EglGetDisplay> =
+        match unsafe { lib.get(b"eglGetDisplay\0") } {
+            Ok(f) => f,
+            Err(_) => return false,
+        };
+
+    // Try to get default display
+    let display = unsafe { egl_get_display(EGL_DEFAULT_DISPLAY) };
+    display != EGL_NO_DISPLAY
+}
+
 fn main() {
     // On Linux, ensure GTK dialogs and elements follow the system theme
     #[cfg(target_os = "linux")]
     {
+        // Fix EGL issues on Wayland (Fedora, CachyOS, etc.) when EGL initialization fails.
+        // The DMABuf renderer can cause "Could not create default EGL display" errors.
+        // Only apply this workaround if EGL probe fails - preserve GPU rendering when possible.
+        if std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").is_err() {
+            let egl_works = probe_egl_works();
+            eprintln!(
+                "[ETLauncher] EGL probe result: {}",
+                if egl_works {
+                    "OK (using GPU)"
+                } else {
+                    "FAILED (using software renderer)"
+                }
+            );
+            if !egl_works {
+                std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+            }
+        }
+
         // Use XDG Desktop Portal for file dialogs - integrates with desktop environment
         std::env::set_var("GTK_USE_PORTAL", "1");
 

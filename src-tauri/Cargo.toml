@@ -1,6 +1,6 @@
 [package]
 name = "etlauncher"
-version = "0.1.0"
+version = "0.1.1"
 description = "An Alien's Minecraft Launcher"
 authors = ["firemonster612"]
 edition = "2021"
@@ -105,3 +105,7 @@ windows-sys = { version = "0.59", features = [
   "Win32_Storage_FileSystem",
   "Win32_Foundation",
 ] }
+
+# Linux-specific dependencies
+[target.'cfg(target_os = "linux")'.dependencies]
+libloading = "0.8"
