@@ -15,7 +15,9 @@
 		"format:check": "biome format .",
 		"validate": "bun run lint && bun run format:check && bun run check",
 		"validate:rs": "cd src-tauri && cargo lint && cargo fmt-check",
-		"tauri": "tauri"
+		"tauri": "tauri",
+		"tauri:build": "bun scripts/tauri-build.ts",
+		"tauri:strip-appimage": "scripts/strip-appimage.sh"
 	},
 	"license": "MIT",
 	"dependencies": {
