@@ -108,4 +108,4 @@ windows-sys = { version = "0.59", features = [
 
 # Linux-specific dependencies
 [target.'cfg(target_os = "linux")'.dependencies]
-libloading = "0.8"
+libloading = "0.9"
