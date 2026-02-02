@@ -121,6 +121,7 @@
 		padding: 0.75rem;
 		background: var(--card);
 		text-align: left;
+		cursor: pointer;
 	}
 
 	.rising-star-rank {

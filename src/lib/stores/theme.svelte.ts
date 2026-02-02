@@ -6,6 +6,7 @@ import type {
 	CustomFont,
 	SidebarStyle,
 	CustomSidebarColor,
+	BackgroundConfig,
 } from '$lib/types';
 import { settingsStore } from './settings.svelte';
 import * as settingsService from '$lib/services/settings';
@@ -25,6 +26,7 @@ const COLOR_PRESETS: Record<ColorPreset, { hue: number; chroma: number }> = {
 function createThemeStore() {
 	let currentThemeSetting = $state<Theme>('dark');
 	let cachedSystemTheme = $state<'dark' | 'light'>('dark');
+	let currentBackgroundUrl = $state<string | null>(null);
 	let initialized = false;
 
 	/** Fetch system theme from Tauri backend */
@@ -266,6 +268,88 @@ function createThemeStore() {
 		}
 	}
 
+	/** Apply background configuration */
+	async function applyBackground(config?: BackgroundConfig) {
+		if (typeof document === 'undefined') return;
+
+		const html = document.documentElement;
+		const type = config?.type ?? 'none';
+
+		// Determine actual color (handle 'accent' special value)
+		let actualColor = config?.color ?? 'transparent';
+		if (config?.color === 'accent') {
+			// Use the current accent color from CSS variables, heavily dimmed for background use
+			const accentHue = html.style.getPropertyValue('--accent-hue') || '172';
+			const accentChroma = parseFloat(html.style.getPropertyValue('--accent-chroma') || '0.18');
+			// Very subtle: low lightness (0.12) and minimal chroma for a barely-there tint
+			const dimmedChroma = Math.min(accentChroma * 0.15, 0.03);
+			actualColor = `oklch(0.12 ${dimmedChroma} ${accentHue})`;
+		}
+
+		// Set CSS variables
+		html.style.setProperty('--app-background-type', type);
+		html.style.setProperty('--app-background-color', actualColor);
+		html.style.setProperty('--app-background-blur', `${config?.blur ?? 0}px`);
+		// UI opacity controls how transparent the UI elements are (lower = more see-through)
+		html.style.setProperty('--app-ui-opacity', String(config?.opacity ?? 1));
+
+		// Add/remove class to indicate background is active (for CSS transparency)
+		if (type !== 'none') {
+			html.classList.add('has-custom-background');
+		} else {
+			html.classList.remove('has-custom-background');
+		}
+
+		// Load file as base64 data URL for media types
+		if ((type === 'image' || type === 'gif' || type === 'video') && config?.filename) {
+			try {
+				const base64Data = await settingsService.getBackgroundData(config.filename);
+				// Determine MIME type from filename extension
+				const ext = config.filename.split('.').pop()?.toLowerCase() ?? '';
+				let mimeType: string;
+				switch (ext) {
+					case 'png':
+						mimeType = 'image/png';
+						break;
+					case 'jpg':
+					case 'jpeg':
+						mimeType = 'image/jpeg';
+						break;
+					case 'webp':
+						mimeType = 'image/webp';
+						break;
+					case 'gif':
+						mimeType = 'image/gif';
+						break;
+					case 'mp4':
+						mimeType = 'video/mp4';
+						break;
+					case 'webm':
+						mimeType = 'video/webm';
+						break;
+					case 'mov':
+						mimeType = 'video/quicktime';
+						break;
+					default:
+						mimeType = 'application/octet-stream';
+				}
+				currentBackgroundUrl = `data:${mimeType};base64,${base64Data}`;
+			} catch (e) {
+				console.error('Failed to load background file:', e);
+				currentBackgroundUrl = null;
+			}
+		} else {
+			currentBackgroundUrl = null;
+		}
+
+		// Store config in localStorage for flash prevention
+		if (config && type !== 'none') {
+			localStorage.setItem('etlauncher-background', JSON.stringify(config));
+		} else {
+			localStorage.removeItem('etlauncher-background');
+		}
+	}
+
 	/** Apply all theme settings from the settings store */
 	async function applyFromSettings() {
 		const settings = settingsStore.settings;
@@ -276,11 +360,17 @@ function createThemeStore() {
 		applyHoverLift(settings.disableHoverLift ?? false);
 		applyFontFamily(settings.fontFamily ?? 'pixel', settings.customFont);
 		applySidebarStyle(settings.sidebarStyle ?? 'default', settings.customSidebarColor);
+		await applyBackground(settings.background);
 	}
 
 	return {
 		get systemPrefersDark() {
 			return cachedSystemTheme === 'dark';
+		},
+
+		/** Get current background URL for media backgrounds */
+		get backgroundUrl() {
+			return currentBackgroundUrl;
 		},
 
 		/** Initialize the theme system (call once on app mount) */
@@ -300,6 +390,9 @@ function createThemeStore() {
 
 		/** Apply sidebar style setting */
 		applySidebarStyle,
+
+		/** Apply background configuration */
+		applyBackground,
 
 		/** Apply all theme settings from settings store */
 		applyFromSettings,

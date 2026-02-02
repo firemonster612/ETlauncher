@@ -47,6 +47,11 @@ pub fn get_java_dir() -> PathBuf {
     get_app_data_dir().join("java")
 }
 
+/// Get the backgrounds directory for custom background files
+pub fn get_backgrounds_dir() -> PathBuf {
+    get_app_data_dir().join("backgrounds")
+}
+
 /// Get the Java manifest file path
 pub fn get_java_manifest_path() -> PathBuf {
     get_java_dir().join("manifest.json")
@@ -142,5 +147,7 @@ pub fn ensure_directories() -> std::io::Result<()> {
     std::fs::create_dir_all(get_resource_pool_dir_for_type(
         &crate::models::ContentType::ResourcePack,
     ))?;
+    // Create backgrounds directory
+    std::fs::create_dir_all(get_backgrounds_dir())?;
     Ok(())
 }

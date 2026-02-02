@@ -42,6 +42,7 @@
 		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 		<div
 			class="bg-card border-border mx-4 w-full max-w-md space-y-4 border-2 p-6"
+			data-alert-dialog
 			onclick={(e) => e.stopPropagation()}
 		>
 			<div class="flex items-start gap-4">

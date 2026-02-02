@@ -24,11 +24,12 @@
 	bind:ref
 	{checked}
 	onCheckedChange={handleCheckedChange}
+	data-checkbox
 	class={cn(
-		'peer border-muted-foreground bg-background flex size-5 shrink-0 items-center justify-center rounded-sm border-2 border-solid transition-colors outline-none',
+		'peer border-muted-foreground flex size-5 shrink-0 items-center justify-center rounded-sm border-2 border-solid transition-colors outline-none',
+		checked ? 'bg-primary border-primary text-primary-foreground' : 'bg-background',
 		'hover:border-foreground',
 		'focus-visible:border-primary focus-visible:ring-ring/50 focus-visible:ring-[3px]',
-		'data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground',
 		'disabled:cursor-not-allowed disabled:opacity-50',
 		className
 	)}

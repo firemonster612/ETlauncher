@@ -35,6 +35,23 @@ export interface CustomSidebarColor {
 /** Link strategy for resource pool */
 export type LinkStrategy = 'auto' | 'hardLink' | 'symlink' | 'copy';
 
+/** Background type for app customization */
+export type BackgroundType = 'none' | 'color' | 'image' | 'video' | 'gif';
+
+/** Background configuration */
+export interface BackgroundConfig {
+	/** Type of background */
+	type: BackgroundType;
+	/** Hex color (for type='color') */
+	color?: string;
+	/** Stored filename in app data (for media types) */
+	filename?: string;
+	/** Opacity 0-1 (for media types) */
+	opacity?: number;
+	/** Blur 0-20px (for media types) */
+	blur?: number;
+}
+
 /** Resource pool configuration */
 export interface ResourcePoolConfig {
 	/** Whether the resource pool is enabled */
@@ -87,6 +104,8 @@ export interface AppSettings {
 	autoUpdate: boolean;
 	/** Whether to include pre-release versions in updates */
 	includePreReleases: boolean;
+	/** Background customization configuration */
+	background?: BackgroundConfig;
 }
 
 /** Request to update settings (partial update) */
@@ -112,6 +131,7 @@ export interface UpdateSettingsRequest {
 	resourcePool?: ResourcePoolConfig;
 	autoUpdate?: boolean;
 	includePreReleases?: boolean;
+	background?: BackgroundConfig;
 }
 
 /** Resource pool statistics */

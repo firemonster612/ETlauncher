@@ -77,8 +77,8 @@
 			<SliderPrimitive.Thumb
 				index={thumb.index}
 				class={cn(
-					'border-foreground/60 bg-background block size-5 border-2 transition-colors',
-					'hover:border-foreground',
+					'border-foreground/60 bg-foreground block size-5 border-2 transition-colors cursor-grab active:cursor-grabbing',
+					'hover:bg-primary hover:border-primary',
 					'focus-visible:border-primary focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none',
 					'disabled:pointer-events-none disabled:opacity-50'
 				)}

@@ -148,6 +148,8 @@ fn migrate_old_settings(old: &serde_json::Value) -> AppSettings {
         // Use defaults for auto-update settings
         auto_update: true,
         include_pre_releases: false,
+        // No background by default
+        background: None,
     }
 }
 
@@ -214,6 +216,7 @@ pub fn update_settings(current: &AppSettings, updates: UpdateSettingsRequest) ->
         include_pre_releases: updates
             .include_pre_releases
             .unwrap_or(current.include_pre_releases),
+        background: updates.background.or_else(|| current.background.clone()),
     }
 }
 
