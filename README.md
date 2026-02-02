@@ -89,8 +89,13 @@ Requires [Rust](https://rustup.rs/), [Bun](https://bun.sh/), and [Node.js](https
 git clone https://github.com/firemonster612/ETlauncher.git
 cd ETlauncher
 bun install
-bun run tauri build
+bun run tauri:build
 ```
+
+The build script automatically:
+- Uses the portable AppImage format for better Linux compatibility (including Wayland)
+- Handles missing signing keys gracefully for local builds
+- Strips the AppImage binary on Linux
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed setup instructions and platform-specific dependencies.
 

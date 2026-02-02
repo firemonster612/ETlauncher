@@ -95,3 +95,56 @@ pub fn get_arch() -> &'static str {
         Arch::Arm64 => "aarch64",
     }
 }
+
+/// Convert a path to its short (8.3) form on Windows to avoid command line length limits.
+/// On non-Windows platforms, returns the path string unchanged.
+#[cfg(target_os = "windows")]
+pub fn to_short_path(path: &std::path::Path) -> String {
+    use std::os::windows::ffi::OsStrExt;
+
+    // Convert path to wide string (UTF-16) for Windows API
+    let wide_path: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    // First call to get required buffer size
+    let len = unsafe {
+        windows_sys::Win32::Storage::FileSystem::GetShortPathNameW(
+            wide_path.as_ptr(),
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+
+    if len == 0 {
+        // Failed to get short path, return original
+        return path.to_string_lossy().to_string();
+    }
+
+    // Allocate buffer and get the short path
+    let mut buffer: Vec<u16> = vec![0; len as usize];
+    let result = unsafe {
+        windows_sys::Win32::Storage::FileSystem::GetShortPathNameW(
+            wide_path.as_ptr(),
+            buffer.as_mut_ptr(),
+            len,
+        )
+    };
+
+    if result == 0 || result > len {
+        // Failed, return original path
+        return path.to_string_lossy().to_string();
+    }
+
+    // Convert back to String (trim null terminator)
+    String::from_utf16_lossy(&buffer[..result as usize])
+}
+
+/// Convert a path to its short (8.3) form on Windows to avoid command line length limits.
+/// On non-Windows platforms, returns the path string unchanged.
+#[cfg(not(target_os = "windows"))]
+pub fn to_short_path(path: &std::path::Path) -> String {
+    path.to_string_lossy().to_string()
+}
