@@ -1,11 +1,14 @@
 use serde::Serialize;
+use std::path::Path;
 use tauri::{State, WebviewWindow};
+use uuid::Uuid;
 
 use crate::cache::clear_all_disk_caches;
 use crate::error::CommandError;
 use crate::models::{AppSettings, UpdateSettingsRequest};
 use crate::services::settings_service;
 use crate::state::{ApiCache, AppState};
+use crate::utils::paths;
 
 /// Get current application settings
 #[tauri::command]
@@ -124,4 +127,106 @@ pub fn get_system_theme(window: WebviewWindow) -> String {
         Ok(tauri::Theme::Dark) | Ok(_) => "dark".to_string(),
         Err(_) => "dark".to_string(),
     }
+}
+
+/// Copy a background file to the backgrounds directory
+/// Returns the new filename (uuid-based)
+#[tauri::command]
+pub fn copy_background_file(source_path: String) -> Result<String, CommandError> {
+    use crate::error::AppError;
+
+    let source = Path::new(&source_path);
+
+    // Validate source exists
+    if !source.exists() {
+        return Err(
+            AppError::InvalidInput(format!("Source file does not exist: {}", source_path)).into(),
+        );
+    }
+
+    // Get extension from source file
+    let extension = source.extension().and_then(|e| e.to_str()).unwrap_or("bin");
+
+    // Generate UUID-based filename
+    let new_filename = format!("{}.{}", Uuid::new_v4(), extension);
+
+    // Ensure backgrounds directory exists
+    let backgrounds_dir = paths::get_backgrounds_dir();
+    std::fs::create_dir_all(&backgrounds_dir).map_err(AppError::from)?;
+
+    // Copy file to backgrounds directory
+    let dest_path = backgrounds_dir.join(&new_filename);
+    std::fs::copy(source, &dest_path).map_err(AppError::from)?;
+
+    Ok(new_filename)
+}
+
+/// Delete a background file from the backgrounds directory
+#[tauri::command]
+pub fn delete_background_file(filename: String) -> Result<(), CommandError> {
+    use crate::error::AppError;
+
+    // Validate filename doesn't contain path traversal
+    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+        return Err(AppError::InvalidInput("Invalid filename".to_string()).into());
+    }
+
+    let file_path = paths::get_backgrounds_dir().join(&filename);
+
+    // Only delete if it exists
+    if file_path.exists() {
+        std::fs::remove_file(&file_path).map_err(AppError::from)?;
+    }
+
+    Ok(())
+}
+
+/// Get the full path to a background file
+#[tauri::command]
+pub fn get_background_path(filename: String) -> Result<String, CommandError> {
+    use crate::error::AppError;
+
+    // Validate filename doesn't contain path traversal
+    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+        return Err(AppError::InvalidInput("Invalid filename".to_string()).into());
+    }
+
+    let file_path = paths::get_backgrounds_dir().join(&filename);
+
+    if !file_path.exists() {
+        return Err(AppError::InvalidInput(format!(
+            "Background file does not exist: {}",
+            filename
+        ))
+        .into());
+    }
+
+    Ok(file_path.to_string_lossy().to_string())
+}
+
+/// Get background file data as base64
+#[tauri::command]
+pub fn get_background_data(filename: String) -> Result<String, CommandError> {
+    use crate::error::AppError;
+
+    // Validate filename doesn't contain path traversal
+    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+        return Err(AppError::InvalidInput("Invalid filename".to_string()).into());
+    }
+
+    let file_path = paths::get_backgrounds_dir().join(&filename);
+
+    if !file_path.exists() {
+        return Err(AppError::InvalidInput(format!(
+            "Background file does not exist: {}",
+            filename
+        ))
+        .into());
+    }
+
+    let data = std::fs::read(&file_path).map_err(AppError::from)?;
+    Ok(base64::Engine::encode(
+        &base64::engine::general_purpose::STANDARD,
+        &data,
+    ))
 }

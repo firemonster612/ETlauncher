@@ -76,6 +76,39 @@ pub struct CustomSidebarColor {
     pub chroma: f64,
 }
 
+/// Background type for app customization
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum BackgroundType {
+    #[default]
+    None,
+    Color,
+    Image,
+    Video,
+    Gif,
+}
+
+/// Background configuration
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackgroundConfig {
+    /// Type of background
+    #[serde(rename = "type")]
+    pub bg_type: BackgroundType,
+    /// Hex color (for type='color')
+    #[serde(default)]
+    pub color: Option<String>,
+    /// Stored filename in app data (for media types)
+    #[serde(default)]
+    pub filename: Option<String>,
+    /// Opacity 0-1 (for media types)
+    #[serde(default)]
+    pub opacity: Option<f64>,
+    /// Blur 0-20px (for media types)
+    #[serde(default)]
+    pub blur: Option<f64>,
+}
+
 /// Global application settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -134,6 +167,9 @@ pub struct AppSettings {
     /// Whether to include pre-release versions in updates
     #[serde(default)]
     pub include_pre_releases: bool,
+    /// Background customization configuration
+    #[serde(default)]
+    pub background: Option<BackgroundConfig>,
 }
 
 /// Default value helper for serde
@@ -165,6 +201,7 @@ impl Default for AppSettings {
             resource_pool: ResourcePoolConfig::default(),
             auto_update: true,
             include_pre_releases: false,
+            background: None,
         }
     }
 }
@@ -194,4 +231,5 @@ pub struct UpdateSettingsRequest {
     pub resource_pool: Option<ResourcePoolConfig>,
     pub auto_update: Option<bool>,
     pub include_pre_releases: Option<bool>,
+    pub background: Option<BackgroundConfig>,
 }

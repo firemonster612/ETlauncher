@@ -9,12 +9,19 @@
 	import InstanceDetailGallery from '$lib/components/instance-detail/InstanceDetailGallery.svelte';
 	import InstanceDetailData from '$lib/components/instance-detail/InstanceDetailData.svelte';
 	import InstanceDetailVersion from '$lib/components/instance-detail/InstanceDetailVersion.svelte';
+	import BackgroundLayer from '$lib/components/BackgroundLayer.svelte';
 	import * as instanceDetailService from '$lib/services/instance-detail';
 	import * as instanceService from '$lib/services/instance';
 	import * as contentService from '$lib/services/content';
 	import * as updateService from '$lib/services/update';
 	import { accountsStore } from '$lib/stores/accounts.svelte';
+	import { settingsStore } from '$lib/stores/settings.svelte';
 	import type { Instance, InstanceDetail, ContentType } from '$lib/types';
+
+	// Check if custom background is active
+	const hasCustomBackground = $derived(
+		settingsStore.settings?.background?.type && settingsStore.settings.background.type !== 'none'
+	);
 
 	type TabId = 'overview' | 'content' | 'version' | 'gallery' | 'data';
 
@@ -230,16 +237,29 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if open && instance}
-	<!-- Backdrop (click to close) -->
-	<button
-		class="fixed inset-x-0 top-[var(--titlebar-height)] z-50 h-[calc(100vh-var(--titlebar-height))] bg-black/50"
-		onclick={onClose}
-		aria-label="Close instance detail"
-	></button>
+	<!-- Backdrop with custom background support -->
+	<div
+		class="fixed inset-x-0 top-[var(--titlebar-height)] z-50 h-[calc(100vh-var(--titlebar-height))]"
+		style="overflow: clip;"
+		data-fullscreen-backdrop
+	>
+		{#if hasCustomBackground}
+			<!-- Render background layer inside modal when custom background is active -->
+			<BackgroundLayer absolute />
+		{:else}
+			<div class="absolute inset-0 bg-black/50"></div>
+		{/if}
+		<button
+			class="absolute inset-0"
+			onclick={onClose}
+			aria-label="Close instance detail"
+		></button>
+	</div>
 
 	<!-- Full-page panel -->
 	<div
 		class="bg-card border-border fixed inset-x-0 top-[var(--titlebar-height)] z-50 flex h-[calc(100vh-var(--titlebar-height))] w-full max-w-none flex-col overflow-hidden border-l-2 shadow-2xl"
+		data-modal-content
 	>
 		<!-- Close Button (absolute positioned) -->
 		<Button

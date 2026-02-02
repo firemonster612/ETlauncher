@@ -1,6 +1,6 @@
 {
 	"name": "etlauncher",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "An Alien's Minecraft Launcher",
 	"type": "module",
 	"scripts": {
@@ -15,7 +15,9 @@
 		"format:check": "biome format .",
 		"validate": "bun run lint && bun run format:check && bun run check",
 		"validate:rs": "cd src-tauri && cargo lint && cargo fmt-check",
-		"tauri": "tauri"
+		"tauri": "tauri",
+		"tauri:build": "bun scripts/tauri-build.ts",
+		"tauri:strip-appimage": "scripts/strip-appimage.sh"
 	},
 	"license": "MIT",
 	"dependencies": {
@@ -25,7 +27,7 @@
 		"@tauri-apps/plugin-opener": "^2",
 		"@tauri-apps/plugin-updater": "^2",
 		"@tauri-apps/plugin-process": "^2",
-		"bits-ui": "^2.15.4",
+		"bits-ui": "^2.15.5",
 		"clsx": "^2.1.1",
 		"dompurify": "^3.3.1",
 		"marked": "^17.0.1",

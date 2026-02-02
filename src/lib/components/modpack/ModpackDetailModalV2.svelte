@@ -242,6 +242,7 @@
 >
 	<div
 		class="bg-card border-border relative flex max-h-[90vh] w-full max-w-7xl flex-col overflow-hidden border-2 shadow-2xl"
+		data-modal-content
 		onclick={(e) => e.stopPropagation()}
 		onkeydown={(e) => e.stopPropagation()}
 		role="document"

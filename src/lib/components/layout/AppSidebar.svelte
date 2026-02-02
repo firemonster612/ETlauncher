@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { page } from '$app/state';
+	import { page } from '$app/stores';
 	import * as Sidebar from '$lib/ui/sidebar';
 	import { navItems } from '$lib/stores/navigation.svelte';
 	import AccountSwitcher from '$lib/components/auth/AccountSwitcher.svelte';
@@ -11,7 +11,7 @@
 			<Sidebar.GroupContent>
 				<Sidebar.Menu>
 					{#each navItems as item (item.id)}
-						{@const isActive = item.href === '/' ? page.url.pathname === '/' : page.url.pathname.startsWith(item.href)}
+						{@const isActive = item.href === '/' ? $page.url.pathname === '/' : $page.url.pathname.startsWith(item.href)}
 						<Sidebar.MenuItem>
 							<Sidebar.MenuButton {isActive} tooltipContent={item.label}>
 								{#snippet child({ props })}

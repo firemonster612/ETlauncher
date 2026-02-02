@@ -4,7 +4,7 @@ use crate::models::minecraft::{GameLogLine, LogLevel};
 use crate::services::{account_service, download_service, instance_service, java_service};
 use crate::state::AppState;
 use crate::utils::paths::{get_assets_dir, get_instance_natives_dir_with_base};
-use crate::utils::platform::classpath_separator;
+use crate::utils::platform::{classpath_separator, to_short_path};
 use chrono::Utc;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
@@ -98,6 +98,7 @@ pub async fn launch_instance(
     emit_launch_status(app_handle, &instance_id, LaunchStatus::BuildingClasspath);
 
     // Build classpath (pass game_dir for Forge libraries)
+    // On Windows, convert paths to 8.3 short names to avoid command line length limits
     let classpath = download_service::get_classpath(
         &version_info,
         &instance.minecraft_version,
@@ -105,7 +106,7 @@ pub async fn launch_instance(
     );
     let classpath_str = classpath
         .iter()
-        .map(|p| p.to_string_lossy().to_string())
+        .map(|p| to_short_path(p))
         .collect::<Vec<_>>()
         .join(classpath_separator());
 
@@ -136,20 +137,15 @@ pub async fn launch_instance(
     );
 
     // Build replacements map
+    // On Windows, use 8.3 short paths to avoid command line length limits
     let mut replacements: HashMap<String, String> = HashMap::new();
     replacements.insert("auth_player_name".to_string(), account.username.clone());
     replacements.insert(
         "version_name".to_string(),
         instance.minecraft_version.clone(),
     );
-    replacements.insert(
-        "game_directory".to_string(),
-        game_dir.to_string_lossy().to_string(),
-    );
-    replacements.insert(
-        "assets_root".to_string(),
-        assets_dir.to_string_lossy().to_string(),
-    );
+    replacements.insert("game_directory".to_string(), to_short_path(&game_dir));
+    replacements.insert("assets_root".to_string(), to_short_path(&assets_dir));
     let asset_index_id = version_info
         .asset_index
         .as_ref()
@@ -162,15 +158,13 @@ pub async fn launch_instance(
     replacements.insert("version_type".to_string(), "release".to_string());
     // Old MC versions (1.7.x) need user_properties as empty JSON object
     replacements.insert("user_properties".to_string(), "{}".to_string());
-    replacements.insert(
-        "natives_directory".to_string(),
-        natives_dir.to_string_lossy().to_string(),
-    );
+    // On Windows, use 8.3 short paths to avoid command line length limits
+    replacements.insert("natives_directory".to_string(), to_short_path(&natives_dir));
     // NeoForge/Forge need library_directory for their mod loader
     let library_directory = game_dir.join("libraries");
     replacements.insert(
         "library_directory".to_string(),
-        library_directory.to_string_lossy().to_string(),
+        to_short_path(&library_directory),
     );
     replacements.insert("launcher_name".to_string(), "ETLauncher".to_string());
     replacements.insert("launcher_version".to_string(), "0.1.0".to_string());
@@ -187,9 +181,10 @@ pub async fn launch_instance(
     replacements.insert("auth_xuid".to_string(), String::new()); // Xbox User ID - not critical for gameplay
 
     // Build JVM arguments
+    // On Windows, use 8.3 short paths to avoid command line length limits
     let mut jvm_args = vec![format!(
         "-Djava.library.path={}",
-        natives_dir.to_string_lossy()
+        to_short_path(&natives_dir)
     )];
 
     // Add version-specific JVM args
@@ -240,6 +235,7 @@ pub async fn launch_instance(
 
         // Build legacyClassPath from all classpath entries excluding module path artifacts
         // Use a set to deduplicate entries
+        // On Windows, use 8.3 short paths to avoid command line length limits
         let mut seen_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
         let legacy_classpath: Vec<String> = classpath
             .iter()
@@ -254,7 +250,7 @@ pub async fn launch_instance(
                     true
                 }
             })
-            .map(|p| p.to_string_lossy().to_string())
+            .map(|p| to_short_path(p))
             .filter(|path| seen_paths.insert(path.clone())) // Deduplicate
             .collect();
 

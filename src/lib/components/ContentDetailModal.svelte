@@ -134,6 +134,7 @@
 >
 	<div
 		class="bg-card border-border flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border-2 shadow-2xl"
+		data-modal-content
 	>
 		<!-- Header -->
 		<div class="border-border flex-shrink-0 border-b p-5">
