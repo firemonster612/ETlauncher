@@ -63,6 +63,10 @@ pub fn run() {
             commands::settings::get_default_instances_path,
             commands::settings::clear_api_caches,
             commands::settings::get_system_theme,
+            commands::settings::copy_background_file,
+            commands::settings::delete_background_file,
+            commands::settings::get_background_path,
+            commands::settings::get_background_data,
             // Auth commands
             commands::auth::start_device_auth,
             commands::auth::poll_device_auth,

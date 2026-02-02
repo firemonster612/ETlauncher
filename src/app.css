@@ -18,6 +18,12 @@
 	--accent-hue: 172;
 	--accent-chroma: 0.18;
 
+	/* Background customization - set by JavaScript */
+	--app-background-type: none;
+	--app-background-color: transparent;
+	--app-background-blur: 0px;
+	--app-ui-opacity: 1;
+
 	/* Light mode colors */
 	--background: oklch(0.97 0.01 285);
 	--foreground: oklch(0.15 0.01 285);
@@ -155,6 +161,105 @@
 		image-rendering: pixelated;
 	}
 
+	/* Make body and containers semi-transparent when custom background is active */
+	/* Uses --app-ui-opacity (0-1) to control transparency level */
+	/* At 100% opacity, UI is fully opaque; at lower values, background shows through */
+	/* Some elements have minimum opacity floors for readability */
+	html.has-custom-background body {
+		background: transparent !important;
+	}
+
+	/* Sidebar - follows user opacity */
+	html.has-custom-background [data-sidebar="sidebar"],
+	html.has-custom-background [data-slot="sidebar-container"] {
+		background: color-mix(
+			in oklch,
+			var(--sidebar) calc(var(--app-ui-opacity) * 100%),
+			transparent
+		) !important;
+	}
+
+	/* Titlebar - minimum 80% for window controls visibility */
+	html.has-custom-background .bg-sidebar {
+		background: color-mix(
+			in oklch,
+			var(--sidebar) calc(max(0.8, var(--app-ui-opacity)) * 100%),
+			transparent
+		) !important;
+	}
+
+	/* Cards - follows user opacity */
+	html.has-custom-background .bg-card,
+	html.has-custom-background [data-slot="card"] {
+		background: color-mix(
+			in oklch,
+			var(--card) calc(var(--app-ui-opacity) * 100%),
+			transparent
+		) !important;
+	}
+
+	html.has-custom-background .bg-background {
+		background: transparent !important;
+	}
+
+	/* Popovers & Dropdowns - minimum 85% for readability */
+	html.has-custom-background .bg-popover,
+	html.has-custom-background [data-slot="popover-content"],
+	html.has-custom-background [data-slot="select-content"] {
+		background: color-mix(
+			in oklch,
+			var(--popover) calc(max(0.85, var(--app-ui-opacity)) * 100%),
+			transparent
+		) !important;
+	}
+
+	/* Tooltips - minimum 90% for clear readability */
+	html.has-custom-background [data-slot="tooltip-content"] {
+		background: color-mix(
+			in oklch,
+			var(--popover) calc(max(0.9, var(--app-ui-opacity)) * 100%),
+			transparent
+		) !important;
+	}
+
+	/* Sheets/Modals - minimum 90% for critical content */
+	html.has-custom-background [data-slot="sheet-content"] {
+		background: color-mix(
+			in oklch,
+			var(--card) calc(max(0.9, var(--app-ui-opacity)) * 100%),
+			transparent
+		) !important;
+	}
+
+	/* Alert dialogs - minimum 90% for critical information */
+	html.has-custom-background [data-alert-dialog] {
+		background: color-mix(
+			in oklch,
+			var(--card) calc(max(0.9, var(--app-ui-opacity)) * 100%),
+			transparent
+		) !important;
+	}
+
+	/* Modal content - minimum 90% for focused content */
+	html.has-custom-background [data-modal-content] {
+		background: color-mix(
+			in oklch,
+			var(--card) calc(max(0.9, var(--app-ui-opacity)) * 100%),
+			transparent
+		) !important;
+	}
+
+	/* Input fields - minimum 85% for typing visibility */
+	html.has-custom-background input,
+	html.has-custom-background textarea,
+	html.has-custom-background select {
+		background: color-mix(
+			in oklch,
+			var(--input) calc(max(0.85, var(--app-ui-opacity)) * 100%),
+			transparent
+		) !important;
+	}
+
 	/* Font family overrides */
 	html.font-system body,
 	html.font-system h1,
@@ -229,13 +334,9 @@ button,
 	transition: all 0.1s ease-out;
 }
 
-/* Checkbox buttons need visible borders */
-button[data-checkbox-root] {
+/* Checkbox - override global button transparent border */
+button[data-checkbox] {
 	border-color: var(--muted-foreground);
-}
-
-button[data-checkbox-root][data-state="checked"] {
-	border-color: var(--primary);
 }
 
 /* Hover lift effect - disabled when .no-hover-lift is on html */
@@ -260,6 +361,40 @@ html.no-hover-lift [data-slot="button"]:hover {
 html.no-hover-lift [data-slot="button"]:active {
 	outline: 2px solid var(--primary);
 	outline-offset: 0px;
+}
+
+/* Modpack browser card buttons - make them obviously clickable when hover lift is disabled */
+html.no-hover-lift .rising-star-item:hover,
+html.no-hover-lift .featured-carousel-slide:hover,
+html.no-hover-lift .thumbnail-grid-2x2 button:hover,
+html.no-hover-lift .modpack-card:hover,
+html.no-hover-lift .modpack-list-item:hover {
+	outline: 2px solid color-mix(in oklch, var(--primary), transparent 50%);
+	outline-offset: -2px;
+}
+
+html.no-hover-lift .rising-star-item:active,
+html.no-hover-lift .featured-carousel-slide:active,
+html.no-hover-lift .thumbnail-grid-2x2 button:active,
+html.no-hover-lift .modpack-card:active,
+html.no-hover-lift .modpack-list-item:active {
+	outline: 2px solid var(--primary);
+	outline-offset: -2px;
+}
+
+/* Settings selector buttons - make them obviously clickable */
+section.bg-card button.flex-col {
+	cursor: pointer;
+}
+
+html.no-hover-lift section.bg-card button.flex-col:hover {
+	outline: 2px solid color-mix(in oklch, var(--primary), transparent 50%);
+	outline-offset: -2px;
+}
+
+html.no-hover-lift section.bg-card button.flex-col:active {
+	outline: 2px solid var(--primary);
+	outline-offset: -2px;
 }
 
 /* Primary buttons get a glow */
@@ -616,6 +751,10 @@ select:focus {
 	gap: 0.5rem;
 }
 
+.thumbnail-grid-2x2 button {
+	cursor: pointer;
+}
+
 /* Horizontal scroll container for recent section */
 .horizontal-scroll {
 	display: flex;
@@ -771,6 +910,7 @@ select:focus {
 	inset: 0;
 	opacity: 0;
 	transition: opacity 0.3s ease-in-out;
+	cursor: pointer;
 }
 
 .featured-carousel-slide.active {

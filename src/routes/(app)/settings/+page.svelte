@@ -22,7 +22,12 @@
 		Palette,
 		Download,
 		Loader2,
+		Image,
+		Video,
+		Film,
+		Ban,
 	} from '@lucide/svelte';
+	import { open } from '@tauri-apps/plugin-dialog';
 	import { getVersion } from '@tauri-apps/api/app';
 	import { updaterStore } from '$lib/stores/updater.svelte';
 	import * as settingsService from '$lib/services/settings';
@@ -33,6 +38,8 @@
 		Theme,
 		ColorPreset,
 		ThemeColors,
+		BackgroundType,
+		BackgroundConfig,
 	} from '$lib/types';
 
 	let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -58,6 +65,13 @@
 	// Sidebar state
 	let sidebarHue = $state(220);
 	let sidebarChroma = $state(0.05);
+
+	// Background state
+	let backgroundOpacity = $state(100);
+	let backgroundBlur = $state(0);
+	let backgroundHue = $state(200);
+	let backgroundSaturation = $state(0.5);
+	let useAccentColor = $state(true); // true = use accent, false = custom color
 
 	// App version
 	let appVersion = $state<string | null>(null);
@@ -87,8 +101,64 @@
 				sidebarHue = settings.customSidebarColor.hue ?? 220;
 				sidebarChroma = settings.customSidebarColor.chroma ?? 0.05;
 			}
+			// Sync background state
+			if (settings.background) {
+				backgroundOpacity = Math.round((settings.background.opacity ?? 1) * 100);
+				backgroundBlur = settings.background.blur ?? 0;
+				// Check if using accent color or custom
+				if (settings.background.color === 'accent') {
+					useAccentColor = true;
+				} else if (settings.background.color) {
+					useAccentColor = false;
+					const [h, s] = hexToHsl(settings.background.color);
+					backgroundHue = h;
+					backgroundSaturation = s;
+				}
+			}
 		}
 	});
+
+	// Helper: Convert hex to HSL (returns [hue, saturation])
+	function hexToHsl(hex: string): [number, number] {
+		const r = parseInt(hex.slice(1, 3), 16) / 255;
+		const g = parseInt(hex.slice(3, 5), 16) / 255;
+		const b = parseInt(hex.slice(5, 7), 16) / 255;
+		const max = Math.max(r, g, b);
+		const min = Math.min(r, g, b);
+		const l = (max + min) / 2;
+		let h = 0;
+		let s = 0;
+		if (max !== min) {
+			const d = max - min;
+			s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+			switch (max) {
+				case r:
+					h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+					break;
+				case g:
+					h = ((b - r) / d + 2) / 6;
+					break;
+				case b:
+					h = ((r - g) / d + 4) / 6;
+					break;
+			}
+		}
+		return [h * 360, s];
+	}
+
+	// Helper: Convert HSL to hex
+	function hslToHex(h: number, s: number, l: number = 0.5): string {
+		const hue = h / 360;
+		const a = s * Math.min(l, 1 - l);
+		const f = (n: number) => {
+			const k = (n + hue * 12) % 12;
+			const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+			return Math.round(255 * color)
+				.toString(16)
+				.padStart(2, '0');
+		};
+		return `#${f(0)}${f(8)}${f(4)}`;
+	}
 
 	onMount(async () => {
 		settingsStore.load();
@@ -230,6 +300,135 @@
 			primaryHue: customHue,
 			primaryChroma: customChroma,
 		});
+	}
+
+	// Background functions
+	async function handleBackgroundTypeChange(type: BackgroundType) {
+		if (type === 'none') {
+			// Delete old background file if there was one
+			const oldFilename = settings?.background?.filename;
+			if (oldFilename) {
+				try {
+					await settingsService.deleteBackgroundFile(oldFilename);
+				} catch (e) {
+					console.error('Failed to delete old background file:', e);
+				}
+			}
+			await saveSettings({ background: { type: 'none' } });
+			themeStore.applyBackground({ type: 'none' });
+		} else if (type === 'color') {
+			// Delete old background file if there was one
+			const oldFilename = settings?.background?.filename;
+			if (oldFilename) {
+				try {
+					await settingsService.deleteBackgroundFile(oldFilename);
+				} catch (e) {
+					console.error('Failed to delete old background file:', e);
+				}
+			}
+			const color = useAccentColor ? 'accent' : hslToHex(backgroundHue, backgroundSaturation);
+			const config: BackgroundConfig = {
+				type: 'color',
+				color,
+			};
+			await saveSettings({ background: config });
+			themeStore.applyBackground(config);
+		}
+	}
+
+	function applyBackgroundColorPreview() {
+		const color = useAccentColor ? 'accent' : hslToHex(backgroundHue, backgroundSaturation);
+		themeStore.applyBackground({ type: 'color', color });
+	}
+
+	async function handleBackgroundColorChange() {
+		const color = useAccentColor ? 'accent' : hslToHex(backgroundHue, backgroundSaturation);
+		const config: BackgroundConfig = {
+			type: 'color',
+			color,
+		};
+		await saveSettings({ background: config });
+		themeStore.applyBackground(config);
+	}
+
+	async function setBackgroundColorMode(useAccent: boolean) {
+		useAccentColor = useAccent;
+		await handleBackgroundColorChange();
+	}
+
+	async function selectBackgroundFile(type: 'image' | 'gif' | 'video') {
+		const filters =
+			type === 'image'
+				? [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+				: type === 'gif'
+					? [{ name: 'GIF', extensions: ['gif'] }]
+					: [{ name: 'Videos', extensions: ['mp4', 'webm', 'mov'] }];
+
+		const selected = await open({
+			multiple: false,
+			filters,
+		});
+
+		if (!selected) return;
+
+		// Delete old background file if there was one
+		const oldFilename = settings?.background?.filename;
+		if (oldFilename) {
+			try {
+				await settingsService.deleteBackgroundFile(oldFilename);
+			} catch (e) {
+				console.error('Failed to delete old background file:', e);
+			}
+		}
+
+		// Copy new file
+		const newFilename = await settingsService.copyBackgroundFile(selected);
+
+		const config: BackgroundConfig = {
+			type,
+			filename: newFilename,
+			opacity: backgroundOpacity / 100,
+			blur: backgroundBlur,
+		};
+		await saveSettings({ background: config });
+		await themeStore.applyBackground(config);
+	}
+
+	async function clearBackground() {
+		const oldFilename = settings?.background?.filename;
+		if (oldFilename) {
+			try {
+				await settingsService.deleteBackgroundFile(oldFilename);
+			} catch (e) {
+				console.error('Failed to delete background file:', e);
+			}
+		}
+		await saveSettings({ background: { type: 'none' } });
+		themeStore.applyBackground({ type: 'none' });
+	}
+
+	async function updateBackgroundOpacity(opacity: number) {
+		backgroundOpacity = opacity;
+		if (settings?.background?.type && settings.background.type !== 'none' && settings.background.type !== 'color') {
+			const config: BackgroundConfig = {
+				...settings.background,
+				opacity: opacity / 100,
+			};
+			await saveSettings({ background: config });
+			themeStore.applyBackground(config);
+		}
+	}
+
+	async function updateBackgroundBlur(blur: number) {
+		backgroundBlur = blur;
+		if (settings?.background?.type && settings.background.type !== 'none' && settings.background.type !== 'color') {
+			const config: BackgroundConfig = {
+				...settings.background,
+				blur,
+			};
+			await saveSettings({ background: config });
+			themeStore.applyBackground(config);
+		}
 	}
 </script>
 
@@ -489,6 +688,153 @@
 					</div>
 				{/if}
 				<p class="text-muted-foreground text-xs">Customize the sidebar and titlebar appearance</p>
+			</div>
+
+			<!-- Background -->
+			<div class="space-y-2">
+				<span class="text-sm">Background</span>
+				<div class="grid grid-cols-5 gap-2">
+					<button
+						class="flex flex-col items-center gap-1 border-2 p-3 transition-colors {(settings.background?.type ?? 'none') === 'none'
+							? 'border-primary bg-primary/10'
+							: 'border-border hover:border-primary/50'}"
+						onclick={() => handleBackgroundTypeChange('none')}
+					>
+						<Ban class="h-5 w-5" />
+						<span class="text-xs">None</span>
+					</button>
+					<button
+						class="flex flex-col items-center gap-1 border-2 p-3 transition-colors {settings.background?.type === 'color'
+							? 'border-primary bg-primary/10'
+							: 'border-border hover:border-primary/50'}"
+						onclick={() => handleBackgroundTypeChange('color')}
+					>
+						<Palette class="h-5 w-5" />
+						<span class="text-xs">Color</span>
+					</button>
+					<button
+						class="flex flex-col items-center gap-1 border-2 p-3 transition-colors {settings.background?.type === 'image'
+							? 'border-primary bg-primary/10'
+							: 'border-border hover:border-primary/50'}"
+						onclick={() => selectBackgroundFile('image')}
+					>
+						<Image class="h-5 w-5" />
+						<span class="text-xs">Image</span>
+					</button>
+					<button
+						class="flex flex-col items-center gap-1 border-2 p-3 transition-colors {settings.background?.type === 'gif'
+							? 'border-primary bg-primary/10'
+							: 'border-border hover:border-primary/50'}"
+						onclick={() => selectBackgroundFile('gif')}
+					>
+						<Film class="h-5 w-5" />
+						<span class="text-xs">GIF</span>
+					</button>
+					<button
+						class="flex flex-col items-center gap-1 border-2 p-3 transition-colors {settings.background?.type === 'video'
+							? 'border-primary bg-primary/10'
+							: 'border-border hover:border-primary/50'}"
+						onclick={() => selectBackgroundFile('video')}
+					>
+						<Video class="h-5 w-5" />
+						<span class="text-xs">Video</span>
+					</button>
+				</div>
+
+				<!-- Color options for color type -->
+				{#if settings.background?.type === 'color'}
+					<div class="bg-muted/50 space-y-3 p-3">
+						<div class="flex gap-2">
+							<button
+								class="flex-1 border-2 p-2 text-xs transition-colors {useAccentColor
+									? 'border-primary bg-primary/10'
+									: 'border-border hover:border-primary/50'}"
+								onclick={() => setBackgroundColorMode(true)}
+							>
+								Accent Color
+							</button>
+							<button
+								class="flex-1 border-2 p-2 text-xs transition-colors {!useAccentColor
+									? 'border-primary bg-primary/10'
+									: 'border-border hover:border-primary/50'}"
+								onclick={() => setBackgroundColorMode(false)}
+							>
+								Custom Color
+							</button>
+						</div>
+						{#if !useAccentColor}
+							<div class="flex items-center gap-3">
+								<span class="text-sm">Color:</span>
+								<ColorPicker
+									hue={backgroundHue}
+									saturation={backgroundSaturation}
+									oninput={(h, s) => {
+										backgroundHue = h;
+										backgroundSaturation = s;
+										applyBackgroundColorPreview();
+									}}
+									onchange={() => handleBackgroundColorChange()}
+								/>
+							</div>
+						{/if}
+					</div>
+				{/if}
+
+				<!-- Controls for media types -->
+				{#if settings.background?.type === 'image' || settings.background?.type === 'gif' || settings.background?.type === 'video'}
+					<div class="bg-muted/50 space-y-3 p-3">
+						<!-- Current file indicator -->
+						{#if settings.background.filename}
+							<div class="flex items-center justify-between">
+								<span class="text-muted-foreground text-xs truncate max-w-[200px]">
+									{settings.background.filename}
+								</span>
+								<Button variant="ghost" size="sm" onclick={clearBackground}>
+									<Trash2 class="mr-1 h-3 w-3" />
+									Clear
+								</Button>
+							</div>
+						{/if}
+
+						<!-- UI Opacity slider -->
+						<div class="space-y-1">
+							<div class="flex justify-between text-sm">
+								<span>UI Opacity</span>
+								<span class="text-primary">{backgroundOpacity}%</span>
+							</div>
+							<Slider
+								min={0}
+								max={100}
+								step={5}
+								value={backgroundOpacity}
+								onValueChange={(value) => {
+									backgroundOpacity = value;
+								}}
+								onValueCommit={(value) => updateBackgroundOpacity(value)}
+							/>
+						</div>
+
+						<!-- Blur slider -->
+						<div class="space-y-1">
+							<div class="flex justify-between text-sm">
+								<span>Blur</span>
+								<span class="text-primary">{backgroundBlur}px</span>
+							</div>
+							<Slider
+								min={0}
+								max={20}
+								step={1}
+								value={backgroundBlur}
+								onValueChange={(value) => {
+									backgroundBlur = value;
+								}}
+								onValueCommit={(value) => updateBackgroundBlur(value)}
+							/>
+						</div>
+					</div>
+				{/if}
+
+				<p class="text-muted-foreground text-xs">Set a custom background for the launcher</p>
 			</div>
 
 			<!-- Hover Lift Toggle -->

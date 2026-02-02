@@ -36,6 +36,8 @@
 	import { getCategoriesForContext } from '$lib/constants/categories';
 	import ScreenshotLightbox from '$lib/components/ScreenshotLightbox.svelte';
 	import DescriptionModal from '$lib/components/DescriptionModal.svelte';
+	import BackgroundLayer from '$lib/components/BackgroundLayer.svelte';
+	import { settingsStore } from '$lib/stores/settings.svelte';
 	import type {
 		Content,
 		ContentDownloadProgressWithId,
@@ -63,6 +65,11 @@
 
 	// Track if any content was installed during this session
 	let contentWasInstalled = $state(false);
+
+	// Check if custom background is active
+	const hasCustomBackground = $derived(
+		settingsStore.settings?.background?.type && settingsStore.settings.background.type !== 'none'
+	);
 
 	let searchInput = $state('');
 	let selectedContentDetail = $state<Content | null>(null);
@@ -1200,17 +1207,28 @@
 	}
 </script>
 
-<!-- Backdrop -->
-<button
-	type="button"
-	class="fixed inset-x-0 top-[var(--titlebar-height)] z-[55] h-[calc(100vh-var(--titlebar-height))] bg-black/50"
-	onclick={() => onClose(contentWasInstalled)}
-	aria-label={`Close content browser for ${instanceName}`}
-></button>
+<!-- Backdrop with custom background support -->
+<div
+	class="fixed inset-x-0 top-[var(--titlebar-height)] z-[55] h-[calc(100vh-var(--titlebar-height))]"
+	style="overflow: clip;"
+	data-fullscreen-backdrop
+>
+	{#if hasCustomBackground}
+		<BackgroundLayer absolute />
+	{:else}
+		<div class="absolute inset-0 bg-black/50"></div>
+	{/if}
+	<button
+		class="absolute inset-0"
+		onclick={() => onClose(contentWasInstalled)}
+		aria-label={`Close content browser for ${instanceName}`}
+	></button>
+</div>
 
 <!-- Panel -->
 <div
 	class="bg-card border-border fixed inset-x-0 top-[var(--titlebar-height)] z-[55] flex h-[calc(100vh-var(--titlebar-height))] w-full max-w-none flex-col overflow-hidden border-l-2 shadow-2xl"
+	data-modal-content
 >
 	<!-- Close Button -->
 	<button
@@ -2181,6 +2199,7 @@
 	>
 		<div
 			class="bg-card border-border flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border-2 shadow-2xl"
+			data-modal-content
 			onclick={(e) => e.stopPropagation()}
 			onkeydown={(e) => e.stopPropagation()}
 			role="document"

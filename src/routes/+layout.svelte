@@ -5,6 +5,7 @@
 	import Titlebar from '$lib/components/layout/Titlebar.svelte';
 	import OnboardingWizard from '$lib/components/OnboardingWizard.svelte';
 	import AlertDialog from '$lib/components/AlertDialog.svelte';
+	import BackgroundLayer from '$lib/components/BackgroundLayer.svelte';
 	import { onboardingStore } from '$lib/stores/onboarding.svelte';
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { accountsStore } from '$lib/stores/accounts.svelte';
@@ -36,7 +37,9 @@
 	});
 </script>
 
-<div class="flex h-screen flex-col overflow-hidden">
+<BackgroundLayer />
+
+<div class="flex h-screen flex-col overflow-hidden relative z-10">
 	<Titlebar />
 	<SidebarProvider>
 		<div class="flex flex-1 overflow-hidden">

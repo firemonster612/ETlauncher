@@ -31,6 +31,7 @@ export async function updateSettings(updates: Partial<AppSettings>): Promise<App
 		resourcePool: updates.resourcePool,
 		autoUpdate: updates.autoUpdate,
 		includePreReleases: updates.includePreReleases,
+		background: updates.background,
 	};
 
 	return invoke<AppSettings>('update_settings', { updates: request });
@@ -113,4 +114,28 @@ export interface MigrateAllResult {
 /** Migrate all instances to use the resource pool */
 export async function migrateAllInstancesToPool(): Promise<MigrateAllResult> {
 	return invoke<MigrateAllResult>('migrate_all_instances_to_pool');
+}
+
+// =============================================================================
+// Background Functions
+// =============================================================================
+
+/** Copy a background file to the backgrounds directory, returns new filename */
+export async function copyBackgroundFile(sourcePath: string): Promise<string> {
+	return invoke<string>('copy_background_file', { sourcePath });
+}
+
+/** Delete a background file from the backgrounds directory */
+export async function deleteBackgroundFile(filename: string): Promise<void> {
+	return invoke<void>('delete_background_file', { filename });
+}
+
+/** Get the full path to a background file */
+export async function getBackgroundPath(filename: string): Promise<string> {
+	return invoke<string>('get_background_path', { filename });
+}
+
+/** Get background file data as base64 */
+export async function getBackgroundData(filename: string): Promise<string> {
+	return invoke<string>('get_background_data', { filename });
 }
