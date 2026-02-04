@@ -45,7 +45,7 @@ jobs:
 
       - name: Commit fixes via GitHub API
         if: env.LOCKFILE_CHANGED == 'true' || env.RUST_FORMATTED == 'true'
-        uses: planetscale/ghcommit-action@v0.2.0
+        uses: planetscale/ghcommit-action@v0.2.20
         with:
           commit_message: "chore: auto-fix lockfile and formatting"
           repo: ${{ github.repository }}
