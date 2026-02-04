@@ -22,6 +22,7 @@ pub mod modrinth_service;
 pub mod optifine_service;
 pub mod resource_pool_service;
 pub mod settings_service;
+pub mod skin_service;
 pub mod technic_service;
 pub mod update_execution_service;
 pub mod update_service;

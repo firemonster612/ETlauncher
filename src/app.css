@@ -331,7 +331,12 @@ button,
 	text-transform: uppercase;
 	letter-spacing: 0.05em;
 	border: 2px solid transparent;
-	transition: all 0.1s ease-out;
+	/* Only transition specific properties - 'all' causes render artifacts when button content changes */
+	transition:
+		transform 0.1s ease-out,
+		border-color 0.1s ease-out,
+		box-shadow 0.1s ease-out,
+		background-color 0.1s ease-out;
 }
 
 /* Checkbox - override global button transparent border */

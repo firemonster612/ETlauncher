@@ -1,0 +1,516 @@
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import { Button } from '$lib/ui/button';
+	import { X, Loader2, Check, FolderOpen } from '@lucide/svelte';
+	import SkinViewer3D from './SkinViewer3D.svelte';
+	import SkinUploader from './SkinUploader.svelte';
+	import CapeSelector from './CapeSelector.svelte';
+	import SkinLibraryModal from './SkinLibraryModal.svelte';
+	
+	import { getMinecraftProfile, uploadSkin, setCape, hideCape } from '$lib/services/account';
+	import { getSkinLibrary, getSkinData, skinDataToUrl, applySkinFromLibrary, saveSkinToLibrary } from '$lib/services/skin';
+	import type { MinecraftAccount, MinecraftProfile, CapeInfo, SavedSkin } from '$lib/types';
+
+	// Default skin URLs (official Minecraft texture URLs from Mojang)
+	const STEVE_SKIN_URL = 'https://textures.minecraft.net/texture/1a4af718455d4aab528e7a61f86fa25e6a369d1768dcb13f7df319a713eb810b';
+	const ALEX_SKIN_URL = 'https://textures.minecraft.net/texture/83cee5ca6afcdb171285aa00e8049c297b2dbeba0efb8ff970a5677a1b644032';
+
+	type DefaultSkinType = 'steve' | 'alex';
+
+	interface Props {
+		account: MinecraftAccount;
+		onClose: () => void;
+		onProfileUpdated?: (profile: MinecraftProfile) => void;
+	}
+
+	let { account, onClose, onProfileUpdated }: Props = $props();
+
+	// State
+	let isLoading = $state(true);
+	let isSaving = $state(false);
+	let error = $state<string | null>(null);
+	let showLibraryModal = $state(false);
+
+	// Profile data
+	let profile = $state<MinecraftProfile | null>(null);
+	let savedSkins = $state<SavedSkin[]>([]);
+
+	// Cache for library skin preview URLs
+	let skinUrls = $state<Record<string, string>>({});
+
+	// Current selection - will be populated from profile data in loadData
+	let currentSkinUrl = $state<string | undefined>(undefined);
+	let currentCapeUrl = $state<string | undefined>(undefined);
+	let currentSlim = $state(false);
+
+	// Selected items (for preview before applying)
+	let selectedSkinId = $state<string | null>(null); // For library skins
+	let selectedDefaultSkin = $state<DefaultSkinType | null>(null); // For default skins (current/steve/alex)
+	let selectedSkinData = $state<Uint8Array | null>(null);
+	let selectedSkinVariant = $state<'classic' | 'slim'>('classic');
+	let selectedCapeId = $state<string | null | undefined>(undefined); // undefined = not changed, null = no cape
+	let previewSkinUrl = $state<string | undefined>(undefined);
+	// Use empty string to explicitly mean "no cape", undefined means "not changed"
+	let previewCapeUrl = $state<string | undefined>(undefined);
+
+	// Computed preview URLs
+	const displaySkinUrl = $derived(previewSkinUrl || currentSkinUrl);
+	// Empty string means explicitly no cape, undefined means use current
+	const displayCapeUrl = $derived(
+		previewCapeUrl !== undefined
+			? (previewCapeUrl === '' ? undefined : previewCapeUrl)
+			: currentCapeUrl
+	);
+	const displaySlim = $derived(
+		selectedDefaultSkin === 'alex' ? true :
+		selectedDefaultSkin === 'steve' ? false :
+		selectedSkinData ? selectedSkinVariant === 'slim' : currentSlim
+	);
+
+	// Check if there are pending changes
+	const hasChanges = $derived(selectedSkinData !== null || selectedDefaultSkin !== null || selectedCapeId !== undefined);
+
+	onMount(async () => {
+		await loadData();
+	});
+
+	async function loadData() {
+		isLoading = true;
+		error = null;
+
+		try {
+			// Load profile and saved skins in parallel
+			const [profileData, skinsData] = await Promise.all([
+				getMinecraftProfile(account.id),
+				getSkinLibrary(),
+			]);
+
+			profile = profileData;
+			savedSkins = skinsData;
+
+			// Get current skin variant
+			const activeSkin = profile.skins.find((s) => s.state === 'ACTIVE');
+			if (activeSkin) {
+				currentSkinUrl = activeSkin.url;
+				currentSlim = activeSkin.variant === 'slim';
+			}
+
+			// Get active cape
+			const activeCape = profile.capes.find((c) => c.state === 'ACTIVE');
+			if (activeCape) {
+				currentCapeUrl = activeCape.url;
+			} else {
+				currentCapeUrl = undefined;
+			}
+
+			// Auto-save current skin to library if the library is empty (first-time user experience)
+			if (savedSkins.length === 0 && activeSkin?.url) {
+				try {
+					const skinData = await fetchSkinFromUrl(activeSkin.url);
+					const variant = activeSkin.variant === 'slim' ? 'slim' : 'classic';
+					const skin = await saveSkinToLibrary('Current Skin', variant, skinData);
+					savedSkins = [skin];
+				} catch (err) {
+					console.error('Failed to auto-save current skin to library:', err);
+				}
+			}
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to load profile data';
+		} finally {
+			isLoading = false;
+		}
+	}
+
+	function handleSkinImported(skin: SavedSkin, previewUrl: string) {
+		// Add to saved skins list
+		savedSkins = [skin, ...savedSkins];
+
+		// Select the newly imported skin (clear default selection)
+		selectedSkinId = skin.id;
+		selectedDefaultSkin = null;
+		selectedSkinVariant = skin.variant as 'classic' | 'slim';
+		previewSkinUrl = previewUrl;
+
+		// Load the skin data for uploading
+		getSkinData(skin.id).then((data) => {
+			selectedSkinData = data;
+		});
+	}
+
+	function handlePreviewSkin(data: Uint8Array, variant: 'classic' | 'slim') {
+		selectedSkinData = data;
+		selectedSkinVariant = variant;
+		previewSkinUrl = skinDataToUrl(data);
+	}
+
+	async function handleSelectDefaultSkin(type: DefaultSkinType) {
+		selectedDefaultSkin = type;
+		selectedSkinId = null; // Clear library selection
+		selectedSkinData = null; // Will be loaded when applying
+
+		// Set preview URL and variant based on type
+		if (type === 'steve') {
+			previewSkinUrl = STEVE_SKIN_URL;
+			selectedSkinVariant = 'classic';
+		} else if (type === 'alex') {
+			previewSkinUrl = ALEX_SKIN_URL;
+			selectedSkinVariant = 'slim';
+		}
+	}
+
+	// Load skin preview URL for library skins
+	async function loadSkinUrl(skin: SavedSkin) {
+		if (skinUrls[skin.id]) return;
+
+		try {
+			const data = await getSkinData(skin.id);
+			const url = skinDataToUrl(data);
+			skinUrls = { ...skinUrls, [skin.id]: url };
+		} catch (err) {
+			console.error('Failed to load skin preview:', err);
+		}
+	}
+
+	// Load all skin URLs when savedSkins changes
+	$effect(() => {
+		savedSkins.forEach(loadSkinUrl);
+	});
+
+	async function handleSelectLibrarySkin(skin: SavedSkin) {
+		selectedSkinId = skin.id;
+		selectedDefaultSkin = null; // Clear default selection
+		selectedSkinVariant = skin.variant as 'classic' | 'slim';
+
+		// Use cached URL or load it
+		let url = skinUrls[skin.id];
+		if (!url) {
+			const data = await getSkinData(skin.id);
+			url = skinDataToUrl(data);
+			skinUrls = { ...skinUrls, [skin.id]: url };
+		}
+		previewSkinUrl = url;
+
+		try {
+			selectedSkinData = await getSkinData(skin.id);
+		} catch (err) {
+			console.error('Failed to load skin data:', err);
+		}
+	}
+
+	function handleLibraryModalSelect(skin: SavedSkin, data: Uint8Array, url: string) {
+		selectedSkinId = skin.id;
+		selectedDefaultSkin = null;
+		selectedSkinVariant = skin.variant as 'classic' | 'slim';
+		selectedSkinData = data;
+		previewSkinUrl = url;
+		skinUrls = { ...skinUrls, [skin.id]: url };
+	}
+
+	function handleLibraryModalDelete(skinId: string) {
+		savedSkins = savedSkins.filter(s => s.id !== skinId);
+		if (selectedSkinId === skinId) {
+			selectedSkinId = null;
+			selectedSkinData = null;
+			previewSkinUrl = undefined;
+		}
+	}
+
+	async function fetchSkinFromUrl(url: string): Promise<Uint8Array> {
+		const response = await fetch(url);
+		if (!response.ok) {
+			throw new Error(`Failed to fetch skin: ${response.statusText}`);
+		}
+		const buffer = await response.arrayBuffer();
+		return new Uint8Array(buffer);
+	}
+
+	function handleSelectCape(cape: CapeInfo | null) {
+		if (cape === null) {
+			selectedCapeId = null;
+			previewCapeUrl = ''; // Empty string = explicitly no cape
+		} else {
+			selectedCapeId = cape.id;
+			previewCapeUrl = cape.url;
+		}
+	}
+
+	async function applyChanges() {
+		if (!hasChanges) return;
+
+		isSaving = true;
+		error = null;
+
+		try {
+			let updatedProfile: MinecraftProfile | null = null;
+
+			// Apply skin change
+			if (selectedDefaultSkin) {
+				// Fetch and upload default skin
+				let skinUrl: string;
+				let variant: 'classic' | 'slim';
+
+				if (selectedDefaultSkin === 'steve') {
+					skinUrl = STEVE_SKIN_URL;
+					variant = 'classic';
+				} else {
+					skinUrl = ALEX_SKIN_URL;
+					variant = 'slim';
+				}
+
+				const skinData = await fetchSkinFromUrl(skinUrl);
+				updatedProfile = await uploadSkin(account.id, variant, skinData);
+			} else if (selectedSkinData) {
+				if (selectedSkinId) {
+					// Apply from library
+					updatedProfile = await applySkinFromLibrary(account.id, selectedSkinId);
+				} else {
+					// Direct upload
+					updatedProfile = await uploadSkin(account.id, selectedSkinVariant, selectedSkinData);
+				}
+			}
+
+			// Apply cape change
+			if (selectedCapeId !== undefined) {
+				if (selectedCapeId === null) {
+					updatedProfile = await hideCape(account.id);
+				} else {
+					updatedProfile = await setCape(account.id, selectedCapeId);
+				}
+			}
+
+			// Notify parent of profile update
+			if (updatedProfile) {
+				onProfileUpdated?.(updatedProfile);
+			}
+
+			onClose();
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to apply changes';
+		} finally {
+			isSaving = false;
+		}
+	}
+
+	function cancel() {
+		// Clean up any preview URLs
+		if (previewSkinUrl && previewSkinUrl.startsWith('blob:')) {
+			URL.revokeObjectURL(previewSkinUrl);
+		}
+		onClose();
+	}
+
+	// Get the active cape ID for the selector
+	const activeCapeId = $derived(() => {
+		if (selectedCapeId !== undefined) return selectedCapeId;
+		const activeCape = profile?.capes.find((c) => c.state === 'ACTIVE');
+		return activeCape?.id || null;
+	});
+</script>
+
+<!-- Modal backdrop -->
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+	<div class="bg-card border-border mx-4 flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden border-2">
+		<!-- Header -->
+		<div class="border-border flex items-center justify-between border-b-2 p-4">
+			<h2 class="text-lg font-bold">Manage Skin & Cape</h2>
+			<Button variant="ghost" size="icon" onclick={cancel}>
+				<X class="h-4 w-4" />
+			</Button>
+		</div>
+
+		<!-- Content -->
+		<div class="flex-1 overflow-y-auto overflow-x-hidden p-4">
+			{#if isLoading}
+				<div class="flex h-64 items-center justify-center">
+					<Loader2 class="text-muted-foreground h-8 w-8 animate-spin" />
+				</div>
+			{:else if error}
+				<div class="bg-destructive/10 border-destructive text-destructive border-2 p-4 text-sm">
+					{error}
+					<button class="ml-2 underline" onclick={loadData}>Retry</button>
+				</div>
+			{:else}
+				<div class="flex gap-6">
+					<!-- 3D Preview -->
+					<div class="flex flex-col items-center gap-2">
+						<div class="border-border bg-background border-2">
+							<SkinViewer3D
+								skinUrl={displaySkinUrl}
+								capeUrl={displayCapeUrl || undefined}
+								slim={displaySlim}
+								width={200}
+								height={300}
+								animation="idle"
+							/>
+						</div>
+						<p class="text-muted-foreground text-xs">Drag to rotate</p>
+					</div>
+
+					<!-- Right panel -->
+					<div class="min-w-0 flex-1 space-y-6 overflow-y-auto overflow-x-hidden">
+						<!-- Default Skins -->
+						<div class="space-y-2">
+							<h3 class="text-sm font-medium">Default Skins</h3>
+							<div class="grid grid-cols-2 gap-3">
+								<!-- Steve -->
+								<button
+									type="button"
+									class="group relative flex flex-col items-center border-2 p-1 transition-colors {selectedDefaultSkin === 'steve'
+										? 'border-primary bg-primary/10'
+										: 'border-border hover:border-primary/50'}"
+									onclick={() => handleSelectDefaultSkin('steve')}
+									title="Steve (Classic)"
+								>
+									<div class="pointer-events-none">
+										<SkinViewer3D
+											skinUrl={STEVE_SKIN_URL}
+											slim={false}
+											width={70}
+											height={100}
+											animation="none"
+										/>
+									</div>
+									{#if selectedDefaultSkin === 'steve'}
+										<div class="bg-primary absolute -top-1 -right-1 rounded-full p-0.5">
+											<Check class="text-primary-foreground h-3 w-3" />
+										</div>
+									{/if}
+									<span class="mt-1 text-xs">Steve</span>
+								</button>
+
+								<!-- Alex -->
+								<button
+									type="button"
+									class="group relative flex flex-col items-center border-2 p-1 transition-colors {selectedDefaultSkin === 'alex'
+										? 'border-primary bg-primary/10'
+										: 'border-border hover:border-primary/50'}"
+									onclick={() => handleSelectDefaultSkin('alex')}
+									title="Alex (Slim)"
+								>
+									<div class="pointer-events-none">
+										<SkinViewer3D
+											skinUrl={ALEX_SKIN_URL}
+											slim={true}
+											width={70}
+											height={100}
+											animation="none"
+										/>
+									</div>
+									{#if selectedDefaultSkin === 'alex'}
+										<div class="bg-primary absolute -top-1 -right-1 rounded-full p-0.5">
+											<Check class="text-primary-foreground h-3 w-3" />
+										</div>
+									{/if}
+									<span class="mt-1 text-xs">Alex</span>
+								</button>
+							</div>
+						</div>
+
+						<!-- Skin Library -->
+						<div class="space-y-2">
+							<div class="flex items-center justify-between">
+								<h3 class="text-sm font-medium">Skin Library</h3>
+								{#if savedSkins.length > 0}
+									<span class="text-muted-foreground text-xs">{savedSkins.length} skin{savedSkins.length !== 1 ? 's' : ''}</span>
+								{/if}
+							</div>
+							
+							{#if savedSkins.length === 0}
+								<p class="text-muted-foreground py-2 text-center text-sm">
+									No saved skins. Import a skin below to add it to your library.
+								</p>
+							{:else}
+								<!-- Show up to 4 recent skins as quick picks -->
+								<div class="grid grid-cols-4 gap-2">
+									{#each savedSkins.slice(0, 4) as skin (skin.id)}
+										{@const isSelected = selectedSkinId === skin.id && !selectedDefaultSkin}
+										{@const previewUrl = skinUrls[skin.id]}
+										<button
+											type="button"
+											class="group relative flex flex-col items-center border-2 p-1 transition-colors {isSelected
+												? 'border-primary bg-primary/10'
+												: 'border-border hover:border-primary/50'}"
+											onclick={() => handleSelectLibrarySkin(skin)}
+											title="{skin.name} ({skin.variant})"
+										>
+											{#if previewUrl}
+												<div class="pointer-events-none">
+													<SkinViewer3D
+														skinUrl={previewUrl}
+														slim={skin.variant === 'slim'}
+														width={50}
+														height={70}
+														animation="none"
+													/>
+												</div>
+											{:else}
+												<div class="bg-muted h-[70px] w-[50px] animate-pulse"></div>
+											{/if}
+											{#if isSelected}
+												<div class="bg-primary absolute -top-1 -right-1 rounded-full p-0.5">
+													<Check class="text-primary-foreground h-3 w-3" />
+												</div>
+											{/if}
+											<span class="mt-1 w-full truncate text-center text-[10px]">{skin.name}</span>
+										</button>
+									{/each}
+								</div>
+								
+								<!-- Browse Library button -->
+								<Button 
+									variant="outline" 
+									class="w-full" 
+									onclick={() => showLibraryModal = true}
+								>
+									<FolderOpen class="mr-2 h-4 w-4" />
+									Browse Library ({savedSkins.length})
+								</Button>
+							{/if}
+						</div>
+
+						<!-- Import new skin -->
+						<SkinUploader
+							onSkinImported={handleSkinImported}
+							onPreviewSkin={handlePreviewSkin}
+						/>
+
+						<!-- Cape Selector -->
+						{#if profile}
+							<CapeSelector
+								capes={profile.capes}
+								selectedCapeId={activeCapeId()}
+								onSelect={handleSelectCape}
+							/>
+						{/if}
+					</div>
+				</div>
+			{/if}
+		</div>
+
+		<!-- Footer -->
+		<div class="border-border flex justify-end gap-2 border-t-2 p-4">
+			<Button variant="outline" onclick={cancel} disabled={isSaving}>
+				Cancel
+			</Button>
+			<Button onclick={applyChanges} disabled={!hasChanges || isSaving} class="min-w-[120px]">
+				{#if isSaving}
+					<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+					Saving...
+				{:else}
+					Apply Changes
+				{/if}
+			</Button>
+		</div>
+	</div>
+</div>
+
+<!-- Skin Library Modal -->
+{#if showLibraryModal}
+	<SkinLibraryModal
+		skins={savedSkins}
+		selectedSkinId={selectedSkinId}
+		onSelect={handleLibraryModalSelect}
+		onDelete={handleLibraryModalDelete}
+		onClose={() => showLibraryModal = false}
+	/>
+{/if}

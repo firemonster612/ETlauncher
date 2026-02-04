@@ -14,12 +14,14 @@
 	import { Button } from '$lib/ui/button';
 	import { parseIconPath, getIconUrl } from '$lib/utils/icons';
 	import { getAvatarUrl } from '$lib/services/account';
+	import SkinFaceThumbnail from '$lib/components/skin/SkinFaceThumbnail.svelte';
 	import type { Instance, LoaderType } from '$lib/types';
 
 	interface Props {
 		instance: Instance;
 		status: string | null;
 		activeAccountName: string | null;
+		activeAccountSkinUrl: string | null;
 		totalPlayTime: number;
 		hasUpdate?: boolean;
 		onLaunch: () => void;
@@ -33,6 +35,7 @@
 		instance,
 		status,
 		activeAccountName,
+		activeAccountSkinUrl,
 		totalPlayTime,
 		hasUpdate = false,
 		onLaunch,
@@ -179,11 +182,19 @@
 					{/if}
 					{#if activeAccountName}
 						<span class="flex items-center gap-1.5">
-							<img
-								src={getAvatarUrl(activeAccountName, 16)}
-								alt=""
-								class="pixelated h-4 w-4 rounded"
-							/>
+							{#if activeAccountSkinUrl}
+								<SkinFaceThumbnail
+									url={activeAccountSkinUrl}
+									alt={activeAccountName}
+									class="h-4 w-4 rounded"
+								/>
+							{:else}
+								<img
+									src={getAvatarUrl(activeAccountName, 16)}
+									alt=""
+									class="pixelated h-4 w-4 rounded"
+								/>
+							{/if}
 							{activeAccountName}
 						</span>
 					{/if}

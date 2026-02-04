@@ -40,11 +40,7 @@ pub async fn search_modpacks(
     }
 
     // If no platform specified, search all platforms and aggregate results
-    let result = if params.platform.is_none() {
-        search_all_platforms(&state, &params).await?
-    } else {
-        let platform = params.platform.unwrap();
-
+    let result = if let Some(platform) = params.platform {
         match platform {
             ModpackPlatform::Modrinth => {
                 modrinth_service::search_modpacks(&state.http_client, &params)
@@ -80,6 +76,8 @@ pub async fn search_modpacks(
                 page_size: params.page_size.unwrap_or(20),
             },
         }
+    } else {
+        search_all_platforms(&state, &params).await?
     };
 
     println!(
