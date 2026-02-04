@@ -68,6 +68,7 @@
 	// Derived values
 	const activeAccountId = $derived(accountsStore.activeAccount?.id ?? null);
 	const activeAccountName = $derived(accountsStore.activeAccount?.username ?? null);
+	const activeAccountSkinUrl = $derived(accountsStore.activeAccount?.skinUrl ?? null);
 
 	const supportsQuickPlay = $derived(
 		instance ? checkQuickPlaySupport(instance.minecraftVersion) : false
@@ -277,6 +278,7 @@
 			{instance}
 			{status}
 			{activeAccountName}
+			{activeAccountSkinUrl}
 			totalPlayTime={detail?.totalPlayTime ?? 0}
 			{hasUpdate}
 			onLaunch={() => onLaunch(instance.id)}

@@ -12,4 +12,5 @@ pub mod modpack;
 pub mod optifine;
 pub mod resource_pool;
 pub mod settings;
+pub mod skin;
 pub mod update;

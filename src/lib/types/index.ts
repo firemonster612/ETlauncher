@@ -9,6 +9,7 @@ export * from './loader';
 export * from './minecraft';
 export * from './modpack';
 export * from './settings';
+export * from './skin';
 export * from './update';
 
 /** Error returned from Tauri commands */

@@ -81,6 +81,13 @@ pub fn run() {
             commands::account::upload_skin,
             commands::account::set_cape,
             commands::account::hide_cape,
+            // Skin library commands
+            commands::skin::save_skin_to_library,
+            commands::skin::get_skin_library,
+            commands::skin::delete_skin_from_library,
+            commands::skin::apply_skin_from_library,
+            commands::skin::get_skin_data,
+            commands::skin::read_skin_file,
             // Instance commands
             commands::instance::get_instances,
             commands::instance::get_instance,

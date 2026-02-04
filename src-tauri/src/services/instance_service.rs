@@ -321,8 +321,8 @@ pub fn update_instance(
     if let Some(name) = updates.name {
         instance.name = name;
     }
-    if updates.loader_type.is_some() {
-        instance.loader_type = updates.loader_type.unwrap();
+    if let Some(loader_type) = updates.loader_type {
+        instance.loader_type = loader_type;
     }
     if updates.loader_version.is_some() {
         instance.loader_version = updates.loader_version;

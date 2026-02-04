@@ -3,10 +3,14 @@
 	import { Button } from '$lib/ui/button';
 	import { accountsStore } from '$lib/stores/accounts.svelte';
 	import { alertDialogStore } from '$lib/stores/alertDialog.svelte';
-	import { UserPlus, LogOut, Star, Copy, Check, ExternalLink } from '@lucide/svelte';
+	import { UserPlus, LogOut, Star, Copy, Check, ExternalLink, Shirt } from '@lucide/svelte';
 	import { openUrl } from '@tauri-apps/plugin-opener';
+	import SkinCapeManager from '$lib/components/skin/SkinCapeManager.svelte';
+	import SkinFaceThumbnail from '$lib/components/skin/SkinFaceThumbnail.svelte';
+	import type { MinecraftAccount, MinecraftProfile } from '$lib/types';
 
 	let copiedCode = $state(false);
+	let skinManagerAccount = $state<MinecraftAccount | null>(null);
 
 	onMount(() => {
 		accountsStore.load();
@@ -49,6 +53,20 @@
 	function getAvatarUrl(username: string): string {
 		// Use minotar for username-based avatar
 		return `https://minotar.net/avatar/${username}/64`;
+	}
+
+	function openSkinManager(account: MinecraftAccount) {
+		skinManagerAccount = account;
+	}
+
+	function closeSkinManager() {
+		skinManagerAccount = null;
+	}
+
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	function handleProfileUpdated(_profile: MinecraftProfile) {
+		// Refresh accounts to update skin/cape URLs
+		accountsStore.load();
 	}
 </script>
 
@@ -128,11 +146,19 @@
 		<div class="space-y-3">
 			{#each accountsStore.accounts as account (account.id)}
 				<div class="border-border bg-card flex items-center gap-4 border-2 p-4">
-					<img
-						src={getAvatarUrl(account.username)}
-						alt={account.username}
-						class="pixelated h-12 w-12"
-					/>
+					{#if account.skinUrl}
+						<SkinFaceThumbnail
+							url={account.skinUrl}
+							alt={account.username}
+							class="h-12 w-12"
+						/>
+					{:else}
+						<img
+							src={getAvatarUrl(account.username)}
+							alt={account.username}
+							class="pixelated h-12 w-12"
+						/>
+					{/if}
 					<div class="min-w-0 flex-1">
 						<div class="flex items-center gap-2">
 							<span class="text-lg font-bold">{account.username}</span>
@@ -149,6 +175,10 @@
 						</span>
 					</div>
 					<div class="flex items-center gap-2">
+						<Button variant="outline" size="sm" onclick={() => openSkinManager(account)}>
+							<Shirt class="mr-1 h-4 w-4" />
+							Manage Skin
+						</Button>
 						{#if !account.isActive}
 							<Button variant="outline" size="sm" onclick={() => setActive(account.id)}>
 								<Star class="mr-1 h-4 w-4" />
@@ -169,3 +199,12 @@
 		</div>
 	{/if}
 </div>
+
+<!-- Skin & Cape Manager Modal -->
+{#if skinManagerAccount}
+	<SkinCapeManager
+		account={skinManagerAccount}
+		onClose={closeSkinManager}
+		onProfileUpdated={handleProfileUpdated}
+	/>
+{/if}

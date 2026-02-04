@@ -6,6 +6,7 @@
 	import { ChevronUp, LogIn, Settings, Copy, Check, ExternalLink } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 	import { openUrl } from '@tauri-apps/plugin-opener';
+	import SkinFaceThumbnail from '$lib/components/skin/SkinFaceThumbnail.svelte';
 
 	let isOpen = $state(false);
 	let dropdownRef = $state<HTMLDivElement | null>(null);
@@ -74,7 +75,13 @@
 			class="hover:bg-sidebar-accent flex w-full items-center gap-2 rounded-md p-2 text-left transition-colors"
 			onclick={() => (isOpen = !isOpen)}
 		>
-			{#if avatarError}
+			{#if accountsStore.activeAccount.skinUrl}
+				<SkinFaceThumbnail
+					url={accountsStore.activeAccount.skinUrl}
+					alt={accountsStore.activeAccount.username}
+					class="h-8 w-8 rounded"
+				/>
+			{:else if avatarError}
 				<div
 					class="bg-primary/20 flex h-8 w-8 items-center justify-center rounded text-xs font-bold"
 				>
@@ -117,20 +124,28 @@
 						class="hover:bg-accent flex w-full items-center gap-2 p-2 text-left transition-colors"
 						onclick={() => switchAccount(account.id)}
 					>
-						<img
-							src={getAvatarUrl(account.username)}
-							alt={account.username}
-							class="pixelated h-6 w-6 rounded"
-							onerror={(e) => {
-								const target = e.currentTarget as HTMLImageElement;
-								target.style.display = 'none';
-								const fallback = document.createElement('div');
-								fallback.className =
-									'w-6 h-6 rounded bg-primary/20 flex items-center justify-center text-xs font-bold';
-								fallback.textContent = account.username.charAt(0).toUpperCase();
-								target.parentElement?.insertBefore(fallback, target);
-							}}
-						/>
+						{#if account.skinUrl}
+							<SkinFaceThumbnail
+								url={account.skinUrl}
+								alt={account.username}
+								class="h-6 w-6 rounded"
+							/>
+						{:else}
+							<img
+								src={getAvatarUrl(account.username)}
+								alt={account.username}
+								class="pixelated h-6 w-6 rounded"
+								onerror={(e) => {
+									const target = e.currentTarget as HTMLImageElement;
+									target.style.display = 'none';
+									const fallback = document.createElement('div');
+									fallback.className =
+										'w-6 h-6 rounded bg-primary/20 flex items-center justify-center text-xs font-bold';
+									fallback.textContent = account.username.charAt(0).toUpperCase();
+									target.parentElement?.insertBefore(fallback, target);
+								}}
+							/>
+						{/if}
 						<span class="truncate text-sm">{account.username}</span>
 					</button>
 				{/if}
