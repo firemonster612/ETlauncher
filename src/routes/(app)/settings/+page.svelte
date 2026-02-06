@@ -73,6 +73,11 @@
 	let backgroundSaturation = $state(0.5);
 	let useAccentColor = $state(true); // true = use accent, false = custom color
 
+	// Custom font input state (for debounced preview)
+	let customFontInput = $state('');
+	let customFontSynced = false;
+	let fontPreviewTimer: ReturnType<typeof setTimeout> | null = null;
+
 	// App version
 	let appVersion = $state<string | null>(null);
 
@@ -100,6 +105,11 @@
 			if (settings.customSidebarColor) {
 				sidebarHue = settings.customSidebarColor.hue ?? 220;
 				sidebarChroma = settings.customSidebarColor.chroma ?? 0.05;
+			}
+			// Sync custom font input (only on initial load)
+			if (settings.customFont?.family && !customFontSynced) {
+				customFontInput = settings.customFont.family;
+				customFontSynced = true;
 			}
 			// Sync background state
 			if (settings.background) {
@@ -601,15 +611,20 @@
 							type="text"
 							class="border-border bg-background text-foreground focus:border-primary flex-1 border-2 px-3 py-2 text-sm focus:outline-none"
 							placeholder="Font name (e.g., Arial, Roboto)"
-							value={settings.customFont?.family || ''}
-							oninput={(e) => {
-								const fontFamily = e.currentTarget.value;
-								themeStore.applyFontFamily('custom', { family: fontFamily });
+							bind:value={customFontInput}
+							oninput={() => {
+								// Debounce the font preview to avoid lag
+								if (fontPreviewTimer) clearTimeout(fontPreviewTimer);
+								fontPreviewTimer = setTimeout(() => {
+									themeStore.applyFontFamily('custom', { family: customFontInput });
+								}, 150);
 							}}
-							onchange={(e) => {
-								const fontFamily = e.currentTarget.value;
-								if (fontFamily) {
-									saveSettings({ customFont: { family: fontFamily } });
+							onchange={() => {
+								// Clear any pending preview and apply immediately
+								if (fontPreviewTimer) clearTimeout(fontPreviewTimer);
+								if (customFontInput) {
+									themeStore.applyFontFamily('custom', { family: customFontInput });
+									saveSettings({ customFont: { family: customFontInput } });
 								}
 							}}
 						/>
@@ -858,6 +873,7 @@
 					}}
 				/>
 			</div>
+
 		</section>
 
 		<!-- General Settings -->
