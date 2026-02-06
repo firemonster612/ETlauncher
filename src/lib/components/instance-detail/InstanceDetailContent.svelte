@@ -71,7 +71,7 @@
 	// Clear selection when changing content type
 	$effect(() => {
 		void activeContentType;
-		selectedItems = new SvelteSet<string>();
+		selectedItems.clear();
 	});
 
 	async function loadAllContent() {
@@ -100,7 +100,7 @@
 	}
 
 	async function handleRefresh() {
-		selectedItems = new SvelteSet<string>();
+		selectedItems.clear();
 		await loadAllContent();
 	}
 
@@ -188,8 +188,6 @@
 		} else {
 			selectedItems.add(filename);
 		}
-		// Trigger reactivity
-		selectedItems = new SvelteSet(selectedItems);
 	}
 
 	function toggleSelectAll() {
@@ -204,8 +202,6 @@
 				selectedItems.add(item.filename);
 			}
 		}
-		// Trigger reactivity
-		selectedItems = new SvelteSet(selectedItems);
 	}
 
 	async function handleDisableSelected() {
@@ -218,7 +214,7 @@
 			const filenames = selectedEnabledItems.map((item) => item.filename);
 			await contentService.disableContent(instance.id, filenames, activeContentType);
 			await loadAllContent();
-			selectedItems = new SvelteSet<string>();
+			selectedItems.clear();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to disable content';
 		} finally {
@@ -236,7 +232,7 @@
 			const filenames = selectedDisabledItems.map((item) => item.filename);
 			await contentService.enableContent(instance.id, filenames, activeContentType);
 			await loadAllContent();
-			selectedItems = new SvelteSet<string>();
+			selectedItems.clear();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to enable content';
 		} finally {
@@ -255,7 +251,7 @@
 				await contentService.uninstallContentByFilename(instance.id, filename, activeContentType);
 			}
 			await loadAllContent();
-			selectedItems = new SvelteSet<string>();
+			selectedItems.clear();
 			showRemoveConfirm = false;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to remove content';
@@ -566,10 +562,10 @@
 						<span class="text-muted-foreground text-sm">
 							{selectedItems.size} item{selectedItems.size === 1 ? '' : 's'} selected
 						</span>
-						<button
-							class="text-muted-foreground hover:text-foreground text-xs"
-							onclick={() => (selectedItems = new SvelteSet<string>())}
-						>
+					<button
+						class="text-muted-foreground hover:text-foreground text-xs"
+						onclick={() => selectedItems.clear()}
+					>
 							Clear selection
 						</button>
 					</div>
