@@ -36,7 +36,6 @@
 	import { getCategoriesForContext } from '$lib/constants/categories';
 	import ScreenshotLightbox from '$lib/components/ScreenshotLightbox.svelte';
 	import DescriptionModal from '$lib/components/DescriptionModal.svelte';
-	import BackgroundLayer from '$lib/components/BackgroundLayer.svelte';
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import type {
 		Content,
@@ -1210,14 +1209,9 @@
 <!-- Backdrop with custom background support -->
 <div
 	class="fixed inset-x-0 top-[var(--titlebar-height)] z-[55] h-[calc(100vh-var(--titlebar-height))]"
-	style="overflow: clip;"
 	data-fullscreen-backdrop
 >
-	{#if hasCustomBackground}
-		<BackgroundLayer absolute />
-	{:else}
-		<div class="absolute inset-0 bg-black/50"></div>
-	{/if}
+	<div class="absolute inset-0 {hasCustomBackground ? 'bg-black/30' : 'bg-black/50'}"></div>
 	<button
 		class="absolute inset-0"
 		onclick={() => onClose(contentWasInstalled)}
@@ -1807,16 +1801,25 @@
 						</div>
 					{/if}
 
-					{#each visibleInstalledItems as item (item.filename)}
-						{@const isSelected = selectedItems.has(item.filename)}
-						<button
-							class="flex w-full gap-3 border-2 p-3 text-left transition-colors {isSelected
-								? 'border-primary bg-primary/5'
-								: 'border-border bg-background hover:border-primary/50'} {item.isDisabled
-								? 'opacity-60'
-								: ''}"
-							onclick={() => toggleItemSelection(item.filename)}
-						>
+				{#each visibleInstalledItems as item (item.filename)}
+					{@const isSelected = selectedItems.has(item.filename)}
+					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+					<div
+						class="flex w-full cursor-pointer gap-3 border-2 p-3 text-left transition-colors {isSelected
+							? 'border-primary bg-primary/5'
+							: 'border-border bg-background hover:border-primary/50'} {item.isDisabled
+							? 'opacity-60'
+							: ''}"
+						onclick={() => toggleItemSelection(item.filename)}
+						onkeydown={(e) => {
+							if (e.key === 'Enter' || e.key === ' ') {
+								e.preventDefault();
+								toggleItemSelection(item.filename);
+							}
+						}}
+						role="button"
+						tabindex="0"
+					>
 							<!-- Checkbox -->
 							<div class="flex-shrink-0 pt-0.5">
 								{#if isSelected}
@@ -1892,13 +1895,14 @@
 													? ''
 													: 's'}
 											</button>
-											{#if showDependentsFor === item.filename}
-												<div
-													class="border-border bg-popover absolute bottom-full left-0 z-10 mb-1 w-64 border p-3 shadow-lg"
-													onclick={(e) => e.stopPropagation()}
-													onkeydown={(e) => e.stopPropagation()}
-													role="tooltip"
-												>
+							{#if showDependentsFor === item.filename}
+								<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+								<div
+									class="border-border bg-popover absolute bottom-full left-0 z-10 mb-1 w-64 border p-3 shadow-lg"
+									onclick={(e) => e.stopPropagation()}
+									onkeydown={(e) => e.stopPropagation()}
+									role="tooltip"
+								>
 													<div class="mb-2 flex items-center justify-between">
 														<span class="text-sm font-medium">Required by:</span>
 														<button
@@ -1925,7 +1929,7 @@
 									{/if}
 								</div>
 							</div>
-						</button>
+						</div>
 					{/each}
 				</div>
 			{/if}
@@ -2197,6 +2201,7 @@
 		aria-label="Content details"
 		tabindex="-1"
 	>
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 		<div
 			class="bg-card border-border flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border-2 shadow-2xl"
 			data-modal-content

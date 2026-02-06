@@ -9,7 +9,6 @@
 	import InstanceDetailGallery from '$lib/components/instance-detail/InstanceDetailGallery.svelte';
 	import InstanceDetailData from '$lib/components/instance-detail/InstanceDetailData.svelte';
 	import InstanceDetailVersion from '$lib/components/instance-detail/InstanceDetailVersion.svelte';
-	import BackgroundLayer from '$lib/components/BackgroundLayer.svelte';
 	import * as instanceDetailService from '$lib/services/instance-detail';
 	import * as instanceService from '$lib/services/instance';
 	import * as contentService from '$lib/services/content';
@@ -238,18 +237,12 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if open && instance}
-	<!-- Backdrop with custom background support -->
+	<!-- Backdrop -->
 	<div
 		class="fixed inset-x-0 top-[var(--titlebar-height)] z-50 h-[calc(100vh-var(--titlebar-height))]"
-		style="overflow: clip;"
 		data-fullscreen-backdrop
 	>
-		{#if hasCustomBackground}
-			<!-- Render background layer inside modal when custom background is active -->
-			<BackgroundLayer absolute />
-		{:else}
-			<div class="absolute inset-0 bg-black/50"></div>
-		{/if}
+		<div class="absolute inset-0 {hasCustomBackground ? 'bg-black/30' : 'bg-black/50'}"></div>
 		<button
 			class="absolute inset-0"
 			onclick={onClose}
