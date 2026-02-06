@@ -54,6 +54,7 @@
 		tabindex="-1"
 		onkeydown={handleKeydown}
 	>
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 		<div
 			class="bg-card border-border relative flex max-h-[90vh] w-full max-w-7xl flex-col overflow-hidden rounded-lg border-2 shadow-2xl"
 			onclick={stopClickPropagation}
@@ -67,13 +68,12 @@
 				</Button>
 			</div>
 
-				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-			<div class="min-h-0 flex-1 overflow-y-auto p-5" onclick={handleLinkClick}>
-				<div class="prose-markdown">
-					<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-					{@html html}
-				</div>
+		<div class="min-h-0 flex-1 overflow-y-auto p-5" onclick={handleLinkClick} onkeydown={(e) => e.stopPropagation()} role="presentation">
+			<div class="prose-markdown">
+				<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+				{@html html}
 			</div>
+		</div>
 		</div>
 	</div>
 {/if}

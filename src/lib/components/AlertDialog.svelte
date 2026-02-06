@@ -39,11 +39,12 @@
 
 {#if alertDialogStore.isOpen}
 	<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/50">
-		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 		<div
 			class="bg-card border-border mx-4 w-full max-w-md space-y-4 border-2 p-6"
 			data-alert-dialog
 			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.stopPropagation()}
+			role="presentation"
 		>
 			<div class="flex items-start gap-4">
 				<div class={iconColor}>
