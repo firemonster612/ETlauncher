@@ -81,6 +81,7 @@
 		aria-label="Select version"
 		tabindex="-1"
 	>
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 		<div
 			class="bg-card border-border flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border-2 shadow-2xl"
 			onclick={(e) => e.stopPropagation()}

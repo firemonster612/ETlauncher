@@ -240,6 +240,7 @@
 	aria-label="Modpack details"
 	tabindex="-1"
 >
+	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
 		class="bg-card border-border relative flex max-h-[90vh] w-full max-w-7xl flex-col overflow-hidden border-2 shadow-2xl"
 		data-modal-content

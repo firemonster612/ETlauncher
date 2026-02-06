@@ -134,13 +134,14 @@
 						<div class="absolute top-1 left-1 rounded bg-black/60 px-1 py-0.5 text-[9px] text-white/90">
 							{world.instanceName}
 						</div>
-						<!-- Game mode badge -->
-						{#if world.gameMode}
-							<div class="absolute right-1 bottom-1 flex items-center gap-0.5 rounded border px-1 py-0.5 text-[9px] {gameModeInfo.class}">
-								<svelte:component this={gameModeInfo.icon} class="h-2.5 w-2.5" />
-								{gameModeInfo.label}
-							</div>
-						{/if}
+					<!-- Game mode badge -->
+					{#if world.gameMode}
+						{@const GameModeIcon = gameModeInfo.icon}
+						<div class="absolute right-1 bottom-1 flex items-center gap-0.5 rounded border px-1 py-0.5 text-[9px] {gameModeInfo.class}">
+							<GameModeIcon class="h-2.5 w-2.5" />
+							{gameModeInfo.label}
+						</div>
+					{/if}
 					</div>
 
 					<!-- Info -->
