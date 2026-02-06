@@ -27,6 +27,7 @@ function createThemeStore() {
 	let currentThemeSetting = $state<Theme>('dark');
 	let cachedSystemTheme = $state<'dark' | 'light'>('dark');
 	let currentBackgroundUrl = $state<string | null>(null);
+	let currentBackgroundFilename: string | null = null; // Cache key to avoid reloading
 	let initialized = false;
 
 	/** Fetch system theme from Tauri backend */
@@ -54,7 +55,7 @@ function createThemeStore() {
 
 		currentThemeSetting = theme;
 
-		// Fetch system theme if using 'system' setting
+		// Fetch system theme if using 'system' setting (only if changed to avoid repeated calls)
 		if (theme === 'system') {
 			await fetchSystemTheme();
 		}
@@ -300,46 +301,53 @@ function createThemeStore() {
 			html.classList.remove('has-custom-background');
 		}
 
-		// Load file as base64 data URL for media types
+		// Load file as base64 data URL for media types (only if filename changed)
 		if ((type === 'image' || type === 'gif' || type === 'video') && config?.filename) {
-			try {
-				const base64Data = await settingsService.getBackgroundData(config.filename);
-				// Determine MIME type from filename extension
-				const ext = config.filename.split('.').pop()?.toLowerCase() ?? '';
-				let mimeType: string;
-				switch (ext) {
-					case 'png':
-						mimeType = 'image/png';
-						break;
-					case 'jpg':
-					case 'jpeg':
-						mimeType = 'image/jpeg';
-						break;
-					case 'webp':
-						mimeType = 'image/webp';
-						break;
-					case 'gif':
-						mimeType = 'image/gif';
-						break;
-					case 'mp4':
-						mimeType = 'video/mp4';
-						break;
-					case 'webm':
-						mimeType = 'video/webm';
-						break;
-					case 'mov':
-						mimeType = 'video/quicktime';
-						break;
-					default:
-						mimeType = 'application/octet-stream';
+			// Skip reload if filename hasn't changed (performance optimization)
+			if (config.filename !== currentBackgroundFilename) {
+				currentBackgroundFilename = config.filename;
+				try {
+					const base64Data = await settingsService.getBackgroundData(config.filename);
+					// Determine MIME type from filename extension
+					const ext = config.filename.split('.').pop()?.toLowerCase() ?? '';
+					let mimeType: string;
+					switch (ext) {
+						case 'png':
+							mimeType = 'image/png';
+							break;
+						case 'jpg':
+						case 'jpeg':
+							mimeType = 'image/jpeg';
+							break;
+						case 'webp':
+							mimeType = 'image/webp';
+							break;
+						case 'gif':
+							mimeType = 'image/gif';
+							break;
+						case 'mp4':
+							mimeType = 'video/mp4';
+							break;
+						case 'webm':
+							mimeType = 'video/webm';
+							break;
+						case 'mov':
+							mimeType = 'video/quicktime';
+							break;
+						default:
+							mimeType = 'application/octet-stream';
+					}
+					currentBackgroundUrl = `data:${mimeType};base64,${base64Data}`;
+				} catch (e) {
+					console.error('Failed to load background file:', e);
+					currentBackgroundUrl = null;
+					currentBackgroundFilename = null;
 				}
-				currentBackgroundUrl = `data:${mimeType};base64,${base64Data}`;
-			} catch (e) {
-				console.error('Failed to load background file:', e);
-				currentBackgroundUrl = null;
 			}
+			// If filename is same, keep existing URL (no reload needed)
 		} else {
 			currentBackgroundUrl = null;
+			currentBackgroundFilename = null;
 		}
 
 		// Store config in localStorage for flash prevention

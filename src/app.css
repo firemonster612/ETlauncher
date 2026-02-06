@@ -169,21 +169,18 @@
 		background: transparent !important;
 	}
 
-	/* Sidebar - follows user opacity */
-	html.has-custom-background [data-sidebar="sidebar"],
-	html.has-custom-background [data-slot="sidebar-container"] {
-		background: color-mix(
-			in oklch,
-			var(--sidebar) calc(var(--app-ui-opacity) * 100%),
-			transparent
-		) !important;
+	/* Titlebar - fully opaque for readability */
+	html.has-custom-background [data-titlebar] {
+		background: var(--sidebar) !important;
 	}
 
-	/* Titlebar - minimum 80% for window controls visibility */
-	html.has-custom-background .bg-sidebar {
+	/* Sidebar - high opacity for usability */
+	html.has-custom-background [data-sidebar="sidebar"],
+	html.has-custom-background [data-slot="sidebar-container"],
+	html.has-custom-background .bg-sidebar:not([data-titlebar]) {
 		background: color-mix(
 			in oklch,
-			var(--sidebar) calc(max(0.8, var(--app-ui-opacity)) * 100%),
+			var(--sidebar) calc(max(0.9, var(--app-ui-opacity)) * 100%),
 			transparent
 		) !important;
 	}
@@ -253,6 +250,15 @@
 	html.has-custom-background input,
 	html.has-custom-background textarea,
 	html.has-custom-background select {
+		background: color-mix(
+			in oklch,
+			var(--input) calc(max(0.85, var(--app-ui-opacity)) * 100%),
+			transparent
+		) !important;
+	}
+
+	/* Select triggers - minimum 85% for visibility */
+	html.has-custom-background [data-slot="select-trigger"] {
 		background: color-mix(
 			in oklch,
 			var(--input) calc(max(0.85, var(--app-ui-opacity)) * 100%),

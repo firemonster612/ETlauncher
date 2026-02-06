@@ -26,6 +26,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+	data-titlebar
 	class="border-border bg-sidebar flex h-9 items-center justify-between border-b-2 select-none"
 	onmousedown={startDrag}
 >
