@@ -157,21 +157,40 @@ fn main() {
     // On Linux, ensure GTK dialogs and elements follow the system theme
     #[cfg(target_os = "linux")]
     {
-        // Fix EGL issues on Wayland (Fedora, CachyOS, etc.) when EGL initialization fails.
-        // The DMABuf renderer can cause "Could not create default EGL display" errors.
-        // Only apply this workaround if EGL probe fails - preserve GPU rendering when possible.
+        // Fix WebKitGTK rendering issues with the DMABuf renderer.
+        //
+        // On Wayland, WebKitGTK's DMABuf renderer can cause "Protocol error" crashes
+        // (Error 71) even when EGL appears functional, because the failure occurs at
+        // the Wayland protocol level during buffer sharing -- not during EGL init.
+        // This results in a white screen. Always disable DMABuf on Wayland.
+        //
+        // On X11, the DMABuf renderer can fail with "Could not create default EGL
+        // display" errors on some systems, so we probe EGL and disable if it fails.
         if std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").is_err() {
-            let egl_works = probe_egl_works();
-            eprintln!(
-                "[ETLauncher] EGL probe result: {}",
-                if egl_works {
-                    "OK (using GPU)"
-                } else {
-                    "FAILED (using software renderer)"
-                }
-            );
-            if !egl_works {
+            let is_wayland = std::env::var("WAYLAND_DISPLAY").is_ok()
+                || std::env::var("XDG_SESSION_TYPE")
+                    .map(|s| s == "wayland")
+                    .unwrap_or(false);
+
+            if is_wayland {
+                eprintln!(
+                    "[ETLauncher] Wayland detected, disabling DMABuf renderer to avoid protocol errors"
+                );
                 std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+            } else {
+                // On X11, probe EGL to check if GPU rendering is available
+                let egl_works = probe_egl_works();
+                eprintln!(
+                    "[ETLauncher] EGL probe result: {}",
+                    if egl_works {
+                        "OK (using GPU)"
+                    } else {
+                        "FAILED (disabling DMABuf renderer)"
+                    }
+                );
+                if !egl_works {
+                    std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+                }
             }
         }
 
