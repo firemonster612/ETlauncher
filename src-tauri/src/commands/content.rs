@@ -360,6 +360,18 @@ pub async fn scan_installed_content(
         .map_err(CommandError::from)
 }
 
+/// Re-scan all content folders for an instance, identify via APIs, and rebuild the manifest.
+/// Used when content was imported without manifest tracking (e.g., Prism/MultiMC import).
+#[tauri::command]
+pub async fn rescan_instance_content(
+    state: State<'_, AppState>,
+    instance_id: String,
+) -> Result<content_scan_service::RescanResult, CommandError> {
+    content_scan_service::rescan_and_rebuild_manifest(&state, &instance_id)
+        .await
+        .map_err(CommandError::from)
+}
+
 /// Uninstall content by filename (delete the file directly)
 #[tauri::command]
 pub fn uninstall_content_by_filename(

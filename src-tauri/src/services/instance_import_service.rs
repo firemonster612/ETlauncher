@@ -1,6 +1,7 @@
 use crate::error::AppError;
 use crate::models::{Instance, LoaderType};
 use crate::services::{
+    content_scan_service,
     instance_service::{self, get_random_entity_icon, get_used_icons},
     loader_service,
 };
@@ -561,6 +562,15 @@ pub async fn import_vanilla_minecraft(
 
     instance_service::save_instance(state, &instance)?;
 
+    // Scan and identify imported content so the upgrade system can track it
+    if let Err(e) = scan_and_identify_imported_content(state, &instance_id, app_handle).await {
+        eprintln!(
+            "[import] Warning: Failed to identify imported content: {}",
+            e
+        );
+        // Non-fatal: instance is still usable, content just won't be tracked for upgrades
+    }
+
     emit_progress(app_handle, "Import complete", 100, None);
 
     Ok(instance)
@@ -692,9 +702,28 @@ pub async fn import_multimc_prism(
 
     instance_service::save_instance(state, &instance)?;
 
+    // Scan and identify imported content so the upgrade system can track it
+    if let Err(e) = scan_and_identify_imported_content(state, &instance_id, app_handle).await {
+        eprintln!(
+            "[import] Warning: Failed to identify imported content: {}",
+            e
+        );
+        // Non-fatal: instance is still usable, content just won't be tracked for upgrades
+    }
+
     emit_progress(app_handle, "Import complete", 100, None);
 
     Ok(instance)
+}
+
+/// Scan and identify imported content via the shared rescan service, then populate the manifest.
+async fn scan_and_identify_imported_content(
+    state: &AppState,
+    instance_id: &str,
+    _app_handle: Option<&AppHandle>,
+) -> Result<(), AppError> {
+    content_scan_service::rescan_and_rebuild_manifest(state, instance_id).await?;
+    Ok(())
 }
 
 /// Import a CurseForge modpack .zip file

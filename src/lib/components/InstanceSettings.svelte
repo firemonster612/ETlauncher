@@ -1,19 +1,20 @@
 <script lang="ts">
-	import { Download, Loader2, FolderOpen, Copy, Upload } from '@lucide/svelte';
+	import { Copy, Download, FolderOpen, Loader2, RefreshCw, Upload } from '@lucide/svelte';
 	import { save } from '@tauri-apps/plugin-dialog';
+	import * as contentService from '$lib/services/content';
+	import * as importService from '$lib/services/import';
+	import * as instanceService from '$lib/services/instance';
+	import { instancesStore } from '$lib/stores/instances.svelte';
 	import { settingsStore } from '$lib/stores/settings.svelte';
+	import type { Instance, UpdateInstanceRequest } from '$lib/types';
 	import { Button } from '$lib/ui/button';
 	import { Input } from '$lib/ui/input';
+	import * as RadioGroup from '$lib/ui/radio-group';
+	import * as Sheet from '$lib/ui/sheet';
 	import { RangeSlider } from '$lib/ui/slider';
 	import { Textarea } from '$lib/ui/textarea';
-	import * as Sheet from '$lib/ui/sheet';
-	import * as RadioGroup from '$lib/ui/radio-group';
-	import { instancesStore } from '$lib/stores/instances.svelte';
-	import * as instanceService from '$lib/services/instance';
-	import * as importService from '$lib/services/import';
+	import { type EntityIcon, makeIconPath } from '$lib/utils/icons';
 	import IconPicker from './IconPicker.svelte';
-	import { makeIconPath, type EntityIcon } from '$lib/utils/icons';
-	import type { Instance, UpdateInstanceRequest } from '$lib/types';
 
 	interface Props {
 		instance: Instance;
@@ -149,6 +150,25 @@
 	async function handleDuplicate() {
 		await instancesStore.duplicate(instance.id, `${instance.name} (Copy)`);
 		onClose();
+	}
+
+	let isRescanning = $state(false);
+	let rescanResult = $state<string | null>(null);
+	let rescanError = $state<string | null>(null);
+
+	async function handleRescanContent() {
+		isRescanning = true;
+		rescanResult = null;
+		rescanError = null;
+
+		try {
+			const result = await contentService.rescanInstanceContent(instance.id);
+			rescanResult = `Found ${result.totalItems} items (${result.identifiedItems} identified, ${result.unidentifiedItems} unidentified)`;
+		} catch (e) {
+			rescanError = e instanceof Error ? e.message : 'Rescan failed';
+		} finally {
+			isRescanning = false;
+		}
 	}
 
 	let isExporting = $state(false);
@@ -370,6 +390,27 @@
 					<Copy class="mr-2 h-4 w-4" />
 					Duplicate Instance
 				</Button>
+
+				<Button
+					variant="outline"
+					class="w-full"
+					onclick={handleRescanContent}
+					disabled={isRescanning}
+				>
+					{#if isRescanning}
+						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+						Scanning Content...
+					{:else}
+						<RefreshCw class="mr-2 h-4 w-4" />
+						Re-scan Content
+					{/if}
+				</Button>
+				{#if rescanResult}
+					<p class="text-muted-foreground text-xs">{rescanResult}</p>
+				{/if}
+				{#if rescanError}
+					<p class="text-destructive text-xs">{rescanError}</p>
+				{/if}
 
 				</div>
 

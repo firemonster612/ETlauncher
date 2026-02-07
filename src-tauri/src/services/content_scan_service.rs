@@ -1,4 +1,7 @@
 use crate::error::AppError;
+use crate::models::content::{
+    ContentPlatform, ContentSource, InstalledContentManifest, MANIFEST_VERSION,
+};
 use crate::models::{
     CachedFileHash, ContentType, DetectedCurseForgeProject, DetectedMod, DetectedModrinthProject,
     InstalledContent, ScanCache, ScanResult,
@@ -647,6 +650,229 @@ pub async fn scan_content(
 /// Scan an instance's mods folder (convenience wrapper)
 pub async fn scan_mods(state: &AppState, instance_id: &str) -> Result<ScanResult, AppError> {
     scan_content(state, instance_id, &ContentType::Mod).await
+}
+
+/// Re-scan all content folders for an instance, identify via APIs, and rebuild the manifest.
+///
+/// This is used to populate manifests for instances that were imported without one
+/// (e.g., Prism/MultiMC imports, vanilla .minecraft imports), or to repair a
+/// manifest that has gone out of sync.
+///
+/// Preserves existing manifest entries when the file is already tracked (by filename),
+/// so user-added metadata (dependency_of, source, etc.) is not lost for known content.
+pub async fn rescan_and_rebuild_manifest(
+    state: &AppState,
+    instance_id: &str,
+) -> Result<RescanResult, AppError> {
+    let content_types = [
+        (ContentType::Mod, "mods"),
+        (ContentType::Shader, "shaders"),
+        (ContentType::ResourcePack, "resource packs"),
+    ];
+
+    // Load existing manifest so we can preserve entries that are already tracked
+    let existing_manifest = manifest_service::load_manifest(state, instance_id)?;
+    let existing_by_filename: HashMap<String, &InstalledContent> = existing_manifest
+        .mods
+        .iter()
+        .chain(existing_manifest.shaders.iter())
+        .chain(existing_manifest.resource_packs.iter())
+        .map(|c| (c.filename.clone(), c))
+        .collect();
+
+    let mut manifest = InstalledContentManifest {
+        manifest_version: MANIFEST_VERSION,
+        mods: Vec::new(),
+        shaders: Vec::new(),
+        resource_packs: Vec::new(),
+        datapacks: existing_manifest.datapacks.clone(),
+        worlds: existing_manifest.worlds.clone(),
+        last_synced_at: Some(Utc::now().timestamp()),
+    };
+
+    let mut total = 0u32;
+    let mut identified = 0u32;
+
+    for (content_type, label) in &content_types {
+        let scan_result = match scan_content(state, instance_id, content_type).await {
+            Ok(result) => result,
+            Err(e) => {
+                eprintln!(
+                    "[rescan] Failed to scan {} for instance {}: {}",
+                    label, instance_id, e
+                );
+                continue;
+            }
+        };
+
+        for item in &scan_result.items {
+            // If already in manifest, preserve existing entry but update hashes
+            if let Some(existing) = existing_by_filename.get(&item.filename) {
+                if existing.modrinth_id.is_some() || existing.curseforge_id.is_some() {
+                    // Already tracked and identified — keep it
+                    match content_type {
+                        ContentType::Mod => manifest.mods.push((*existing).clone()),
+                        ContentType::Shader => manifest.shaders.push((*existing).clone()),
+                        ContentType::ResourcePack => {
+                            manifest.resource_packs.push((*existing).clone())
+                        }
+                        _ => {}
+                    }
+                    total += 1;
+                    identified += 1;
+                    continue;
+                }
+            }
+
+            // Build new entry from scan results
+            let (modrinth_id, curseforge_id, installed_from, name, slug, version, version_id) =
+                if let Some(ref mr) = item.modrinth_project {
+                    (
+                        Some(mr.project_id.clone()),
+                        item.curseforge_project
+                            .as_ref()
+                            .map(|cf| cf.project_id as u32),
+                        ContentPlatform::Modrinth,
+                        mr.name.clone(),
+                        mr.slug.clone(),
+                        mr.version_number.clone(),
+                        mr.version_id.clone(),
+                    )
+                } else if let Some(ref cf) = item.curseforge_project {
+                    (
+                        None,
+                        Some(cf.project_id as u32),
+                        ContentPlatform::CurseForge,
+                        cf.name.clone(),
+                        cf.slug.clone(),
+                        cf.filename.clone(),
+                        cf.file_id.to_string(),
+                    )
+                } else {
+                    (
+                        None,
+                        None,
+                        ContentPlatform::Modrinth,
+                        item.filename
+                            .trim_end_matches(".jar")
+                            .trim_end_matches(".zip")
+                            .to_string(),
+                        item.filename
+                            .trim_end_matches(".jar")
+                            .trim_end_matches(".zip")
+                            .to_lowercase()
+                            .replace(' ', "-"),
+                        "unknown".to_string(),
+                        "unknown".to_string(),
+                    )
+                };
+
+            let is_id = modrinth_id.is_some() || curseforge_id.is_some();
+
+            let installed = InstalledContent {
+                name,
+                slug,
+                modrinth_id,
+                curseforge_id,
+                installed_from,
+                version,
+                version_id,
+                filename: item.filename.clone(),
+                content_type: *content_type,
+                installed_at: Utc::now().timestamp(),
+                is_dependency: item.is_dependency,
+                dependency_of: item.dependency_of.clone(),
+                dependency_ids: Vec::new(),
+                source: ContentSource::UserAdded,
+                sha512_hash: Some(item.sha512.clone()),
+                murmur2_fingerprint: Some(item.murmur2_fingerprint),
+                is_pooled: false,
+            };
+
+            match content_type {
+                ContentType::Mod => manifest.mods.push(installed),
+                ContentType::Shader => manifest.shaders.push(installed),
+                ContentType::ResourcePack => manifest.resource_packs.push(installed),
+                _ => {}
+            }
+
+            total += 1;
+            if is_id {
+                identified += 1;
+            }
+        }
+    }
+
+    println!(
+        "[rescan] Rebuilt manifest for instance {}: {} total ({} identified, {} unidentified)",
+        instance_id,
+        total,
+        identified,
+        total - identified,
+    );
+
+    manifest_service::save_manifest(state, instance_id, &manifest)?;
+
+    Ok(RescanResult {
+        total_items: total,
+        identified_items: identified,
+        unidentified_items: total - identified,
+    })
+}
+
+/// Result of a rescan operation
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RescanResult {
+    pub total_items: u32,
+    pub identified_items: u32,
+    pub unidentified_items: u32,
+}
+
+/// Check if an instance has content files on disk but an empty or missing manifest.
+/// Returns true if the instance likely needs a rescan.
+pub fn needs_manifest_rebuild(state: &AppState, instance_id: &str) -> bool {
+    let instances_base = state.settings.read().instances_path.clone();
+    let game_dir = get_instance_game_dir_with_base(&instances_base, instance_id);
+
+    let manifest = match manifest_service::load_manifest(state, instance_id) {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+
+    // If manifest already has entries, it doesn't need a rebuild
+    let manifest_count =
+        manifest.mods.len() + manifest.shaders.len() + manifest.resource_packs.len();
+    if manifest_count > 0 {
+        return false;
+    }
+
+    // Check if there are actual content files on disk
+    let mods_dir = game_dir.join("mods");
+    if mods_dir.exists() {
+        if let Ok(entries) = fs::read_dir(&mods_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.ends_with(".jar") && !name.starts_with('.') {
+                    return true;
+                }
+            }
+        }
+    }
+
+    let shaders_dir = game_dir.join("shaderpacks");
+    if shaders_dir.exists() {
+        if let Ok(entries) = fs::read_dir(&shaders_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if (name.ends_with(".zip") || name.ends_with(".jar")) && !name.starts_with('.') {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
 }
 
 /// Uninstall content by filename (delete the file/folder and remove from manifest)

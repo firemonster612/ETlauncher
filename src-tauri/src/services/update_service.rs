@@ -122,43 +122,35 @@ pub async fn check_content_updates(
         modpack_update: None,
     };
 
-    // Check each mod for updates
+    // Check all content concurrently to avoid sequential API bottleneck
+    let mc_ver = &instance.minecraft_version;
+    let loader = instance.loader_type;
+
+    let mut futures = Vec::new();
     for content in &manifest.mods {
-        let update_info = check_single_content_update(
+        futures.push(check_single_content_update(
             state,
             content,
-            &instance.minecraft_version,
-            Some(&instance.loader_type),
-        )
-        .await;
-
-        categorize_update_info(&mut result, update_info);
+            mc_ver,
+            Some(&loader),
+        ));
     }
-
-    // Check shaders
     for content in &manifest.shaders {
-        let update_info = check_single_content_update(
+        futures.push(check_single_content_update(
             state,
             content,
-            &instance.minecraft_version,
-            Some(&instance.loader_type),
-        )
-        .await;
-
-        categorize_update_info(&mut result, update_info);
+            mc_ver,
+            Some(&loader),
+        ));
+    }
+    for content in &manifest.resource_packs {
+        futures.push(check_single_content_update(state, content, mc_ver, None));
     }
 
-    // Check resource packs
-    for content in &manifest.resource_packs {
-        let update_info = check_single_content_update(
-            state,
-            content,
-            &instance.minecraft_version,
-            None, // Resource packs don't need loader filtering
-        )
-        .await;
+    let results = futures::future::join_all(futures).await;
 
-        categorize_update_info(&mut result, update_info);
+    for info in results {
+        categorize_update_info(&mut result, info);
     }
 
     // Check for modpack update if this is a modpack instance
@@ -213,30 +205,37 @@ pub async fn check_version_migration(
         modpack_update: None,
     };
 
-    // Check each mod for compatibility with target version
+    // Check all content concurrently to avoid sequential API bottleneck
+    let mut futures = Vec::new();
     for content in &manifest.mods {
-        let update_info =
-            check_single_content_update(state, content, target_mc_version, Some(target_loader))
-                .await;
-
-        categorize_update_info(&mut result, update_info);
+        futures.push(check_single_content_update(
+            state,
+            content,
+            target_mc_version,
+            Some(target_loader),
+        ));
     }
-
-    // Check shaders
     for content in &manifest.shaders {
-        let update_info =
-            check_single_content_update(state, content, target_mc_version, Some(target_loader))
-                .await;
-
-        categorize_update_info(&mut result, update_info);
+        futures.push(check_single_content_update(
+            state,
+            content,
+            target_mc_version,
+            Some(target_loader),
+        ));
+    }
+    for content in &manifest.resource_packs {
+        futures.push(check_single_content_update(
+            state,
+            content,
+            target_mc_version,
+            None,
+        ));
     }
 
-    // Check resource packs
-    for content in &manifest.resource_packs {
-        let update_info =
-            check_single_content_update(state, content, target_mc_version, None).await;
+    let results = futures::future::join_all(futures).await;
 
-        categorize_update_info(&mut result, update_info);
+    for info in results {
+        categorize_update_info(&mut result, info);
     }
 
     Ok(result)
@@ -606,22 +605,29 @@ pub async fn check_instance_updates(
     let mut incompatible_content = Vec::new();
     let mut unidentified_content = Vec::new();
 
-    // Check all content types
-    let all_content = manifest
-        .mods
-        .iter()
-        .chain(manifest.shaders.iter())
-        .chain(manifest.resource_packs.iter());
-
-    for content in all_content {
-        let update_info = check_single_content_update(
+    // Check all content types — run checks concurrently to avoid sequential API bottleneck
+    let loader = instance.loader_type;
+    let mut futures = Vec::new();
+    for content in manifest.mods.iter().chain(manifest.shaders.iter()) {
+        futures.push(check_single_content_update(
             state,
             content,
             &latest_mc_version,
-            Some(&instance.loader_type),
-        )
-        .await;
+            Some(&loader),
+        ));
+    }
+    for content in &manifest.resource_packs {
+        futures.push(check_single_content_update(
+            state,
+            content,
+            &latest_mc_version,
+            None,
+        ));
+    }
 
+    let results = futures::future::join_all(futures).await;
+
+    for update_info in results {
         match &update_info.status {
             ContentUpdateStatus::UpdateAvailable { .. } | ContentUpdateStatus::UpToDate => {
                 compatible_content.push(update_info)
