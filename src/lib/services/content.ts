@@ -116,6 +116,18 @@ export async function scanInstalledContent(
 	return invoke<ScanResult>('scan_installed_content', { instanceId, contentType });
 }
 
+/** Result of a rescan operation */
+export interface RescanResult {
+	totalItems: number;
+	identifiedItems: number;
+	unidentifiedItems: number;
+}
+
+/** Re-scan all content folders for an instance, identify via APIs, and rebuild the manifest */
+export async function rescanInstanceContent(instanceId: string): Promise<RescanResult> {
+	return invoke<RescanResult>('rescan_instance_content', { instanceId });
+}
+
 /** Uninstall content by filename (delete the file directly) */
 export async function uninstallContentByFilename(
 	instanceId: string,

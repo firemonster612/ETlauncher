@@ -55,6 +55,57 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(app_state)
+        .setup(|app| {
+            // Auto-rebuild manifests for instances that have content files but no manifest.
+            // This fixes instances imported from Prism/MultiMC/vanilla before the manifest
+            // population fix was added. Runs in the background so it doesn't block startup.
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let state = app_handle.state::<AppState>();
+                let instances = services::instance_service::get_all_instances(&state)
+                    .unwrap_or_default();
+                let needs_rebuild: Vec<String> = instances
+                    .iter()
+                    .filter(|inst| {
+                        services::content_scan_service::needs_manifest_rebuild(&state, &inst.id)
+                    })
+                    .map(|inst| inst.id.clone())
+                    .collect();
+
+                if needs_rebuild.is_empty() {
+                    return;
+                }
+
+                println!(
+                    "[startup] Found {} instance(s) needing manifest rebuild, scanning in background...",
+                    needs_rebuild.len()
+                );
+
+                for instance_id in &needs_rebuild {
+                    match services::content_scan_service::rescan_and_rebuild_manifest(
+                        &state,
+                        instance_id,
+                    )
+                    .await
+                    {
+                        Ok(result) => {
+                            println!(
+                                "[startup] Rebuilt manifest for {}: {} items ({} identified)",
+                                instance_id, result.total_items, result.identified_items
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!(
+                                "[startup] Failed to rebuild manifest for {}: {}",
+                                instance_id, e
+                            );
+                        }
+                    }
+                }
+                println!("[startup] Background manifest rebuild complete");
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             // Settings commands
             commands::settings::get_settings,
@@ -144,6 +195,7 @@ pub fn run() {
             commands::content::resolve_content_dependencies,
             commands::content::install_content_with_dependencies,
             commands::content::scan_installed_content,
+            commands::content::rescan_instance_content,
             commands::content::uninstall_content_by_filename,
             commands::content::disable_content,
             commands::content::enable_content,
