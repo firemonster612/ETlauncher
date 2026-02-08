@@ -1,22 +1,22 @@
 <script lang="ts">
+	import { AlertTriangle, ArrowUpDown, Check, Filter, Loader2, Search, X } from '@lucide/svelte';
 	import { onMount } from 'svelte';
-	import { Search, Loader2, AlertTriangle, ArrowUpDown, X, Filter, Check } from '@lucide/svelte';
+	import LatestVersionSection from '$lib/components/modpack/LatestVersionSection.svelte';
+	import ModpackCard from '$lib/components/modpack/ModpackCard.svelte';
+	import ModpackDetailModalV2 from '$lib/components/modpack/ModpackDetailModalV2.svelte';
+	import PlatformToggle from '$lib/components/modpack/PlatformToggle.svelte';
+	import PopularModpacksSection from '$lib/components/modpack/PopularModpacksSection.svelte';
+	import RisingStarsSection from '$lib/components/modpack/RisingStarsSection.svelte';
+	import VirtualGrid from '$lib/components/VirtualGrid.svelte';
+	import { alertDialogStore } from '$lib/stores/alertDialog.svelte';
+	import { modpackInstallStore } from '$lib/stores/modpackInstall.svelte';
+	import { modpacksStore } from '$lib/stores/modpacks.svelte';
+	import { settingsStore } from '$lib/stores/settings.svelte';
+	import { versionsStore } from '$lib/stores/versions.svelte';
+	import type { LoaderType, Modpack, ModpackPlatform, ModpackSortBy, SideFilter } from '$lib/types';
 	import { Button } from '$lib/ui/button';
 	import { Input } from '$lib/ui/input';
 	import * as Select from '$lib/ui/select';
-	import { modpacksStore } from '$lib/stores/modpacks.svelte';
-	import { modpackInstallStore } from '$lib/stores/modpackInstall.svelte';
-	import { settingsStore } from '$lib/stores/settings.svelte';
-	import { versionsStore } from '$lib/stores/versions.svelte';
-	import { alertDialogStore } from '$lib/stores/alertDialog.svelte';
-	import ModpackDetailModalV2 from '$lib/components/modpack/ModpackDetailModalV2.svelte';
-	import PopularModpacksSection from '$lib/components/modpack/PopularModpacksSection.svelte';
-	import LatestVersionSection from '$lib/components/modpack/LatestVersionSection.svelte';
-	import RisingStarsSection from '$lib/components/modpack/RisingStarsSection.svelte';
-	import PlatformToggle from '$lib/components/modpack/PlatformToggle.svelte';
-	import ModpackCard from '$lib/components/modpack/ModpackCard.svelte';
-	import VirtualGrid from '$lib/components/VirtualGrid.svelte';
-	import type { Modpack, ModpackPlatform, ModpackSortBy, LoaderType, SideFilter } from '$lib/types';
 
 	// Card dimensions - matching the CSS grid layout
 	const ITEM_HEIGHT = 280;
@@ -487,6 +487,7 @@
 					itemHeight={ITEM_HEIGHT}
 					minItemWidth={MIN_ITEM_WIDTH}
 					gap={GAP}
+					maxColumns={4}
 					{scrollContainer}
 					onLoadMore={!searchInput && modpacksStore.hasMoreExplore ? handleLoadMore : undefined}
 					loadMoreThreshold={600}
