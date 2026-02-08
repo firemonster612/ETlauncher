@@ -1,6 +1,6 @@
 <script lang="ts" generics="T">
-	import { onMount, tick } from 'svelte';
 	import type { Snippet } from 'svelte';
+	import { onMount, tick } from 'svelte';
 
 	interface Props {
 		items: T[];
@@ -8,6 +8,7 @@
 		minItemWidth: number;
 		gap?: number;
 		overscan?: number;
+		maxColumns?: number;
 		scrollContainer: HTMLElement | null;
 		onLoadMore?: () => void;
 		loadMoreThreshold?: number;
@@ -20,6 +21,7 @@
 		minItemWidth,
 		gap = 16,
 		overscan = 3,
+		maxColumns = Infinity,
 		scrollContainer,
 		onLoadMore,
 		loadMoreThreshold = 500,
@@ -36,7 +38,7 @@
 	let columns = $derived(
 		containerWidth === 0
 			? 1
-			: Math.max(1, Math.floor((containerWidth + gap) / (minItemWidth + gap)))
+			: Math.min(maxColumns, Math.max(1, Math.floor((containerWidth + gap) / (minItemWidth + gap))))
 	);
 
 	// Calculate item width to fill available space
