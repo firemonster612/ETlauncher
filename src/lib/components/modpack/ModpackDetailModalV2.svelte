@@ -1,41 +1,39 @@
 <script lang="ts">
 	import {
-		X,
-		Download,
-		Users,
-		Calendar,
-		Clock,
-		ExternalLink,
 		BookOpen,
-		Bug,
-		Github,
-		Copy,
-		Check,
-		Package,
-		Loader2,
-		StopCircle,
-		Monitor,
-		Server,
-		MessageCircle,
 		Box,
-		Sparkles,
-		Palette,
+		Bug,
+		Calendar,
+		Check,
+		Clock,
+		Copy,
 		Database,
+		Download,
+		ExternalLink,
+		Github,
+		Loader2,
+		MessageCircle,
+		Monitor,
+		Package,
+		Palette,
+		Server,
+		Sparkles,
+		Users,
+		X,
 	} from '@lucide/svelte';
+	import { openUrl } from '@tauri-apps/plugin-opener';
+	import TeamMembersSection from '$lib/components/modpack/TeamMembersSection.svelte';
+	import ScreenshotLightbox from '$lib/components/ScreenshotLightbox.svelte';
+	import type {
+		LoaderType,
+		Modpack,
+		ModpackContentType,
+		ModpackMod,
+		ModpackVersion,
+	} from '$lib/types';
 	import { Button } from '$lib/ui/button';
 	import * as Select from '$lib/ui/select';
 	import { renderMarkdown } from '$lib/utils/markdown';
-	import { openUrl } from '@tauri-apps/plugin-opener';
-	import DownloadProgress from '$lib/components/DownloadProgress.svelte';
-	import ScreenshotLightbox from '$lib/components/ScreenshotLightbox.svelte';
-	import TeamMembersSection from '$lib/components/modpack/TeamMembersSection.svelte';
-	import type {
-		Modpack,
-		ModpackVersion,
-		ModpackMod,
-		ModpackContentType,
-		LoaderType,
-	} from '$lib/types';
 
 	interface Props {
 		modpack: Modpack;
@@ -46,21 +44,8 @@
 		isLoadingMods?: boolean;
 		detailError?: string | null;
 		modsError?: string | null;
-		installProgress?: {
-			stage: string;
-			progress: number;
-			currentItem?: string;
-			totalItems: number;
-			completedItems: number;
-			totalBytes?: number;
-			downloadedBytes?: number;
-			speedBytesPerSec?: number;
-		} | null;
-		isInstalling?: boolean;
-		isCancelling?: boolean;
 		onClose: () => void;
 		onInstall: (versionId: string) => void;
-		onCancelInstall?: () => void;
 		onLoadMods?: (versionId: string) => void;
 	}
 
@@ -73,12 +58,8 @@
 		isLoadingMods = false,
 		detailError = null,
 		modsError = null,
-		installProgress = null,
-		isInstalling = false,
-		isCancelling = false,
 		onClose,
 		onInstall,
-		onCancelInstall,
 		onLoadMods,
 	}: Props = $props();
 
@@ -359,19 +340,17 @@
 							<p class="text-muted-foreground text-center text-sm">No versions available</p>
 						{/if}
 
-						<!-- Install Button -->
-						{#if !isInstalling}
-							<div class="flex justify-center">
-								<Button
-									class="install-button-large"
-									disabled={!selectedVersionId || isInstalling}
-									onclick={handleInstall}
-								>
-									<Download class="mr-2 h-5 w-5" />
-									INSTALL
-								</Button>
-							</div>
-						{/if}
+					<!-- Install Button -->
+					<div class="flex justify-center">
+						<Button
+							class="install-button-large"
+							disabled={!selectedVersionId}
+							onclick={handleInstall}
+						>
+							<Download class="mr-2 h-5 w-5" />
+							INSTALL
+						</Button>
+					</div>
 					</div>
 
 					<!-- Stats row -->
@@ -817,45 +796,7 @@
 			</div>
 		</div>
 
-		<!-- Sticky Install Progress -->
-		{#if isInstalling}
-			<div
-				class="border-border bg-card flex-shrink-0 border-t p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]"
-			>
-				<div class="flex items-center gap-3">
-					<div class="flex-1">
-						{#if installProgress}
-							<DownloadProgress
-								stage={installProgress.stage}
-								progress={installProgress.progress}
-								currentItem={installProgress.currentItem}
-								totalItems={installProgress.totalItems}
-								completedItems={installProgress.completedItems}
-								totalBytes={installProgress.totalBytes}
-								downloadedBytes={installProgress.downloadedBytes}
-								speedBytesPerSec={installProgress.speedBytesPerSec}
-							/>
-						{:else}
-							<div class="flex items-center gap-2 text-sm">
-								<Loader2 class="text-primary h-4 w-4 flex-shrink-0 animate-spin" />
-								<span class="font-medium">Starting installation...</span>
-							</div>
-						{/if}
-					</div>
-					{#if onCancelInstall}
-						<Button
-							variant="destructive"
-							size="sm"
-							onclick={onCancelInstall}
-							disabled={isCancelling}
-						>
-							<StopCircle class="mr-1 h-4 w-4" />
-							Cancel
-						</Button>
-					{/if}
-				</div>
-			</div>
-		{/if}
+
 	</div>
 </div>
 

@@ -9,16 +9,24 @@ use crate::services::{
     atlauncher_service, curseforge_service, ftb_service, modpack_install_service, modrinth_service,
     technic_service,
 };
-use crate::state::AppState;
+use crate::state::{AppState, QueuedModpackInstall};
 use serde::Serialize;
 use std::cmp::Reverse;
 use std::collections::VecDeque;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 /// Info sent when a modpack install starts
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModpackInstallStarted {
+    pub modpack_name: String,
+}
+
+/// Info returned when a modpack install is queued
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModpackInstallQueued {
+    pub queue_id: String,
     pub modpack_name: String,
 }
 
@@ -430,7 +438,7 @@ pub async fn get_modpack_mods(
     result
 }
 
-/// Install a modpack and create a new instance
+/// Install a modpack and create a new instance (non-blocking, queue-based)
 #[tauri::command]
 pub async fn install_modpack(
     state: State<'_, AppState>,
@@ -439,142 +447,188 @@ pub async fn install_modpack(
     modpack_id: String,
     version_id: String,
     instance_name: Option<String>,
-) -> Result<Instance, CommandError> {
+) -> Result<ModpackInstallQueued, CommandError> {
     println!("[modpack_cmd] install_modpack: platform={:?}, modpack_id={}, version_id={}, instance_name={:?}",
         platform, modpack_id, version_id, instance_name);
 
-    // Check if already installing
-    if state.is_modpack_installing() {
-        return Err(CommandError {
-            code: "ALREADY_INSTALLING".to_string(),
-            message: "A modpack installation is already in progress".to_string(),
-        });
-    }
-
-    // Get display name for the modpack
     let modpack_name = instance_name
         .clone()
         .unwrap_or_else(|| format!("{:?} modpack", platform));
+    let queue_id = uuid::Uuid::new_v4().to_string();
 
-    // Register install state and get cancellation token
-    let cancel_token = state.start_modpack_install(modpack_name.clone());
-
-    // Emit started event
-    let _ = app_handle.emit(
-        "modpack_install_started",
-        ModpackInstallStarted {
-            modpack_name: modpack_name.clone(),
-        },
+    // Register task immediately as Pending in the task registry
+    state.task_registry.register(
+        queue_id.clone(),
+        crate::task_registry::TaskType::ModpackInstall,
+        modpack_name.clone(),
+        None,
+        None, // CancellationToken will be created when the install actually starts
     );
 
-    let result = match platform {
-        ModpackPlatform::Modrinth => {
-            modpack_install_service::install_modrinth_modpack(
-                &state,
-                &modpack_id,
-                &version_id,
-                instance_name,
-                Some(&app_handle),
-                Some(&cancel_token),
-            )
-            .await
-        }
-        ModpackPlatform::CurseForge => {
-            modpack_install_service::install_curseforge_modpack(
-                &state,
-                &modpack_id,
-                &version_id,
-                instance_name,
-                Some(&app_handle),
-                Some(&cancel_token),
-            )
-            .await
-        }
-        ModpackPlatform::FTB => {
-            modpack_install_service::install_ftb_modpack(
-                &state,
-                &modpack_id,
-                &version_id,
-                instance_name,
-                Some(&app_handle),
-                Some(&cancel_token),
-            )
-            .await
-        }
-        ModpackPlatform::Technic => {
-            modpack_install_service::install_technic_modpack(
-                &state,
-                &modpack_id,
-                &version_id,
-                instance_name,
-                Some(&app_handle),
-                Some(&cancel_token),
-            )
-            .await
-        }
-        ModpackPlatform::ATLauncher => {
-            modpack_install_service::install_atlauncher_modpack(
-                &state,
-                &modpack_id,
-                &version_id,
-                instance_name,
-                Some(&app_handle),
-                Some(&cancel_token),
-            )
-            .await
-        }
+    // Add to queue
+    {
+        let mut queue = state.modpack_install_queue.lock().await;
+        queue.push_back(QueuedModpackInstall {
+            queue_id: queue_id.clone(),
+            platform,
+            modpack_id,
+            version_id,
+            instance_name,
+            modpack_name: modpack_name.clone(),
+        });
+    }
+
+    // Trigger queue processing
+    process_modpack_queue(app_handle).await;
+
+    Ok(ModpackInstallQueued {
+        queue_id,
+        modpack_name,
+    })
+}
+
+/// Process the modpack install queue - start installs up to the concurrent limit
+fn process_modpack_queue(
+    app_handle: AppHandle,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+    Box::pin(async move {
+        process_modpack_queue_impl(app_handle).await;
+    })
+}
+
+async fn process_modpack_queue_impl(app_handle: AppHandle) {
+    let state = app_handle.state::<AppState>();
+    let max_concurrent = {
+        let settings = state.settings.read();
+        settings.concurrent_downloads.max(1) as usize
     };
 
-    // Clear install state
-    state.clear_modpack_install();
-
-    match result {
-        Ok(instance) => {
-            println!(
-                "[modpack_cmd] install_modpack: success, instance_id={}",
-                instance.id
-            );
-            let _ = app_handle.emit("modpack_install_complete", &instance);
-            Ok(instance)
-        }
-        Err(crate::error::AppError::Cancelled) => {
-            println!("[modpack_cmd] install_modpack: cancelled");
-            let _ = app_handle.emit("modpack_install_cancelled", ());
-            Err(CommandError {
-                code: "CANCELLED".to_string(),
-                message: "Installation cancelled".to_string(),
+    loop {
+        // Count currently running modpack installs via task registry
+        let active_count = state
+            .task_registry
+            .list()
+            .iter()
+            .filter(|t| {
+                t.task_type == crate::task_registry::TaskType::ModpackInstall
+                    && t.status == crate::task_registry::TaskStatusKind::Running
             })
+            .count();
+
+        if active_count >= max_concurrent {
+            break;
         }
-        Err(e) => {
-            println!("[modpack_cmd] install_modpack: error={:?}", e);
-            let _ = app_handle.emit("modpack_install_error", e.to_string());
-            Err(CommandError::from(e))
-        }
+
+        // Dequeue next item
+        let next_item = {
+            let mut queue = state.modpack_install_queue.lock().await;
+            queue.pop_front()
+        };
+
+        let Some(item) = next_item else { break };
+
+        // Spawn the install task
+        let handle_clone = app_handle.clone();
+        tokio::spawn(async move {
+            let state = handle_clone.state::<AppState>();
+
+            // Create cancellation token for this install
+            let cancel_token = tokio_util::sync::CancellationToken::new();
+
+            // Emit started event
+            let _ = handle_clone.emit(
+                "modpack_install_started",
+                ModpackInstallStarted {
+                    modpack_name: item.modpack_name.clone(),
+                },
+            );
+
+            let result = match item.platform {
+                ModpackPlatform::Modrinth => {
+                    modpack_install_service::install_modrinth_modpack(
+                        &state,
+                        &item.modpack_id,
+                        &item.version_id,
+                        item.instance_name.clone(),
+                        Some(&handle_clone),
+                        Some(&cancel_token),
+                        Some(&item.queue_id),
+                    )
+                    .await
+                }
+                ModpackPlatform::CurseForge => {
+                    modpack_install_service::install_curseforge_modpack(
+                        &state,
+                        &item.modpack_id,
+                        &item.version_id,
+                        item.instance_name.clone(),
+                        Some(&handle_clone),
+                        Some(&cancel_token),
+                        Some(&item.queue_id),
+                    )
+                    .await
+                }
+                ModpackPlatform::FTB => {
+                    modpack_install_service::install_ftb_modpack(
+                        &state,
+                        &item.modpack_id,
+                        &item.version_id,
+                        item.instance_name.clone(),
+                        Some(&handle_clone),
+                        Some(&cancel_token),
+                        Some(&item.queue_id),
+                    )
+                    .await
+                }
+                ModpackPlatform::Technic => {
+                    modpack_install_service::install_technic_modpack(
+                        &state,
+                        &item.modpack_id,
+                        &item.version_id,
+                        item.instance_name.clone(),
+                        Some(&handle_clone),
+                        Some(&cancel_token),
+                        Some(&item.queue_id),
+                    )
+                    .await
+                }
+                ModpackPlatform::ATLauncher => {
+                    modpack_install_service::install_atlauncher_modpack(
+                        &state,
+                        &item.modpack_id,
+                        &item.version_id,
+                        item.instance_name.clone(),
+                        Some(&handle_clone),
+                        Some(&cancel_token),
+                        Some(&item.queue_id),
+                    )
+                    .await
+                }
+            };
+
+            // Emit completion/error/cancel events
+            match result {
+                Ok(instance) => {
+                    println!(
+                        "[modpack_cmd] install_modpack: success, instance_id={}",
+                        instance.id
+                    );
+                    let _ = handle_clone.emit("modpack_install_complete", &instance);
+                }
+                Err(crate::error::AppError::Cancelled) => {
+                    println!("[modpack_cmd] install_modpack: cancelled");
+                    let _ = handle_clone.emit("modpack_install_cancelled", ());
+                }
+                Err(ref e) => {
+                    println!("[modpack_cmd] install_modpack: error={:?}", e);
+                    let _ = handle_clone.emit("modpack_install_error", e.to_string());
+                }
+            }
+
+            // Process queue again to start next items
+            tokio::spawn(process_modpack_queue(handle_clone));
+        });
     }
-}
-
-/// Cancel the current modpack installation
-#[tauri::command]
-pub async fn cancel_modpack_install(state: State<'_, AppState>) -> Result<(), CommandError> {
-    println!("[modpack_cmd] cancel_modpack_install");
-
-    if let Some(token) = state.get_modpack_cancel_token() {
-        token.cancel();
-        Ok(())
-    } else {
-        Err(CommandError {
-            code: "NO_INSTALL".to_string(),
-            message: "No modpack installation in progress".to_string(),
-        })
-    }
-}
-
-/// Get current modpack install status
-#[tauri::command]
-pub fn get_modpack_install_status(state: State<'_, AppState>) -> Option<ModpackInstallStarted> {
-    state
-        .get_modpack_install()
-        .map(|name| ModpackInstallStarted { modpack_name: name })
 }
 
 /// Import an instance from a local .mrpack file

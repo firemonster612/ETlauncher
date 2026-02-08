@@ -40,12 +40,26 @@ pub async fn execute_content_update(
     plan: &UpdatePlan,
     app_handle: Option<&AppHandle>,
 ) -> Result<(), AppError> {
+    // Register task in the task registry
+    let task_id = uuid::Uuid::new_v4().to_string();
+    state.task_registry.register(
+        task_id.clone(),
+        crate::task_registry::TaskType::InstanceUpdate,
+        "Updating instance content".to_string(),
+        Some(instance_id.to_string()),
+        None,
+    );
+    state.task_registry.start(&task_id);
+
     let instance = instance_service::get_instance(state, instance_id)?;
     let instances_base = state.settings.read().instances_path.clone();
     let game_dir = get_instance_game_dir_with_base(&instances_base, instance_id);
 
     // Create backup before making changes
     emit_progress(app_handle, "Creating backup", 0, None, 0, 0);
+    state
+        .task_registry
+        .update_stage(&task_id, "Creating backup".to_string());
     let backup_id = format!("backup_{}", Utc::now().timestamp());
     let backup_path = create_backup(&game_dir, &backup_id)?;
 
@@ -59,6 +73,7 @@ pub async fn execute_content_update(
             emit_progress(app_handle, "Cleaning up", 98, None, 0, 0);
             cleanup_backup(&backup_path)?;
             emit_progress(app_handle, "Update complete", 100, None, 0, 0);
+            state.task_registry.complete(&task_id);
             Ok(())
         }
         Err(e) => {
@@ -68,6 +83,7 @@ pub async fn execute_content_update(
                 eprintln!("Failed to restore backup: {}", restore_err);
             }
             cleanup_backup(&backup_path)?;
+            state.task_registry.fail(&task_id, e.to_string());
             Err(e)
         }
     }
@@ -542,12 +558,26 @@ pub async fn execute_modpack_update(
         }
     }
 
+    // Register task in the task registry
+    let task_id = uuid::Uuid::new_v4().to_string();
+    state.task_registry.register(
+        task_id.clone(),
+        crate::task_registry::TaskType::InstanceUpdate,
+        "Updating modpack".to_string(),
+        Some(instance_id.to_string()),
+        None,
+    );
+    state.task_registry.start(&task_id);
+
     let instance = instance_service::get_instance(state, instance_id)?;
     let instances_base = state.settings.read().instances_path.clone();
     let game_dir = get_instance_game_dir_with_base(&instances_base, instance_id);
 
     // Create backup
     emit_progress(app_handle, "Creating backup", 0, None, 0, 0);
+    state
+        .task_registry
+        .update_stage(&task_id, "Creating backup".to_string());
     let backup_id = format!("backup_{}", Utc::now().timestamp());
     let backup_path = create_backup(&game_dir, &backup_id)?;
 
@@ -560,6 +590,7 @@ pub async fn execute_modpack_update(
             emit_progress(app_handle, "Cleaning up", 98, None, 0, 0);
             cleanup_backup(&backup_path)?;
             emit_progress(app_handle, "Update complete", 100, None, 0, 0);
+            state.task_registry.complete(&task_id);
             Ok(updated_instance)
         }
         Err(e) => {
@@ -568,6 +599,7 @@ pub async fn execute_modpack_update(
                 eprintln!("Failed to restore backup: {}", restore_err);
             }
             cleanup_backup(&backup_path)?;
+            state.task_registry.fail(&task_id, e.to_string());
             Err(e)
         }
     }
@@ -842,12 +874,26 @@ pub async fn execute_instance_update(
         }
     }
 
+    // Register task in the task registry
+    let task_id = uuid::Uuid::new_v4().to_string();
+    state.task_registry.register(
+        task_id.clone(),
+        crate::task_registry::TaskType::InstanceUpdate,
+        "Updating instance".to_string(),
+        Some(instance_id.to_string()),
+        None,
+    );
+    state.task_registry.start(&task_id);
+
     let instance = instance_service::get_instance(state, instance_id)?;
     let instances_base = state.settings.read().instances_path.clone();
     let game_dir = get_instance_game_dir_with_base(&instances_base, instance_id);
 
     // Create backup
     emit_progress(app_handle, "Creating backup", 0, None, 0, 0);
+    state
+        .task_registry
+        .update_stage(&task_id, "Creating backup".to_string());
     let backup_id = format!("backup_{}", Utc::now().timestamp());
     let backup_path = create_backup(&game_dir, &backup_id)?;
 
@@ -860,6 +906,7 @@ pub async fn execute_instance_update(
             emit_progress(app_handle, "Cleaning up", 98, None, 0, 0);
             cleanup_backup(&backup_path)?;
             emit_progress(app_handle, "Update complete", 100, None, 0, 0);
+            state.task_registry.complete(&task_id);
             Ok(updated_instance)
         }
         Err(e) => {
@@ -868,6 +915,7 @@ pub async fn execute_instance_update(
                 eprintln!("Failed to restore backup: {}", restore_err);
             }
             cleanup_backup(&backup_path)?;
+            state.task_registry.fail(&task_id, e.to_string());
             Err(e)
         }
     }

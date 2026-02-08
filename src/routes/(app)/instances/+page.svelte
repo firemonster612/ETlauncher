@@ -1,34 +1,34 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import {
+		AlertTriangle,
+		CheckCircle,
+		FileDown,
 		Layers,
+		Loader2,
 		Plus,
 		Search,
-		Loader2,
-		CheckCircle,
-		AlertTriangle,
-		FileDown,
 		Trash2,
 	} from '@lucide/svelte';
-	import { Button } from '$lib/ui/button';
-	import { Input } from '$lib/ui/input';
-	import * as Select from '$lib/ui/select';
-	import { LoaderSelect } from '$lib/ui/loader-select';
-	import { instancesStore } from '$lib/stores/instances.svelte';
-	import { settingsStore } from '$lib/stores/settings.svelte';
-	import { versionsStore } from '$lib/stores/versions.svelte';
-	import { launchStore } from '$lib/stores/launch.svelte';
-	import { accountsStore } from '$lib/stores/accounts.svelte';
-	import { alertDialogStore } from '$lib/stores/alertDialog.svelte';
+	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import ContentBrowser from '$lib/components/ContentBrowser.svelte';
-	import InstanceSettings from '$lib/components/InstanceSettings.svelte';
+	import ImportWizard from '$lib/components/ImportWizard.svelte';
 	import InstanceCard from '$lib/components/InstanceCard.svelte';
 	import InstanceDetailModal from '$lib/components/InstanceDetailModal.svelte';
-	import ImportWizard from '$lib/components/ImportWizard.svelte';
-	import type { LoaderType, Instance, ContentType } from '$lib/types';
+	import InstanceSettings from '$lib/components/InstanceSettings.svelte';
+	import { accountsStore } from '$lib/stores/accounts.svelte';
+	import { alertDialogStore } from '$lib/stores/alertDialog.svelte';
+	import { instancesStore } from '$lib/stores/instances.svelte';
+	import { launchStore } from '$lib/stores/launch.svelte';
+	import { settingsStore } from '$lib/stores/settings.svelte';
+	import { versionsStore } from '$lib/stores/versions.svelte';
+	import type { ContentType, Instance, LoaderType } from '$lib/types';
+	import { Button } from '$lib/ui/button';
+	import { Input } from '$lib/ui/input';
+	import { LoaderSelect } from '$lib/ui/loader-select';
+	import * as Select from '$lib/ui/select';
 
 	let search = $state('');
 	let showCreateModal = $state(false);
@@ -41,10 +41,6 @@
 	let createLoader = $state<LoaderType>('vanilla');
 	let createLoaderVersion = $state('');
 	let isCreating = $state(false);
-
-	// Setup progress state (shown after instance is created)
-	let setupInstanceId = $state<string | null>(null);
-	let setupInstanceName = $state<string>('');
 
 	// Content browser state
 	let showContentBrowser = $state(false);
@@ -175,96 +171,42 @@
 		if (!createName.trim()) return;
 
 		isCreating = true;
-		const instanceName = createName.trim();
-		const instance = await instancesStore.create({
-			name: instanceName,
-			minecraftVersion: createVersion,
-			loaderType: createLoader === 'vanilla' ? undefined : createLoader,
-			loaderVersion: createLoader !== 'vanilla' ? createLoaderVersion : undefined,
-		});
 
-		if (instance) {
-			// Enter setup mode - don't close the modal yet
-			setupInstanceId = instance.id;
-			setupInstanceName = instanceName;
-			// Reset form for next time
-			createName = '';
-			createVersion = versionsStore.latestRelease ?? '';
-			createLoader = 'vanilla';
-			createLoaderVersion = '';
+		// Capture loader values before resetting form
+		const loader = createLoader;
+		const loaderVersion = createLoaderVersion;
+
+		// Just create the instance record (fast), then close the modal
+		// Loader install + game file setup runs in the background via the task drawer
+		try {
+			const instance = await instancesStore.createOnly({
+				name: createName.trim(),
+				minecraftVersion: createVersion,
+				loaderType: loader === 'vanilla' ? undefined : loader,
+				loaderVersion: loader !== 'vanilla' ? loaderVersion : undefined,
+			});
+
+			if (instance) {
+				// Close modal immediately
+				createName = '';
+				createVersion = versionsStore.latestRelease ?? '';
+				createLoader = 'vanilla';
+				createLoaderVersion = '';
+				closeCreateModal();
+
+				// Kick off loader install + setup in background (task drawer shows progress)
+				instancesStore.setupInBackground(instance.id, {
+					loaderType: loader === 'vanilla' ? undefined : loader,
+					loaderVersion: loader !== 'vanilla' ? loaderVersion : undefined,
+				});
+			}
+		} finally {
+			isCreating = false;
 		}
-		isCreating = false;
 	}
 
 	function closeCreateModal() {
 		showCreateModal = false;
-		setupInstanceId = null;
-		setupInstanceName = '';
-	}
-
-	// Watch for setup completion to auto-close the modal
-	$effect(() => {
-		if (setupInstanceId) {
-			const status = instancesStore.setupStatuses.get(setupInstanceId);
-			if (status?.status === 'complete') {
-				// Setup complete, close modal after brief delay
-				setTimeout(() => {
-					closeCreateModal();
-				}, 500);
-			}
-		}
-	});
-
-	// Get setup progress for display
-	const setupStatus = $derived(
-		setupInstanceId ? instancesStore.setupStatuses.get(setupInstanceId) : null
-	);
-
-	function getSetupMessage(status: typeof setupStatus): string {
-		if (!status) return 'Starting setup...';
-		switch (status.status) {
-			case 'pending':
-				return 'Starting setup...';
-			case 'preparing':
-				return status.message;
-			case 'downloadingGameFiles':
-				return 'Downloading game files...';
-			case 'installingLoader':
-				return `Installing ${status.stage}...`;
-			case 'complete':
-				return 'Setup complete!';
-			case 'failed':
-				return `Setup failed: ${status.message}`;
-			default:
-				return 'Setting up...';
-		}
-	}
-
-	function getSetupProgress(status: typeof setupStatus): number {
-		if (!status) return 0;
-		switch (status.status) {
-			case 'pending':
-				return 5;
-			case 'preparing':
-				return 10;
-			case 'downloadingGameFiles': {
-				const progress = status.progress;
-				if (progress.totalBytes > 0) {
-					return 15 + (progress.downloadedBytes / progress.totalBytes) * 80;
-				} else if (progress.totalFiles > 0) {
-					return 15 + (progress.completedFiles / progress.totalFiles) * 80;
-				}
-				return 15;
-			}
-			case 'installingLoader':
-				return 90 + (status.progress / 100) * 5;
-			case 'complete':
-				return 100;
-			case 'failed':
-				return 0;
-			default:
-				return 0;
-		}
 	}
 
 	function confirmDelete(instanceId: string) {
@@ -388,22 +330,18 @@
 			class="grid gap-4"
 			style="grid-template-columns: repeat(auto-fill, 320px); justify-content: start;"
 		>
-			{#each filteredInstances as instance (instance.id)}
-				{@const status = getInstanceStatus(instance.id)}
-				{@const launchStatus = launchStore.launchStates.get(instance.id)?.status}
-				{@const setupStatus = instancesStore.setupStatuses.get(instance.id)}
-				<InstanceCard
-					{instance}
-					{status}
-					{launchStatus}
-					{setupStatus}
-					onLaunch={handleLaunch}
-					onKill={handleKill}
-					onOpenSettings={openSettings}
-					onOpenContentBrowser={openContentBrowser}
-					onDelete={confirmDelete}
-					onCardClick={openDetailModal}
-				/>
+		{#each filteredInstances as instance (instance.id)}
+			{@const status = getInstanceStatus(instance.id)}
+			<InstanceCard
+				{instance}
+				{status}
+				onLaunch={handleLaunch}
+				onKill={handleKill}
+				onOpenSettings={openSettings}
+				onOpenContentBrowser={openContentBrowser}
+				onDelete={confirmDelete}
+				onCardClick={openDetailModal}
+			/>
 			{/each}
 		</div>
 	{/if}
@@ -413,63 +351,7 @@
 {#if showCreateModal}
 	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
 		<div class="bg-card border-border mx-4 w-full max-w-md space-y-4 border-2 p-6">
-			{#if setupInstanceId}
-				<!-- Setup Progress View -->
-				<div class="flex flex-col items-center gap-4 py-4">
-					<div class="flex items-center gap-3">
-						{#if setupStatus?.status === 'complete'}
-							<CheckCircle class="text-primary h-8 w-8" />
-						{:else if setupStatus?.status === 'failed'}
-							<AlertTriangle class="h-8 w-8 text-red-500" />
-						{:else}
-							<Loader2 class="text-primary h-8 w-8 animate-spin" />
-						{/if}
-						<h2 class="text-lg font-bold">
-							{#if setupStatus?.status === 'complete'}
-								Instance Ready!
-							{:else if setupStatus?.status === 'failed'}
-								Setup Failed
-							{:else}
-								Setting Up Instance
-							{/if}
-						</h2>
-					</div>
-
-					<p class="text-muted-foreground text-center text-sm">
-						{setupInstanceName}
-					</p>
-
-					<!-- Progress bar -->
-					<div class="w-full space-y-2">
-						<div class="bg-muted h-2 w-full overflow-hidden rounded-full">
-							<div
-								class="bg-primary h-full transition-all duration-300 ease-out"
-								class:bg-red-500={setupStatus?.status === 'failed'}
-								style="width: {getSetupProgress(setupStatus)}%"
-							></div>
-						</div>
-						<p class="text-muted-foreground text-center text-sm">
-							{getSetupMessage(setupStatus)}
-						</p>
-
-						<!-- Show current file being downloaded -->
-						{#if setupStatus?.status === 'downloadingGameFiles' && setupStatus.progress.currentFile}
-							<p class="text-muted-foreground truncate text-center text-xs">
-								{setupStatus.progress.currentFile}
-							</p>
-						{/if}
-					</div>
-
-					<!-- Close button (only show when complete or failed) -->
-					{#if setupStatus?.status === 'complete' || setupStatus?.status === 'failed'}
-						<Button onclick={closeCreateModal} class="mt-2">
-							{setupStatus?.status === 'complete' ? 'Done' : 'Close'}
-						</Button>
-					{/if}
-				</div>
-			{:else}
-				<!-- Create Form View -->
-				<h2 class="text-lg font-bold">Create New Instance</h2>
+			<h2 class="text-lg font-bold">Create New Instance</h2>
 
 				<div class="space-y-4">
 					<div>
@@ -528,44 +410,22 @@
 						variant="outline"
 						class="flex-1"
 						onclick={closeCreateModal}
-						disabled={isCreating || instancesStore.isInstallingLoader}
+						disabled={isCreating}
 					>
 						Cancel
 					</Button>
 					<Button
 						class="flex-1"
 						onclick={handleCreate}
-						disabled={!createName.trim() || isCreating || instancesStore.isInstallingLoader}
+						disabled={!createName.trim() || isCreating}
 					>
-						{#if instancesStore.isInstallingLoader}
-							Installing {createLoader}...
-						{:else if isCreating}
+						{#if isCreating}
 							Creating...
 						{:else}
 							Create
 						{/if}
 					</Button>
 				</div>
-
-				<!-- Loader Installation Progress -->
-				{#if instancesStore.isInstallingLoader && instancesStore.loaderInstallProgress}
-					<div class="border-border mt-4 border-t pt-4">
-						<div class="flex items-center gap-2 text-sm">
-							<Loader2 class="text-primary h-4 w-4 animate-spin" />
-							<span>{instancesStore.loaderInstallProgress.stage}</span>
-						</div>
-						<div class="bg-muted mt-2 h-2 overflow-hidden rounded-full">
-							<div
-								class="bg-primary h-full transition-all duration-300"
-								style="width: {instancesStore.loaderInstallProgress.progress}%"
-							></div>
-						</div>
-						<div class="text-muted-foreground mt-1 text-xs">
-							{instancesStore.loaderInstallProgress.progress}% complete
-						</div>
-					</div>
-				{/if}
-			{/if}
 		</div>
 	</div>
 {/if}

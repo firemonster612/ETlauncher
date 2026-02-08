@@ -1,7 +1,7 @@
-import type { LaunchStatus, GameLogLine } from '$lib/types';
-import * as launchService from '$lib/services/launch';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { SvelteMap } from 'svelte/reactivity';
+import * as launchService from '$lib/services/launch';
+import type { GameLogLine, LaunchStatus } from '$lib/types';
 import { getErrorMessage } from '$lib/utils/error';
 
 interface LaunchState {
@@ -91,8 +91,12 @@ function createLaunchStore() {
 				const pid = await launchService.launchInstance(instanceId, accountId);
 				return pid;
 			} catch (e) {
-				console.error('Launch error:', e);
-				error = getErrorMessage(e);
+				const msg = getErrorMessage(e);
+				// Suppress "Launch cancelled" - it's intentional, not an error
+				if (!msg.toLowerCase().includes('launch cancelled')) {
+					console.error('Launch error:', e);
+					error = msg;
+				}
 				launchStates.delete(instanceId);
 				launchStates = new SvelteMap(launchStates);
 				return null;
@@ -187,6 +191,21 @@ function createLaunchStore() {
 				return true;
 			} catch (e) {
 				console.error('Kill error:', e);
+				error = getErrorMessage(e);
+				return false;
+			}
+		},
+
+		/** Cancel a launch in progress (works for both pre-spawn and running states) */
+		async cancelLaunch(instanceId: string): Promise<boolean> {
+			try {
+				await launchService.cancelLaunch(instanceId);
+				// Remove from launch states immediately for responsive UI
+				launchStates.delete(instanceId);
+				launchStates = new SvelteMap(launchStates);
+				return true;
+			} catch (e) {
+				console.error('Cancel launch error:', e);
 				error = getErrorMessage(e);
 				return false;
 			}

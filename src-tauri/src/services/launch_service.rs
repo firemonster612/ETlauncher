@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use crate::models::instance::{Instance, LaunchStatus};
+use crate::models::instance::{DownloadProgress, Instance, LaunchStatus};
 use crate::models::minecraft::{GameLogLine, LogLevel};
 use crate::services::{account_service, download_service, instance_service, java_service};
 use crate::state::AppState;
@@ -9,8 +9,10 @@ use chrono::Utc;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 use std::thread;
 use tauri::{AppHandle, Emitter, Manager};
+use tokio_util::sync::CancellationToken;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -22,6 +24,15 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 pub enum QuickPlayTarget {
     World(String),
     Server(String),
+}
+
+/// Check if the launch has been cancelled, returning an error if so
+fn check_cancelled(token: &CancellationToken) -> Result<(), AppError> {
+    if token.is_cancelled() {
+        Err(AppError::LaunchError("Launch cancelled".to_string()))
+    } else {
+        Ok(())
+    }
 }
 
 /// Launch a Minecraft instance
@@ -41,17 +52,65 @@ pub async fn launch_instance(
         ));
     }
 
+    // Create cancellation token for this launch
+    let cancel_token = CancellationToken::new();
+    {
+        let mut tokens = state.launch_tokens.write();
+        tokens.insert(instance_id.clone(), cancel_token.clone());
+    }
+
+    // Run the launch with cancellation support, cleaning up the token on exit
+    let result = launch_instance_inner(
+        instance,
+        account_id,
+        app_handle,
+        quick_play_args,
+        &cancel_token,
+    )
+    .await;
+
+    // Clean up cancellation token (unless process is now running - token stays for kill)
+    if result.is_err() || cancel_token.is_cancelled() {
+        let mut tokens = state.launch_tokens.write();
+        tokens.remove(&instance_id);
+
+        // Emit stopped status so the frontend cleans up the launch state
+        if cancel_token.is_cancelled() {
+            emit_launch_status(
+                app_handle,
+                &instance_id,
+                LaunchStatus::Stopped { exit_code: -1 },
+            );
+        }
+    }
+
+    result
+}
+
+/// Inner launch function that supports cancellation
+async fn launch_instance_inner(
+    instance: &Instance,
+    account_id: &str,
+    app_handle: &AppHandle,
+    quick_play_args: Option<Vec<String>>,
+    cancel_token: &CancellationToken,
+) -> Result<u32, AppError> {
+    let instance_id = instance.id.clone();
+    let state: tauri::State<'_, AppState> = app_handle.state();
+
     // Emit checking account status
     emit_launch_status(app_handle, &instance_id, LaunchStatus::CheckingAccount);
 
     // Get and verify account
     let account = account_service::get_account(account_id)?;
+    check_cancelled(cancel_token)?;
 
     // Get valid access token (will refresh if needed)
     emit_launch_status(app_handle, &instance_id, LaunchStatus::RefreshingToken);
 
     let access_token =
         account_service::get_valid_access_token(&state.http_client, account_id).await?;
+    check_cancelled(cancel_token)?;
 
     // Get paths
     let game_dir = instance_service::get_game_directory(&state, &instance.id);
@@ -67,16 +126,37 @@ pub async fn launch_instance(
         &game_dir,
     )
     .await?;
+    check_cancelled(cancel_token)?;
 
     // Download game files using the merged version info (includes loader libraries)
-    // The download_game_files_with_version function will emit its own Downloading status events
-    download_service::download_game_files_with_version(
-        &instance.id,
-        &instance.minecraft_version,
-        &version_info,
-        Some(app_handle),
-    )
-    .await?;
+    // Bridge download progress to LaunchStatus::Downloading events
+    let instance_id_for_cb = instance_id.clone();
+    let handle_for_cb = app_handle.clone();
+    let on_progress: Arc<dyn Fn(&DownloadProgress) + Send + Sync> =
+        Arc::new(move |progress: &DownloadProgress| {
+            emit_launch_status(
+                &handle_for_cb,
+                &instance_id_for_cb,
+                LaunchStatus::Downloading {
+                    progress: progress.clone(),
+                },
+            );
+        });
+
+    // Use select! so cancellation aborts the download immediately
+    tokio::select! {
+        result = download_service::download_game_files_with_version(
+            &instance.id,
+            &instance.minecraft_version,
+            &version_info,
+            Some(app_handle),
+            Some(on_progress),
+            false,
+        ) => { result?; }
+        _ = cancel_token.cancelled() => {
+            return Err(AppError::LaunchError("Launch cancelled".to_string()));
+        }
+    }
 
     // Get Java path - use instance override or auto-manage based on MC version
     let java_path = if let Some(ref path) = instance.java_path {
@@ -91,8 +171,17 @@ pub async fn launch_instance(
                 version: required_java,
             },
         );
-        java_service::ensure_java_installed(required_java, &instance_id, app_handle).await?
+        // Use select! so cancellation aborts java install immediately
+        tokio::select! {
+            result = java_service::ensure_java_installed(required_java, &instance_id, app_handle) => {
+                result?
+            }
+            _ = cancel_token.cancelled() => {
+                return Err(AppError::LaunchError("Launch cancelled".to_string()));
+            }
+        }
     };
+    check_cancelled(cancel_token)?;
 
     // Emit building classpath status
     emit_launch_status(app_handle, &instance_id, LaunchStatus::BuildingClasspath);
@@ -420,9 +509,11 @@ pub async fn launch_instance(
             let _ = instance_service::update_play_time(state, &instance_id_wait, play_duration);
         }
 
-        // Unregister from running instances
+        // Unregister from running instances and clean up launch token
         if let Some(state) = state {
             state.unregister_running_instance(&instance_id_wait);
+            let mut tokens = state.launch_tokens.write();
+            tokens.remove(&instance_id_wait);
         }
 
         // Emit final status

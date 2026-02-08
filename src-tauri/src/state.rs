@@ -9,11 +9,12 @@ use crate::cache::Cache;
 use crate::models::content::{
     Content, ContentSearchResult, ContentVersion, QueuedContentInstall, ResolvedDependency,
 };
-use crate::models::instance::LoaderType;
+use crate::models::instance::{LoaderType, ModpackPlatform};
 use crate::models::loader::LoaderVersion;
 use crate::models::modpack::{Modpack, ModpackSearchResult, ModpackVersion};
 use crate::models::resource_pool::ResourcePoolIndex;
 use crate::models::{AppSettings, VersionManifest};
+use crate::task_registry::TaskRegistry;
 
 /// API cache for reducing redundant API calls.
 /// All caches are thread-safe and automatically expire entries based on TTL.
@@ -126,8 +127,8 @@ pub struct AppState {
     pub running_instances: RwLock<HashMap<String, RunningInstance>>,
     /// HTTP client for API requests
     pub http_client: reqwest::Client,
-    /// Active modpack installation (only one at a time)
-    pub modpack_install: RwLock<Option<ModpackInstallState>>,
+    /// Queue of pending modpack installations
+    pub modpack_install_queue: Arc<Mutex<VecDeque<QueuedModpackInstall>>>,
     /// Content download queue for parallel downloads
     pub content_download_queue: Arc<Mutex<VecDeque<QueuedContentInstall>>>,
     /// Currently active content downloads (queue IDs)
@@ -138,6 +139,10 @@ pub struct AppState {
     pub api_cache: ApiCache,
     /// Resource pool index for shared content management
     pub resource_pool_index: RwLock<ResourcePoolIndex>,
+    /// Centralized task registry for tracking background operations
+    pub task_registry: TaskRegistry,
+    /// Cancellation tokens for active launches (instance_id -> token)
+    pub launch_tokens: RwLock<HashMap<String, CancellationToken>>,
 }
 
 /// Cached version manifest with fetch timestamp
@@ -153,10 +158,15 @@ pub struct RunningInstance {
     pub started_at: i64,
 }
 
-/// State for an active modpack installation
-pub struct ModpackInstallState {
+/// Queued modpack installation request
+#[derive(Clone)]
+pub struct QueuedModpackInstall {
+    pub queue_id: String,
+    pub platform: ModpackPlatform,
+    pub modpack_id: String,
+    pub version_id: String,
+    pub instance_name: Option<String>,
     pub modpack_name: String,
-    pub cancellation_token: CancellationToken,
 }
 
 impl AppState {
@@ -174,12 +184,14 @@ impl AppState {
             version_manifest: RwLock::new(None),
             running_instances: RwLock::new(HashMap::new()),
             http_client,
-            modpack_install: RwLock::new(None),
+            modpack_install_queue: Arc::new(Mutex::new(VecDeque::new())),
             content_download_queue: Arc::new(Mutex::new(VecDeque::new())),
             active_content_downloads: Arc::new(Mutex::new(HashSet::new())),
             content_download_tokens: Arc::new(Mutex::new(HashMap::new())),
             api_cache: ApiCache::new(),
             resource_pool_index: RwLock::new(pool_index),
+            task_registry: TaskRegistry::new(),
+            launch_tokens: RwLock::new(HashMap::new()),
         }
     }
 
@@ -287,42 +299,6 @@ impl AppState {
     pub fn is_instance_running(&self, instance_id: &str) -> bool {
         let running = self.running_instances.read();
         running.contains_key(instance_id)
-    }
-
-    /// Start tracking a modpack installation
-    pub fn start_modpack_install(&self, modpack_name: String) -> CancellationToken {
-        let token = CancellationToken::new();
-        *self.modpack_install.write() = Some(ModpackInstallState {
-            modpack_name,
-            cancellation_token: token.clone(),
-        });
-        token
-    }
-
-    /// Get the current modpack install state
-    pub fn get_modpack_install(&self) -> Option<String> {
-        self.modpack_install
-            .read()
-            .as_ref()
-            .map(|s| s.modpack_name.clone())
-    }
-
-    /// Get the cancellation token for the current install
-    pub fn get_modpack_cancel_token(&self) -> Option<CancellationToken> {
-        self.modpack_install
-            .read()
-            .as_ref()
-            .map(|s| s.cancellation_token.clone())
-    }
-
-    /// Clear the modpack install state
-    pub fn clear_modpack_install(&self) {
-        *self.modpack_install.write() = None;
-    }
-
-    /// Check if a modpack is currently being installed
-    pub fn is_modpack_installing(&self) -> bool {
-        self.modpack_install.read().is_some()
     }
 }
 

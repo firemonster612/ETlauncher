@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import * as Sidebar from '$lib/ui/sidebar';
-	import { navItems } from '$lib/stores/navigation.svelte';
 	import AccountSwitcher from '$lib/components/auth/AccountSwitcher.svelte';
+	import { navItems } from '$lib/stores/navigation.svelte';
+	import * as Sidebar from '$lib/ui/sidebar';
 </script>
 
 <Sidebar.Root collapsible="icon" class="border-sidebar-border border-r">

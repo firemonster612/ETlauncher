@@ -1,24 +1,34 @@
 <script lang="ts">
+	import { listen } from '@tauri-apps/api/event';
 	import { onMount } from 'svelte';
-	import AppSidebar from '$lib/components/layout/AppSidebar.svelte';
-	import ModpackInstallBar from '$lib/components/ModpackInstallBar.svelte';
 	import LaunchingDialog from '$lib/components/LaunchingDialog.svelte';
+	import AppSidebar from '$lib/components/layout/AppSidebar.svelte';
+	import SidebarTasks from '$lib/components/layout/SidebarTasks.svelte';
 	import UpdateNotification from '$lib/components/UpdateNotification.svelte';
 	import UpgradeSuccessBanner from '$lib/components/UpgradeSuccessBanner.svelte';
-	import { SidebarInset } from '$lib/ui/sidebar';
-	import { launchStore } from '$lib/stores/launch.svelte';
-	import { modpackInstallStore } from '$lib/stores/modpackInstall.svelte';
 	import { instancesStore } from '$lib/stores/instances.svelte';
+	import { launchStore } from '$lib/stores/launch.svelte';
 	import { settingsStore } from '$lib/stores/settings.svelte';
+	import { taskManagerStore } from '$lib/stores/taskManager.svelte';
 	import { updaterStore } from '$lib/stores/updater.svelte';
+	import type { Instance } from '$lib/types';
+	import { SidebarInset } from '$lib/ui/sidebar';
 
 	let { children } = $props();
 
 	// Initialize stores once at app level
 	onMount(() => {
 		launchStore.init();
-		modpackInstallStore.init();
 		instancesStore.init();
+		taskManagerStore.init();
+
+		// Listen for modpack install completion to refresh instances
+		let unlistenComplete: (() => void) | null = null;
+		listen<Instance>('modpack_install_complete', () => {
+			instancesStore.load();
+		}).then((unlisten) => {
+			unlistenComplete = unlisten;
+		});
 
 		// Check for updates on startup if auto-update is enabled
 		const checkForUpdates = async () => {
@@ -34,6 +44,8 @@
 		return () => {
 			launchStore.cleanup();
 			instancesStore.cleanup();
+			taskManagerStore.cleanup();
+			unlistenComplete?.();
 		};
 	});
 </script>
@@ -41,15 +53,12 @@
 <AppSidebar />
 <SidebarInset class="overflow-hidden">
 	<UpgradeSuccessBanner />
-	<main
-		class="flex-1 overflow-x-hidden overflow-y-auto p-6"
-		class:pb-24={modpackInstallStore.isInstalling}
-	>
+	<main class="flex-1 overflow-x-hidden overflow-y-auto p-6">
 		{@render children()}
 	</main>
 
-	<!-- Global modpack install progress bar -->
-	<ModpackInstallBar />
+	<!-- Task progress bar + expanding drawer -->
+	<SidebarTasks />
 </SidebarInset>
 
 <!-- Global launching dialog -->
