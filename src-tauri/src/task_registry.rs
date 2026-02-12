@@ -14,6 +14,11 @@ pub enum TaskType {
     InstanceUpdate,
     InstanceSetup,
     LauncherUpdate,
+    VersionMigration,
+    InstanceImport,
+    ModpackImport,
+    InstanceExport,
+    ContentScan,
 }
 
 /// Simple status kind for serialization

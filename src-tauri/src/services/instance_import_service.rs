@@ -455,125 +455,168 @@ pub async fn import_vanilla_minecraft(
     instance_name: String,
     app_handle: Option<&AppHandle>,
 ) -> Result<Instance, AppError> {
-    emit_progress(app_handle, "Analyzing source", 0, None);
+    // Register task in the task registry
+    let task_id = Uuid::new_v4().to_string();
+    state.task_registry.register(
+        task_id.clone(),
+        crate::task_registry::TaskType::InstanceImport,
+        "Importing from vanilla Minecraft".to_string(),
+        None,
+        None,
+    );
+    state.task_registry.start(&task_id);
 
-    // Analyze the source to get version info
-    let analysis = analyze_vanilla_minecraft(source_path)?;
+    let result: Result<Instance, AppError> = async {
+        emit_progress(app_handle, "Analyzing source", 0, None);
+        state
+            .task_registry
+            .update_stage(&task_id, "Analyzing source".to_string());
 
-    let mc_version = analysis
-        .minecraft_version
-        .ok_or_else(|| AppError::InvalidInput("Could not detect Minecraft version".to_string()))?;
+        // Analyze the source to get version info
+        let analysis = analyze_vanilla_minecraft(source_path)?;
 
-    emit_progress(app_handle, "Creating instance", 10, None);
+        let mc_version = analysis.minecraft_version.ok_or_else(|| {
+            AppError::InvalidInput("Could not detect Minecraft version".to_string())
+        })?;
 
-    // Create instance directories
-    let instance_id = Uuid::new_v4().to_string();
-    let instances_base = state.settings.read().instances_path.clone();
-    let instance_dir =
-        crate::utils::paths::get_instance_dir_with_base(&instances_base, &instance_id);
-    let game_dir =
-        crate::utils::paths::get_instance_game_dir_with_base(&instances_base, &instance_id);
+        emit_progress(app_handle, "Creating instance", 10, None);
+        state
+            .task_registry
+            .update_stage(&task_id, "Creating instance".to_string());
 
-    fs::create_dir_all(&instance_dir)?;
-    fs::create_dir_all(&game_dir)?;
+        // Create instance directories
+        let instance_id = Uuid::new_v4().to_string();
+        let instances_base = state.settings.read().instances_path.clone();
+        let instance_dir =
+            crate::utils::paths::get_instance_dir_with_base(&instances_base, &instance_id);
+        let game_dir =
+            crate::utils::paths::get_instance_game_dir_with_base(&instances_base, &instance_id);
 
-    // Create standard game subdirectories
-    for subdir in [
-        "mods",
-        "resourcepacks",
-        "saves",
-        "screenshots",
-        "logs",
-        "config",
-        "shaderpacks",
-    ] {
-        fs::create_dir_all(game_dir.join(subdir))?;
-    }
+        fs::create_dir_all(&instance_dir)?;
+        fs::create_dir_all(&game_dir)?;
 
-    // Copy game content
-    emit_progress(app_handle, "Copying mods", 20, None);
-    copy_directory_if_exists(&source_path.join("mods"), &game_dir.join("mods"))?;
+        // Create standard game subdirectories
+        for subdir in [
+            "mods",
+            "resourcepacks",
+            "saves",
+            "screenshots",
+            "logs",
+            "config",
+            "shaderpacks",
+        ] {
+            fs::create_dir_all(game_dir.join(subdir))?;
+        }
 
-    emit_progress(app_handle, "Copying resourcepacks", 40, None);
-    copy_directory_if_exists(
-        &source_path.join("resourcepacks"),
-        &game_dir.join("resourcepacks"),
-    )?;
+        // Copy game content
+        emit_progress(app_handle, "Copying mods", 20, None);
+        state
+            .task_registry
+            .update_stage(&task_id, "Copying files".to_string());
+        copy_directory_if_exists(&source_path.join("mods"), &game_dir.join("mods"))?;
 
-    emit_progress(app_handle, "Copying shaderpacks", 50, None);
-    copy_directory_if_exists(
-        &source_path.join("shaderpacks"),
-        &game_dir.join("shaderpacks"),
-    )?;
+        emit_progress(app_handle, "Copying resourcepacks", 40, None);
+        copy_directory_if_exists(
+            &source_path.join("resourcepacks"),
+            &game_dir.join("resourcepacks"),
+        )?;
 
-    emit_progress(app_handle, "Copying config", 60, None);
-    copy_directory_if_exists(&source_path.join("config"), &game_dir.join("config"))?;
+        emit_progress(app_handle, "Copying shaderpacks", 50, None);
+        copy_directory_if_exists(
+            &source_path.join("shaderpacks"),
+            &game_dir.join("shaderpacks"),
+        )?;
 
-    emit_progress(app_handle, "Copying saves", 70, None);
-    copy_directory_if_exists(&source_path.join("saves"), &game_dir.join("saves"))?;
+        emit_progress(app_handle, "Copying config", 60, None);
+        copy_directory_if_exists(&source_path.join("config"), &game_dir.join("config"))?;
 
-    // Install loader if needed
-    if analysis.loader_type != LoaderType::Vanilla {
-        if let Some(ref loader_version) = analysis.loader_version {
-            emit_progress(
-                app_handle,
-                "Installing loader",
-                80,
-                Some(format!("{:?} {}", analysis.loader_type, loader_version)),
+        emit_progress(app_handle, "Copying saves", 70, None);
+        copy_directory_if_exists(&source_path.join("saves"), &game_dir.join("saves"))?;
+
+        // Install loader if needed
+        if analysis.loader_type != LoaderType::Vanilla {
+            if let Some(ref loader_version) = analysis.loader_version {
+                emit_progress(
+                    app_handle,
+                    "Installing loader",
+                    80,
+                    Some(format!("{:?} {}", analysis.loader_type, loader_version)),
+                );
+                state
+                    .task_registry
+                    .update_stage(&task_id, "Installing loader".to_string());
+                loader_service::install_loader(
+                    &game_dir,
+                    analysis.loader_type,
+                    &mc_version,
+                    loader_version,
+                    |_, _| {},
+                )
+                .await?;
+            }
+        }
+
+        emit_progress(app_handle, "Finalizing", 90, None);
+        state
+            .task_registry
+            .update_stage(&task_id, "Finalizing".to_string());
+
+        // Create instance
+        let used_icons = get_used_icons(state);
+        let instance = Instance {
+            id: instance_id.clone(),
+            name: instance_name,
+            minecraft_version: mc_version,
+            loader_type: analysis.loader_type,
+            loader_version: analysis.loader_version,
+            created_at: Utc::now().timestamp(),
+            last_played_at: None,
+            total_play_time: 0,
+            icon_path: Some(get_random_entity_icon(&used_icons)),
+            java_path: None,
+            memory_min_mb: None,
+            memory_max_mb: None,
+            jvm_args: None,
+            game_args: None,
+            resolution_width: None,
+            resolution_height: None,
+            modpack_platform: None,
+            modpack_id: None,
+            modpack_version_id: None,
+            description: None,
+            author: None,
+        };
+
+        instance_service::save_instance(state, &instance)?;
+
+        // Scan and identify imported content so the upgrade system can track it
+        state
+            .task_registry
+            .update_stage(&task_id, "Scanning content".to_string());
+        if let Err(e) = scan_and_identify_imported_content(state, &instance_id, app_handle).await {
+            eprintln!(
+                "[import] Warning: Failed to identify imported content: {}",
+                e
             );
-            loader_service::install_loader(
-                &game_dir,
-                analysis.loader_type,
-                &mc_version,
-                loader_version,
-                |_, _| {},
-            )
-            .await?;
+            // Non-fatal: instance is still usable, content just won't be tracked for upgrades
+        }
+
+        emit_progress(app_handle, "Import complete", 100, None);
+
+        Ok(instance)
+    }
+    .await;
+
+    match result {
+        Ok(instance) => {
+            state.task_registry.complete(&task_id);
+            Ok(instance)
+        }
+        Err(e) => {
+            state.task_registry.fail(&task_id, e.to_string());
+            Err(e)
         }
     }
-
-    emit_progress(app_handle, "Finalizing", 90, None);
-
-    // Create instance
-    let used_icons = get_used_icons(state);
-    let instance = Instance {
-        id: instance_id.clone(),
-        name: instance_name,
-        minecraft_version: mc_version,
-        loader_type: analysis.loader_type,
-        loader_version: analysis.loader_version,
-        created_at: Utc::now().timestamp(),
-        last_played_at: None,
-        total_play_time: 0,
-        icon_path: Some(get_random_entity_icon(&used_icons)),
-        java_path: None,
-        memory_min_mb: None,
-        memory_max_mb: None,
-        jvm_args: None,
-        game_args: None,
-        resolution_width: None,
-        resolution_height: None,
-        modpack_platform: None,
-        modpack_id: None,
-        modpack_version_id: None,
-        description: None,
-        author: None,
-    };
-
-    instance_service::save_instance(state, &instance)?;
-
-    // Scan and identify imported content so the upgrade system can track it
-    if let Err(e) = scan_and_identify_imported_content(state, &instance_id, app_handle).await {
-        eprintln!(
-            "[import] Warning: Failed to identify imported content: {}",
-            e
-        );
-        // Non-fatal: instance is still usable, content just won't be tracked for upgrades
-    }
-
-    emit_progress(app_handle, "Import complete", 100, None);
-
-    Ok(instance)
 }
 
 /// Import a MultiMC/Prism instance as a new instance
@@ -583,137 +626,181 @@ pub async fn import_multimc_prism(
     instance_name: String,
     app_handle: Option<&AppHandle>,
 ) -> Result<Instance, AppError> {
-    emit_progress(app_handle, "Analyzing source", 0, None);
+    // Register task in the task registry
+    let task_id = Uuid::new_v4().to_string();
+    state.task_registry.register(
+        task_id.clone(),
+        crate::task_registry::TaskType::InstanceImport,
+        "Importing from MultiMC/Prism".to_string(),
+        None,
+        None,
+    );
+    state.task_registry.start(&task_id);
 
-    // Analyze the source to get version info
-    let source_type = detect_source_type(source_path)
-        .ok_or_else(|| AppError::InvalidInput("Not a valid MultiMC/Prism instance".to_string()))?;
+    let result: Result<Instance, AppError> = async {
+        emit_progress(app_handle, "Analyzing source", 0, None);
+        state
+            .task_registry
+            .update_stage(&task_id, "Analyzing source".to_string());
 
-    let analysis = analyze_multimc_prism(source_path, source_type)?;
+        // Analyze the source to get version info
+        let source_type = detect_source_type(source_path).ok_or_else(|| {
+            AppError::InvalidInput("Not a valid MultiMC/Prism instance".to_string())
+        })?;
 
-    let mc_version = analysis
-        .minecraft_version
-        .ok_or_else(|| AppError::InvalidInput("Could not detect Minecraft version".to_string()))?;
+        let analysis = analyze_multimc_prism(source_path, source_type)?;
 
-    emit_progress(app_handle, "Creating instance", 10, None);
+        let mc_version = analysis.minecraft_version.ok_or_else(|| {
+            AppError::InvalidInput("Could not detect Minecraft version".to_string())
+        })?;
 
-    // Create instance directories
-    let instance_id = Uuid::new_v4().to_string();
-    let instances_base = state.settings.read().instances_path.clone();
-    let instance_dir =
-        crate::utils::paths::get_instance_dir_with_base(&instances_base, &instance_id);
-    let game_dir =
-        crate::utils::paths::get_instance_game_dir_with_base(&instances_base, &instance_id);
+        emit_progress(app_handle, "Creating instance", 10, None);
+        state
+            .task_registry
+            .update_stage(&task_id, "Creating instance".to_string());
 
-    fs::create_dir_all(&instance_dir)?;
-    fs::create_dir_all(&game_dir)?;
+        // Create instance directories
+        let instance_id = Uuid::new_v4().to_string();
+        let instances_base = state.settings.read().instances_path.clone();
+        let instance_dir =
+            crate::utils::paths::get_instance_dir_with_base(&instances_base, &instance_id);
+        let game_dir =
+            crate::utils::paths::get_instance_game_dir_with_base(&instances_base, &instance_id);
 
-    // Find the source game directory
-    let source_game_dir = if source_path.join(".minecraft").exists() {
-        source_path.join(".minecraft")
-    } else if source_path.join("minecraft").exists() {
-        source_path.join("minecraft")
-    } else {
-        source_path.to_path_buf()
-    };
+        fs::create_dir_all(&instance_dir)?;
+        fs::create_dir_all(&game_dir)?;
 
-    // Create standard game subdirectories
-    for subdir in [
-        "mods",
-        "resourcepacks",
-        "saves",
-        "screenshots",
-        "logs",
-        "config",
-        "shaderpacks",
-    ] {
-        fs::create_dir_all(game_dir.join(subdir))?;
-    }
+        // Find the source game directory
+        let source_game_dir = if source_path.join(".minecraft").exists() {
+            source_path.join(".minecraft")
+        } else if source_path.join("minecraft").exists() {
+            source_path.join("minecraft")
+        } else {
+            source_path.to_path_buf()
+        };
 
-    // Copy game content
-    emit_progress(app_handle, "Copying mods", 20, None);
-    copy_directory_if_exists(&source_game_dir.join("mods"), &game_dir.join("mods"))?;
+        // Create standard game subdirectories
+        for subdir in [
+            "mods",
+            "resourcepacks",
+            "saves",
+            "screenshots",
+            "logs",
+            "config",
+            "shaderpacks",
+        ] {
+            fs::create_dir_all(game_dir.join(subdir))?;
+        }
 
-    emit_progress(app_handle, "Copying resourcepacks", 40, None);
-    copy_directory_if_exists(
-        &source_game_dir.join("resourcepacks"),
-        &game_dir.join("resourcepacks"),
-    )?;
+        // Copy game content
+        emit_progress(app_handle, "Copying mods", 20, None);
+        state
+            .task_registry
+            .update_stage(&task_id, "Copying files".to_string());
+        copy_directory_if_exists(&source_game_dir.join("mods"), &game_dir.join("mods"))?;
 
-    emit_progress(app_handle, "Copying shaderpacks", 50, None);
-    copy_directory_if_exists(
-        &source_game_dir.join("shaderpacks"),
-        &game_dir.join("shaderpacks"),
-    )?;
+        emit_progress(app_handle, "Copying resourcepacks", 40, None);
+        copy_directory_if_exists(
+            &source_game_dir.join("resourcepacks"),
+            &game_dir.join("resourcepacks"),
+        )?;
 
-    emit_progress(app_handle, "Copying config", 60, None);
-    copy_directory_if_exists(&source_game_dir.join("config"), &game_dir.join("config"))?;
+        emit_progress(app_handle, "Copying shaderpacks", 50, None);
+        copy_directory_if_exists(
+            &source_game_dir.join("shaderpacks"),
+            &game_dir.join("shaderpacks"),
+        )?;
 
-    emit_progress(app_handle, "Copying saves", 70, None);
-    copy_directory_if_exists(&source_game_dir.join("saves"), &game_dir.join("saves"))?;
+        emit_progress(app_handle, "Copying config", 60, None);
+        copy_directory_if_exists(&source_game_dir.join("config"), &game_dir.join("config"))?;
 
-    // Install loader if needed
-    if analysis.loader_type != LoaderType::Vanilla {
-        if let Some(ref loader_version) = analysis.loader_version {
-            emit_progress(
-                app_handle,
-                "Installing loader",
-                80,
-                Some(format!("{:?} {}", analysis.loader_type, loader_version)),
+        emit_progress(app_handle, "Copying saves", 70, None);
+        copy_directory_if_exists(&source_game_dir.join("saves"), &game_dir.join("saves"))?;
+
+        // Install loader if needed
+        if analysis.loader_type != LoaderType::Vanilla {
+            if let Some(ref loader_version) = analysis.loader_version {
+                emit_progress(
+                    app_handle,
+                    "Installing loader",
+                    80,
+                    Some(format!("{:?} {}", analysis.loader_type, loader_version)),
+                );
+                state
+                    .task_registry
+                    .update_stage(&task_id, "Installing loader".to_string());
+                loader_service::install_loader(
+                    &game_dir,
+                    analysis.loader_type,
+                    &mc_version,
+                    loader_version,
+                    |_, _| {},
+                )
+                .await?;
+            }
+        }
+
+        emit_progress(app_handle, "Finalizing", 90, None);
+        state
+            .task_registry
+            .update_stage(&task_id, "Finalizing".to_string());
+
+        // Create instance
+        let used_icons = get_used_icons(state);
+        let instance = Instance {
+            id: instance_id.clone(),
+            name: instance_name,
+            minecraft_version: mc_version,
+            loader_type: analysis.loader_type,
+            loader_version: analysis.loader_version,
+            created_at: Utc::now().timestamp(),
+            last_played_at: None,
+            total_play_time: 0,
+            icon_path: Some(get_random_entity_icon(&used_icons)),
+            java_path: None,
+            memory_min_mb: None,
+            memory_max_mb: None,
+            jvm_args: None,
+            game_args: None,
+            resolution_width: None,
+            resolution_height: None,
+            modpack_platform: None,
+            modpack_id: None,
+            modpack_version_id: None,
+            description: None,
+            author: None,
+        };
+
+        instance_service::save_instance(state, &instance)?;
+
+        // Scan and identify imported content so the upgrade system can track it
+        state
+            .task_registry
+            .update_stage(&task_id, "Scanning content".to_string());
+        if let Err(e) = scan_and_identify_imported_content(state, &instance_id, app_handle).await {
+            eprintln!(
+                "[import] Warning: Failed to identify imported content: {}",
+                e
             );
-            loader_service::install_loader(
-                &game_dir,
-                analysis.loader_type,
-                &mc_version,
-                loader_version,
-                |_, _| {},
-            )
-            .await?;
+            // Non-fatal: instance is still usable, content just won't be tracked for upgrades
+        }
+
+        emit_progress(app_handle, "Import complete", 100, None);
+
+        Ok(instance)
+    }
+    .await;
+
+    match result {
+        Ok(instance) => {
+            state.task_registry.complete(&task_id);
+            Ok(instance)
+        }
+        Err(e) => {
+            state.task_registry.fail(&task_id, e.to_string());
+            Err(e)
         }
     }
-
-    emit_progress(app_handle, "Finalizing", 90, None);
-
-    // Create instance
-    let used_icons = get_used_icons(state);
-    let instance = Instance {
-        id: instance_id.clone(),
-        name: instance_name,
-        minecraft_version: mc_version,
-        loader_type: analysis.loader_type,
-        loader_version: analysis.loader_version,
-        created_at: Utc::now().timestamp(),
-        last_played_at: None,
-        total_play_time: 0,
-        icon_path: Some(get_random_entity_icon(&used_icons)),
-        java_path: None,
-        memory_min_mb: None,
-        memory_max_mb: None,
-        jvm_args: None,
-        game_args: None,
-        resolution_width: None,
-        resolution_height: None,
-        modpack_platform: None,
-        modpack_id: None,
-        modpack_version_id: None,
-        description: None,
-        author: None,
-    };
-
-    instance_service::save_instance(state, &instance)?;
-
-    // Scan and identify imported content so the upgrade system can track it
-    if let Err(e) = scan_and_identify_imported_content(state, &instance_id, app_handle).await {
-        eprintln!(
-            "[import] Warning: Failed to identify imported content: {}",
-            e
-        );
-        // Non-fatal: instance is still usable, content just won't be tracked for upgrades
-    }
-
-    emit_progress(app_handle, "Import complete", 100, None);
-
-    Ok(instance)
 }
 
 /// Scan and identify imported content via the shared rescan service, then populate the manifest.
@@ -736,25 +823,57 @@ pub async fn import_curseforge_zip(
 ) -> Result<Instance, AppError> {
     use crate::services::modpack_install_service;
 
-    emit_progress(app_handle, "Analyzing modpack", 0, None);
+    // Register task in the task registry
+    let task_id = Uuid::new_v4().to_string();
+    state.task_registry.register(
+        task_id.clone(),
+        crate::task_registry::TaskType::InstanceImport,
+        "Importing CurseForge modpack".to_string(),
+        None,
+        None,
+    );
+    state.task_registry.start(&task_id);
 
-    // First, analyze to get the suggested name if not provided
-    let analysis = analyze_curseforge_zip(file_path)?;
-    let final_name = instance_name.unwrap_or_else(|| {
-        analysis
-            .suggested_name
-            .unwrap_or_else(|| "Imported Modpack".to_string())
-    });
+    let result: Result<Instance, AppError> = async {
+        emit_progress(app_handle, "Analyzing modpack", 0, None);
+        state
+            .task_registry
+            .update_stage(&task_id, "Analyzing modpack".to_string());
 
-    // Use the existing import function from modpack_install_service
-    modpack_install_service::import_curseforge_zip_file(
-        state,
-        file_path,
-        Some(final_name),
-        app_handle,
-        None, // No cancel token for now
-    )
-    .await
+        // First, analyze to get the suggested name if not provided
+        let analysis = analyze_curseforge_zip(file_path)?;
+        let final_name = instance_name.unwrap_or_else(|| {
+            analysis
+                .suggested_name
+                .unwrap_or_else(|| "Imported Modpack".to_string())
+        });
+
+        state
+            .task_registry
+            .update_stage(&task_id, "Installing modpack".to_string());
+
+        // Use the existing import function from modpack_install_service
+        modpack_install_service::import_curseforge_zip_file(
+            state,
+            file_path,
+            Some(final_name),
+            app_handle,
+            None, // No cancel token for now
+        )
+        .await
+    }
+    .await;
+
+    match result {
+        Ok(instance) => {
+            state.task_registry.complete(&task_id);
+            Ok(instance)
+        }
+        Err(e) => {
+            state.task_registry.fail(&task_id, e.to_string());
+            Err(e)
+        }
+    }
 }
 
 // === Helper Types ===

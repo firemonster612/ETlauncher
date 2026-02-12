@@ -4,7 +4,12 @@ export type TaskType =
 	| 'modpackInstall'
 	| 'instanceUpdate'
 	| 'instanceSetup'
-	| 'launcherUpdate';
+	| 'launcherUpdate'
+	| 'versionMigration'
+	| 'instanceImport'
+	| 'modpackImport'
+	| 'instanceExport'
+	| 'contentScan';
 
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 

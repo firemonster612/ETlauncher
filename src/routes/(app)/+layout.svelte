@@ -30,6 +30,14 @@
 			unlistenComplete = unlisten;
 		});
 
+		// Listen for instance update completion to refresh instances
+		let unlistenUpdateComplete: (() => void) | null = null;
+		listen<Instance>('instance_update_complete', () => {
+			instancesStore.load();
+		}).then((unlisten) => {
+			unlistenUpdateComplete = unlisten;
+		});
+
 		// Check for updates on startup if auto-update is enabled
 		const checkForUpdates = async () => {
 			// Wait for settings to load
@@ -46,6 +54,7 @@
 			instancesStore.cleanup();
 			taskManagerStore.cleanup();
 			unlistenComplete?.();
+			unlistenUpdateComplete?.();
 		};
 	});
 </script>

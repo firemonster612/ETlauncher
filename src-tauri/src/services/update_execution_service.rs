@@ -51,6 +51,27 @@ pub async fn execute_content_update(
     );
     state.task_registry.start(&task_id);
 
+    let result = execute_content_update_outer(state, instance_id, plan, app_handle, &task_id).await;
+
+    match &result {
+        Ok(()) => {
+            state.task_registry.complete(&task_id);
+        }
+        Err(e) => {
+            state.task_registry.fail(&task_id, e.to_string());
+        }
+    }
+
+    result
+}
+
+async fn execute_content_update_outer(
+    state: &AppState,
+    instance_id: &str,
+    plan: &UpdatePlan,
+    app_handle: Option<&AppHandle>,
+    task_id: &str,
+) -> Result<(), AppError> {
     let instance = instance_service::get_instance(state, instance_id)?;
     let instances_base = state.settings.read().instances_path.clone();
     let game_dir = get_instance_game_dir_with_base(&instances_base, instance_id);
@@ -59,7 +80,7 @@ pub async fn execute_content_update(
     emit_progress(app_handle, "Creating backup", 0, None, 0, 0);
     state
         .task_registry
-        .update_stage(&task_id, "Creating backup".to_string());
+        .update_stage(task_id, "Creating backup".to_string());
     let backup_id = format!("backup_{}", Utc::now().timestamp());
     let backup_path = create_backup(&game_dir, &backup_id)?;
 
@@ -69,21 +90,17 @@ pub async fn execute_content_update(
 
     match result {
         Ok(()) => {
-            // Success - cleanup backup
             emit_progress(app_handle, "Cleaning up", 98, None, 0, 0);
-            cleanup_backup(&backup_path)?;
+            let _ = cleanup_backup(&backup_path);
             emit_progress(app_handle, "Update complete", 100, None, 0, 0);
-            state.task_registry.complete(&task_id);
             Ok(())
         }
         Err(e) => {
-            // Failure - restore from backup
             emit_progress(app_handle, "Restoring from backup", 0, None, 0, 0);
             if let Err(restore_err) = restore_backup(&backup_path, &game_dir) {
                 eprintln!("Failed to restore backup: {}", restore_err);
             }
-            cleanup_backup(&backup_path)?;
-            state.task_registry.fail(&task_id, e.to_string());
+            let _ = cleanup_backup(&backup_path);
             Err(e)
         }
     }
@@ -174,12 +191,60 @@ pub async fn execute_version_migration(
     plan: &UpdatePlan,
     app_handle: Option<&AppHandle>,
 ) -> Result<Instance, AppError> {
+    // Register task in the task registry
+    let task_id = uuid::Uuid::new_v4().to_string();
+    state.task_registry.register(
+        task_id.clone(),
+        crate::task_registry::TaskType::VersionMigration,
+        format!("Migrating to {}", target_mc_version),
+        Some(instance_id.to_string()),
+        None,
+    );
+    state.task_registry.start(&task_id);
+
+    let result = execute_version_migration_outer(
+        state,
+        instance_id,
+        target_mc_version,
+        target_loader,
+        target_loader_version,
+        plan,
+        app_handle,
+        &task_id,
+    )
+    .await;
+
+    match &result {
+        Ok(_) => {
+            state.task_registry.complete(&task_id);
+        }
+        Err(e) => {
+            state.task_registry.fail(&task_id, e.to_string());
+        }
+    }
+
+    result
+}
+
+async fn execute_version_migration_outer(
+    state: &AppState,
+    instance_id: &str,
+    target_mc_version: &str,
+    target_loader: &LoaderType,
+    target_loader_version: &str,
+    plan: &UpdatePlan,
+    app_handle: Option<&AppHandle>,
+    task_id: &str,
+) -> Result<Instance, AppError> {
     let mut instance = instance_service::get_instance(state, instance_id)?;
     let instances_base = state.settings.read().instances_path.clone();
     let game_dir = get_instance_game_dir_with_base(&instances_base, instance_id);
 
     // Create backup
     emit_progress(app_handle, "Creating backup", 0, None, 0, 0);
+    state
+        .task_registry
+        .update_stage(task_id, "Creating backup".to_string());
     let backup_id = format!("backup_{}", Utc::now().timestamp());
     let backup_path = create_backup(&game_dir, &backup_id)?;
 
@@ -199,7 +264,7 @@ pub async fn execute_version_migration(
     match result {
         Ok(updated_instance) => {
             emit_progress(app_handle, "Cleaning up", 98, None, 0, 0);
-            cleanup_backup(&backup_path)?;
+            let _ = cleanup_backup(&backup_path);
             emit_progress(app_handle, "Migration complete", 100, None, 0, 0);
             Ok(updated_instance)
         }
@@ -208,7 +273,7 @@ pub async fn execute_version_migration(
             if let Err(restore_err) = restore_backup(&backup_path, &game_dir) {
                 eprintln!("Failed to restore backup: {}", restore_err);
             }
-            cleanup_backup(&backup_path)?;
+            let _ = cleanup_backup(&backup_path);
             Err(e)
         }
     }
@@ -548,7 +613,7 @@ pub async fn execute_modpack_update(
     plan: &ModpackUpdatePlan,
     app_handle: Option<&AppHandle>,
 ) -> Result<Instance, AppError> {
-    // Validate all user content decisions are not Pending
+    // Validate all user content decisions are not Pending (before task registration)
     for (filename, decision) in &plan.user_content_decisions {
         if *decision == UserContentDecision::Pending {
             return Err(AppError::InvalidInput(format!(
@@ -569,6 +634,27 @@ pub async fn execute_modpack_update(
     );
     state.task_registry.start(&task_id);
 
+    let result = execute_modpack_update_outer(state, instance_id, plan, app_handle, &task_id).await;
+
+    match &result {
+        Ok(_) => {
+            state.task_registry.complete(&task_id);
+        }
+        Err(e) => {
+            state.task_registry.fail(&task_id, e.to_string());
+        }
+    }
+
+    result
+}
+
+async fn execute_modpack_update_outer(
+    state: &AppState,
+    instance_id: &str,
+    plan: &ModpackUpdatePlan,
+    app_handle: Option<&AppHandle>,
+    task_id: &str,
+) -> Result<Instance, AppError> {
     let instance = instance_service::get_instance(state, instance_id)?;
     let instances_base = state.settings.read().instances_path.clone();
     let game_dir = get_instance_game_dir_with_base(&instances_base, instance_id);
@@ -577,7 +663,7 @@ pub async fn execute_modpack_update(
     emit_progress(app_handle, "Creating backup", 0, None, 0, 0);
     state
         .task_registry
-        .update_stage(&task_id, "Creating backup".to_string());
+        .update_stage(task_id, "Creating backup".to_string());
     let backup_id = format!("backup_{}", Utc::now().timestamp());
     let backup_path = create_backup(&game_dir, &backup_id)?;
 
@@ -588,9 +674,8 @@ pub async fn execute_modpack_update(
     match result {
         Ok(updated_instance) => {
             emit_progress(app_handle, "Cleaning up", 98, None, 0, 0);
-            cleanup_backup(&backup_path)?;
+            let _ = cleanup_backup(&backup_path);
             emit_progress(app_handle, "Update complete", 100, None, 0, 0);
-            state.task_registry.complete(&task_id);
             Ok(updated_instance)
         }
         Err(e) => {
@@ -598,8 +683,7 @@ pub async fn execute_modpack_update(
             if let Err(restore_err) = restore_backup(&backup_path, &game_dir) {
                 eprintln!("Failed to restore backup: {}", restore_err);
             }
-            cleanup_backup(&backup_path)?;
-            state.task_registry.fail(&task_id, e.to_string());
+            let _ = cleanup_backup(&backup_path);
             Err(e)
         }
     }
@@ -864,7 +948,7 @@ pub async fn execute_instance_update(
     plan: &InstanceUpdatePlan,
     app_handle: Option<&AppHandle>,
 ) -> Result<Instance, AppError> {
-    // Validate all incompatible content decisions are not Pending
+    // Validate all incompatible content decisions are not Pending (before task registration)
     for (filename, decision) in &plan.incompatible_decisions {
         if *decision == UserContentDecision::Pending {
             return Err(AppError::InvalidInput(format!(
@@ -885,6 +969,28 @@ pub async fn execute_instance_update(
     );
     state.task_registry.start(&task_id);
 
+    let result =
+        execute_instance_update_outer(state, instance_id, plan, app_handle, &task_id).await;
+
+    match &result {
+        Ok(_) => {
+            state.task_registry.complete(&task_id);
+        }
+        Err(e) => {
+            state.task_registry.fail(&task_id, e.to_string());
+        }
+    }
+
+    result
+}
+
+async fn execute_instance_update_outer(
+    state: &AppState,
+    instance_id: &str,
+    plan: &InstanceUpdatePlan,
+    app_handle: Option<&AppHandle>,
+    task_id: &str,
+) -> Result<Instance, AppError> {
     let instance = instance_service::get_instance(state, instance_id)?;
     let instances_base = state.settings.read().instances_path.clone();
     let game_dir = get_instance_game_dir_with_base(&instances_base, instance_id);
@@ -893,7 +999,7 @@ pub async fn execute_instance_update(
     emit_progress(app_handle, "Creating backup", 0, None, 0, 0);
     state
         .task_registry
-        .update_stage(&task_id, "Creating backup".to_string());
+        .update_stage(task_id, "Creating backup".to_string());
     let backup_id = format!("backup_{}", Utc::now().timestamp());
     let backup_path = create_backup(&game_dir, &backup_id)?;
 
@@ -904,9 +1010,8 @@ pub async fn execute_instance_update(
     match result {
         Ok(updated_instance) => {
             emit_progress(app_handle, "Cleaning up", 98, None, 0, 0);
-            cleanup_backup(&backup_path)?;
+            let _ = cleanup_backup(&backup_path);
             emit_progress(app_handle, "Update complete", 100, None, 0, 0);
-            state.task_registry.complete(&task_id);
             Ok(updated_instance)
         }
         Err(e) => {
@@ -914,8 +1019,7 @@ pub async fn execute_instance_update(
             if let Err(restore_err) = restore_backup(&backup_path, &game_dir) {
                 eprintln!("Failed to restore backup: {}", restore_err);
             }
-            cleanup_backup(&backup_path)?;
-            state.task_registry.fail(&task_id, e.to_string());
+            let _ = cleanup_backup(&backup_path);
             Err(e)
         }
     }

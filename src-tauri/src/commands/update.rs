@@ -7,10 +7,18 @@ use crate::models::content::{
     InstalledContentManifest, InstanceUpdateCheck, InstanceUpdatePlan, ModpackInstanceUpdateCheck,
     ModpackUpdateInfo, ModpackUpdatePlan, UpdateCheckResult, UpdatePlan,
 };
-use crate::models::instance::{Instance, LoaderType};
+use crate::models::instance::LoaderType;
 use crate::services::{manifest_service, update_execution_service, update_service};
 use crate::state::AppState;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, Manager, State};
+
+/// Response for queued update operations
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateQueued {
+    pub task_id: String,
+    pub instance_id: String,
+}
 
 /// Check for modpack updates
 #[tauri::command]
@@ -65,28 +73,48 @@ pub async fn update_instance_content(
         .map_err(CommandError::from)
 }
 
-/// Execute MC version migration
+/// Execute MC version migration (fire-and-forget)
 #[tauri::command]
 pub async fn migrate_instance_version(
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
     app_handle: AppHandle,
     instance_id: String,
     target_mc_version: String,
     target_loader: LoaderType,
     target_loader_version: String,
     plan: UpdatePlan,
-) -> Result<Instance, CommandError> {
-    update_execution_service::execute_version_migration(
-        &state,
-        &instance_id,
-        &target_mc_version,
-        &target_loader,
-        &target_loader_version,
-        &plan,
-        Some(&app_handle),
-    )
-    .await
-    .map_err(CommandError::from)
+) -> Result<UpdateQueued, CommandError> {
+    let task_id = uuid::Uuid::new_v4().to_string();
+    let handle_clone = app_handle.clone();
+    let instance_id_clone = instance_id.clone();
+
+    tokio::spawn(async move {
+        let state = handle_clone.state::<AppState>();
+        let result = update_execution_service::execute_version_migration(
+            &state,
+            &instance_id_clone,
+            &target_mc_version,
+            &target_loader,
+            &target_loader_version,
+            &plan,
+            Some(&handle_clone),
+        )
+        .await;
+
+        match result {
+            Ok(instance) => {
+                let _ = handle_clone.emit("instance_update_complete", &instance);
+            }
+            Err(e) => {
+                let _ = handle_clone.emit("instance_update_error", e.to_string());
+            }
+        }
+    });
+
+    Ok(UpdateQueued {
+        task_id,
+        instance_id,
+    })
 }
 
 /// Get content manifest for an instance
@@ -113,17 +141,42 @@ pub async fn check_modpack_instance_updates(
         .map_err(CommandError::from)
 }
 
-/// Execute modpack update
+/// Execute modpack update (fire-and-forget)
 #[tauri::command]
 pub async fn execute_modpack_update(
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
     app_handle: AppHandle,
     instance_id: String,
     plan: ModpackUpdatePlan,
-) -> Result<Instance, CommandError> {
-    update_execution_service::execute_modpack_update(&state, &instance_id, &plan, Some(&app_handle))
-        .await
-        .map_err(CommandError::from)
+) -> Result<UpdateQueued, CommandError> {
+    let task_id = uuid::Uuid::new_v4().to_string();
+    let handle_clone = app_handle.clone();
+    let instance_id_clone = instance_id.clone();
+
+    tokio::spawn(async move {
+        let state = handle_clone.state::<AppState>();
+        let result = update_execution_service::execute_modpack_update(
+            &state,
+            &instance_id_clone,
+            &plan,
+            Some(&handle_clone),
+        )
+        .await;
+
+        match result {
+            Ok(instance) => {
+                let _ = handle_clone.emit("instance_update_complete", &instance);
+            }
+            Err(e) => {
+                let _ = handle_clone.emit("instance_update_error", e.to_string());
+            }
+        }
+    });
+
+    Ok(UpdateQueued {
+        task_id,
+        instance_id,
+    })
 }
 
 /// Check for non-modpack instance updates (targets latest MC version)
@@ -137,22 +190,42 @@ pub async fn check_instance_updates(
         .map_err(CommandError::from)
 }
 
-/// Execute non-modpack instance update
+/// Execute non-modpack instance update (fire-and-forget)
 #[tauri::command]
 pub async fn execute_instance_update(
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
     app_handle: AppHandle,
     instance_id: String,
     plan: InstanceUpdatePlan,
-) -> Result<Instance, CommandError> {
-    update_execution_service::execute_instance_update(
-        &state,
-        &instance_id,
-        &plan,
-        Some(&app_handle),
-    )
-    .await
-    .map_err(CommandError::from)
+) -> Result<UpdateQueued, CommandError> {
+    let task_id = uuid::Uuid::new_v4().to_string();
+    let handle_clone = app_handle.clone();
+    let instance_id_clone = instance_id.clone();
+
+    tokio::spawn(async move {
+        let state = handle_clone.state::<AppState>();
+        let result = update_execution_service::execute_instance_update(
+            &state,
+            &instance_id_clone,
+            &plan,
+            Some(&handle_clone),
+        )
+        .await;
+
+        match result {
+            Ok(instance) => {
+                let _ = handle_clone.emit("instance_update_complete", &instance);
+            }
+            Err(e) => {
+                let _ = handle_clone.emit("instance_update_error", e.to_string());
+            }
+        }
+    });
+
+    Ok(UpdateQueued {
+        task_id,
+        instance_id,
+    })
 }
 
 /// Get the current executable path (used to detect if running from AppImage)

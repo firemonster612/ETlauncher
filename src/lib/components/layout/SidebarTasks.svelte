@@ -1,12 +1,16 @@
 <script lang="ts">
 	import {
 		Activity,
+		ArrowUpDown,
 		ChevronUp,
 		Download,
+		Import,
 		Loader2,
 		Package,
 		RefreshCw,
 		Rocket,
+		Search,
+		Upload,
 		X,
 	} from '@lucide/svelte';
 	import { taskManagerStore } from '$lib/stores/taskManager.svelte';
@@ -29,6 +33,15 @@
 				return RefreshCw;
 			case 'instanceSetup':
 				return Rocket;
+			case 'versionMigration':
+				return ArrowUpDown;
+			case 'instanceImport':
+			case 'modpackImport':
+				return Import;
+			case 'instanceExport':
+				return Upload;
+			case 'contentScan':
+				return Search;
 			default:
 				return Activity;
 		}
@@ -49,6 +62,16 @@
 				return 'Instance Setup';
 			case 'launcherUpdate':
 				return 'Launcher Update';
+			case 'versionMigration':
+				return 'Version Migration';
+			case 'instanceImport':
+				return 'Instance Import';
+			case 'modpackImport':
+				return 'Modpack Import';
+			case 'instanceExport':
+				return 'Instance Export';
+			case 'contentScan':
+				return 'Content Scan';
 			default:
 				return 'Task';
 		}
@@ -107,7 +130,7 @@
 <!-- Compact bottom bar: only visible when tasks are active -->
 {#if hasActiveTasks}
 	<button
-		class="border-border bg-card/95 flex w-full items-center gap-3 border-t px-4 py-2.5 text-left backdrop-blur-sm transition-colors hover:bg-card"
+		class="border-border bg-card/95 relative z-[60] flex w-full items-center gap-3 border-t px-4 py-2.5 text-left backdrop-blur-sm transition-colors hover:bg-card"
 		onclick={() => (drawerOpen = true)}
 	>
 		<Loader2 class="text-primary h-4 w-4 flex-shrink-0 animate-spin" />
