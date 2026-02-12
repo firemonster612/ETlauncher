@@ -32,6 +32,7 @@
 			case 'launcherUpdate':
 				return RefreshCw;
 			case 'instanceSetup':
+			case 'loaderInstall':
 				return Rocket;
 			case 'versionMigration':
 				return ArrowUpDown;
@@ -60,6 +61,8 @@
 				return 'Update';
 			case 'instanceSetup':
 				return 'Instance Setup';
+			case 'loaderInstall':
+				return 'Loader Install';
 			case 'launcherUpdate':
 				return 'Launcher Update';
 			case 'versionMigration':

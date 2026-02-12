@@ -13,6 +13,7 @@ pub enum TaskType {
     ModpackInstall,
     InstanceUpdate,
     InstanceSetup,
+    LoaderInstall,
     LauncherUpdate,
     VersionMigration,
     InstanceImport,

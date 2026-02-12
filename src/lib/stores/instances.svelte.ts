@@ -111,7 +111,10 @@ function createInstancesStore() {
 				// Setup instance (download game files) - runs in background
 				// Don't await - let it run asynchronously
 				this.setupInstance(instance.id).catch((e) => {
+					const message =
+						e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
 					console.error('Instance setup failed:', e);
+					error = message;
 				});
 
 				return instance;
@@ -150,7 +153,13 @@ function createInstancesStore() {
 						options.loaderType as LoaderType,
 						options.loaderVersion
 					);
-					if (!success) return;
+					if (!success) {
+						// Surface the loader error so the user knows why setup stopped
+						error =
+							loaderInstallError ??
+							`Failed to install ${options.loaderType} loader. Check logs for details.`;
+						return;
+					}
 				}
 
 				// Setup instance (download game files)
@@ -158,7 +167,10 @@ function createInstancesStore() {
 			};
 
 			run().catch((e) => {
+				const message =
+					e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
 				console.error('Instance setup failed:', e);
+				error = message;
 			});
 		},
 

@@ -256,11 +256,8 @@
 		exportResult = null;
 	}
 
-	function handleImportWizardClose(instanceCreated: boolean) {
+	function handleImportWizardClose() {
 		showImportWizard = false;
-		if (instanceCreated) {
-			instancesStore.load();
-		}
 	}
 </script>
 

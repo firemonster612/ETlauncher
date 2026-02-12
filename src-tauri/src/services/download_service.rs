@@ -426,6 +426,7 @@ pub async fn download_game_files_with_version(
                 sha1: dl.client.sha1.clone(),
                 size: dl.client.size,
                 is_native: false,
+                fallback_urls: Vec::new(),
             });
         }
     }
@@ -457,6 +458,7 @@ pub async fn download_game_files_with_version(
                                 sha1: native_artifact.sha1.clone(),
                                 size: native_artifact.size,
                                 is_native: true,
+                                fallback_urls: Vec::new(),
                             });
                         }
                     }
@@ -485,37 +487,41 @@ pub async fn download_game_files_with_version(
                     continue;
                 }
 
-                // If artifact URL is empty, try to construct from Maven repos
-                let url = if artifact.url.is_empty() {
-                    // Try Minecraft libraries, NeoForge Maven, Forge Maven, then Maven Central
-                    maven_name_to_url(&library.name, "https://libraries.minecraft.net/")
-                        .or_else(|| {
-                            maven_name_to_url(
-                                &library.name,
-                                "https://maven.neoforged.net/releases/",
-                            )
-                        })
-                        .or_else(|| {
-                            maven_name_to_url(&library.name, "https://maven.minecraftforge.net/")
-                        })
-                        .or_else(|| {
-                            maven_name_to_url(&library.name, "https://repo1.maven.org/maven2")
-                        })
-                        .unwrap_or_default()
+                // If artifact URL is empty, determine whether this is a locally-generated
+                // processor output or a downloadable library missing its URL
+                if artifact.url.is_empty() {
+                    if let Some(ref base_url) = library.url {
+                        // Library specifies its own Maven base URL — downloadable
+                        let url = maven_name_to_url(&library.name, base_url).unwrap_or_default();
+                        if !url.is_empty() {
+                            downloads.push(DownloadTask {
+                                url,
+                                path: cache_lib_path,
+                                sha1: artifact.sha1.clone(),
+                                size: artifact.size,
+                                is_native: false,
+                                fallback_urls: Vec::new(),
+                            });
+                        }
+                    } else {
+                        // Empty URL + no base_url = locally generated artifact
+                        // (e.g. Forge installer processor output like forge-*-client.jar).
+                        // These must already exist in the game directory from the installer.
+                        // Do NOT try to download them from Maven repos.
+                        eprintln!(
+                            "WARN: Skipping library {} — empty URL, expected as local installer artifact",
+                            library.name
+                        );
+                    }
                 } else {
-                    artifact.url.clone()
-                };
-
-                if !url.is_empty() {
                     downloads.push(DownloadTask {
-                        url,
+                        url: artifact.url.clone(),
                         path: cache_lib_path,
                         sha1: artifact.sha1.clone(),
                         size: artifact.size,
                         is_native: false,
+                        fallback_urls: Vec::new(),
                     });
-                } else {
-                    eprintln!("WARN: No URL for library {}", library.name);
                 }
             }
         } else if let Some(ref base_url) = library.url {
@@ -559,6 +565,7 @@ pub async fn download_game_files_with_version(
                                 sha1: String::new(),
                                 size: 0,
                                 is_native: false,
+                                fallback_urls: Vec::new(),
                             });
                         }
                     }
@@ -569,22 +576,25 @@ pub async fn download_game_files_with_version(
             if let Some(path) = maven_name_to_path(&library.name) {
                 let lib_path = get_libraries_dir().join(&path);
                 if !lib_path.exists() {
-                    // Try Minecraft libraries first (for old MC libs), then Forge, then Maven Central
-                    let url = maven_name_to_url(&library.name, "https://libraries.minecraft.net/")
-                        .or_else(|| {
-                            maven_name_to_url(&library.name, "https://maven.minecraftforge.net/")
-                        })
-                        .or_else(|| {
-                            maven_name_to_url(&library.name, "https://repo1.maven.org/maven2")
-                        });
+                    let candidates: Vec<String> = [
+                        "https://maven.minecraftforge.net/",
+                        "https://libraries.minecraft.net/",
+                        "https://repo1.maven.org/maven2",
+                    ]
+                    .iter()
+                    .filter_map(|base| maven_name_to_url(&library.name, base))
+                    .collect();
+                    let primary = candidates.first().cloned().unwrap_or_default();
+                    let fallbacks: Vec<String> = candidates.into_iter().skip(1).collect();
 
-                    if let Some(url) = url {
+                    if !primary.is_empty() {
                         downloads.push(DownloadTask {
-                            url,
+                            url: primary,
                             path: lib_path,
                             sha1: String::new(),
                             size: 0,
                             is_native: false,
+                            fallback_urls: fallbacks,
                         });
                     }
                 }
@@ -607,6 +617,7 @@ pub async fn download_game_files_with_version(
                 sha1: asset.hash.clone(),
                 size: asset.size,
                 is_native: false,
+                fallback_urls: Vec::new(),
             });
         }
     }
@@ -744,8 +755,21 @@ pub async fn download_game_files_with_version(
                         .to_string();
                 }
 
-                // Download file
-                let result = download_file(&client, &task.url, &task.path, &task.sha1).await;
+                // Try primary URL first
+                let mut result = download_file(&client, &task.url, &task.path, &task.sha1).await;
+
+                // On client error (404, etc.), try fallback URLs
+                if result.is_err() && !task.fallback_urls.is_empty() {
+                    for fallback_url in &task.fallback_urls {
+                        match download_file(&client, fallback_url, &task.path, &task.sha1).await {
+                            Ok(()) => {
+                                result = Ok(());
+                                break;
+                            }
+                            Err(_) => continue,
+                        }
+                    }
+                }
 
                 if result.is_ok() {
                     completed_files.fetch_add(1, Ordering::Relaxed);
@@ -1159,8 +1183,16 @@ pub fn get_classpath(
 
 /// Convert Maven coordinates (group:artifact:version) to file path
 /// e.g., "net.fabricmc:fabric-loader:0.15.0" -> "net/fabricmc/fabric-loader/0.15.0/fabric-loader-0.15.0.jar"
+/// Handles @ext notation: "group:artifact:version@zip" uses .zip instead of .jar
 fn maven_name_to_path(name: &str) -> Option<String> {
-    let parts: Vec<&str> = name.split(':').collect();
+    // Handle @ext notation: group:artifact:version@ext or group:artifact:version:classifier@ext
+    let (name_part, ext) = if let Some(at_idx) = name.rfind('@') {
+        (&name[..at_idx], &name[at_idx + 1..])
+    } else {
+        (name, "jar")
+    };
+
+    let parts: Vec<&str> = name_part.split(':').collect();
     if parts.len() < 3 {
         return None;
     }
@@ -1177,9 +1209,9 @@ fn maven_name_to_path(name: &str) -> Option<String> {
     };
 
     let filename = if let Some(c) = classifier {
-        format!("{}-{}-{}.jar", artifact, version, c)
+        format!("{}-{}-{}.{}", artifact, version, c, ext)
     } else {
-        format!("{}-{}.jar", artifact, version)
+        format!("{}-{}.{}", artifact, version, ext)
     };
 
     Some(format!("{}/{}/{}/{}", group, artifact, version, filename))
@@ -1320,4 +1352,5 @@ struct DownloadTask {
     sha1: String,
     size: u64,
     is_native: bool,
+    fallback_urls: Vec<String>,
 }

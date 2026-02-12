@@ -4,6 +4,7 @@ export type TaskType =
 	| 'modpackInstall'
 	| 'instanceUpdate'
 	| 'instanceSetup'
+	| 'loaderInstall'
 	| 'launcherUpdate'
 	| 'versionMigration'
 	| 'instanceImport'

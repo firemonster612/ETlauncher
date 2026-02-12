@@ -1,46 +1,37 @@
 <script lang="ts">
 	import {
-		Loader2,
-		CheckCircle,
 		AlertTriangle,
-		FolderOpen,
-		FileArchive,
 		ArrowLeft,
-		Package,
 		Blocks,
+		FileArchive,
+		FolderOpen,
+		Loader2,
+		Package,
 	} from '@lucide/svelte';
 	import { open } from '@tauri-apps/plugin-dialog';
-	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import * as importService from '$lib/services/import';
 	import * as modpackService from '$lib/services/modpack';
+	import { alertDialogStore } from '$lib/stores/alertDialog.svelte';
+	import { instancesStore } from '$lib/stores/instances.svelte';
+	import type { ImportAnalysis, ImportSourceType } from '$lib/types';
 	import { Button } from '$lib/ui/button';
 	import { Input } from '$lib/ui/input';
-	import DownloadProgress from './DownloadProgress.svelte';
-	import type {
-		Instance,
-		ImportAnalysis,
-		ImportSourceType,
-		ImportProgress,
-		ModpackInstallProgress,
-	} from '$lib/types';
 
 	interface Props {
 		open: boolean;
-		onClose: (instanceCreated: boolean) => void;
+		onClose: () => void;
 	}
 
 	let { open: isOpen, onClose }: Props = $props();
 
-	type Step = 'select' | 'analyze' | 'configure' | 'importing' | 'complete' | 'error';
+	type Step = 'select' | 'analyze' | 'configure' | 'error';
 
 	let step = $state<Step>('select');
 	let selectedType = $state<'mrpack' | 'curseforge' | 'folder' | null>(null);
 	let filePath = $state('');
 	let analysis = $state<ImportAnalysis | null>(null);
 	let instanceName = $state('');
-	let isImporting = $state(false);
-	let importProgress = $state<ModpackInstallProgress | ImportProgress | null>(null);
-	let result = $state<{ success: boolean; instance?: Instance; error?: string } | null>(null);
+	let errorMessage = $state<string | null>(null);
 	let dialogError = $state<string | null>(null);
 
 	function resetState() {
@@ -49,15 +40,13 @@
 		filePath = '';
 		analysis = null;
 		instanceName = '';
-		isImporting = false;
-		importProgress = null;
-		result = null;
+		errorMessage = null;
 		dialogError = null;
 	}
 
-	function handleClose(instanceCreated: boolean = false) {
+	function handleClose() {
 		resetState();
-		onClose(instanceCreated);
+		onClose();
 	}
 
 	async function selectMrpack() {
@@ -125,83 +114,71 @@
 			instanceName = analysis.suggestedName || 'Imported Instance';
 			step = 'configure';
 		} catch (e: unknown) {
-			let errorMessage = 'Analysis failed';
+			let msg = 'Analysis failed';
 			if (e instanceof Error) {
-				errorMessage = e.message;
+				msg = e.message;
 			} else if (typeof e === 'object' && e !== null && 'message' in e) {
-				errorMessage = String((e as { message: unknown }).message);
+				msg = String((e as { message: unknown }).message);
 			} else if (typeof e === 'string') {
-				errorMessage = e;
+				msg = e;
 			}
-			result = { success: false, error: errorMessage };
+			errorMessage = msg;
 			step = 'error';
 		}
 	}
 
-	async function handleImport() {
-		isImporting = true;
-		importProgress = null;
-		step = 'importing';
+	function handleImport() {
+		// Capture values before closing the wizard
+		const importType = selectedType;
+		const importPath = filePath;
+		const importName = instanceName.trim();
+		const importAnalysis = analysis;
 
-		let unlisten: UnlistenFn | undefined;
+		// Close the wizard immediately — the task drawer shows progress
+		handleClose();
 
-		try {
-			// Listen for progress events
-			if (selectedType === 'mrpack') {
-				unlisten = await listen<ModpackInstallProgress>('modpack_install_progress', (event) => {
-					importProgress = event.payload;
-				});
-			} else {
-				unlisten = await listen<ImportProgress>('import_progress', (event) => {
-					importProgress = event.payload;
-				});
-			}
+		// Build the import promise based on type
+		let importPromise: Promise<unknown>;
 
-			let instance: Instance;
-
-			switch (selectedType) {
-				case 'mrpack':
-					instance = await modpackService.importModpackFile(
-						filePath,
-						instanceName.trim() || undefined
-					);
-					break;
-				case 'curseforge':
-					instance = await importService.importCurseForgeZip(
-						filePath,
-						instanceName.trim() || undefined
-					);
-					break;
-				case 'folder':
-					if (!analysis) throw new Error('No analysis available');
-					instance = await importService.importFromFolder(
-						filePath,
-						instanceName.trim() || 'Imported Instance',
-						analysis.sourceType
-					);
-					break;
-				default:
-					throw new Error('Unknown import type');
-			}
-
-			result = { success: true, instance };
-			step = 'complete';
-		} catch (e: unknown) {
-			let errorMessage = 'Import failed';
-			if (e instanceof Error) {
-				errorMessage = e.message;
-			} else if (typeof e === 'object' && e !== null && 'message' in e) {
-				errorMessage = String((e as { message: unknown }).message);
-			} else if (typeof e === 'string') {
-				errorMessage = e;
-			}
-			result = { success: false, error: errorMessage };
-			step = 'error';
-		} finally {
-			unlisten?.();
-			isImporting = false;
-			importProgress = null;
+		switch (importType) {
+			case 'mrpack':
+				importPromise = modpackService.importModpackFile(importPath, importName || undefined);
+				break;
+			case 'curseforge':
+				importPromise = importService.importCurseForgeZip(importPath, importName || undefined);
+				break;
+			case 'folder':
+				if (!importAnalysis) return;
+				importPromise = importService.importFromFolder(
+					importPath,
+					importName || 'Imported Instance',
+					importAnalysis.sourceType
+				);
+				break;
+			default:
+				return;
 		}
+
+		// Fire and forget — refresh instances on success, show alert on failure
+		importPromise
+			.then(() => {
+				instancesStore.load();
+			})
+			.catch((e: unknown) => {
+				let msg = 'Import failed';
+				if (e instanceof Error) {
+					msg = e.message;
+				} else if (typeof e === 'object' && e !== null && 'message' in e) {
+					msg = String((e as { message: unknown }).message);
+				} else if (typeof e === 'string') {
+					msg = e;
+				}
+				alertDialogStore.alert({
+					title: 'Import Failed',
+					message: msg,
+					type: 'error',
+				});
+			});
 	}
 
 	function getSourceTypeLabel(sourceType: ImportSourceType): string {
@@ -359,73 +336,19 @@
 					<Button
 						class="flex-1"
 						onclick={handleImport}
-						disabled={!instanceName.trim() || isImporting}
+						disabled={!instanceName.trim()}
 					>
 						Import
 					</Button>
 				</div>
 
-			{:else if step === 'importing'}
-				<!-- Step 4: Importing -->
-				<div class="flex flex-col items-center gap-4 py-4">
-					<Loader2 class="text-primary h-10 w-10 animate-spin" />
-					<div class="text-center">
-						<p class="font-medium">Importing {instanceName}...</p>
-						<p class="text-muted-foreground text-sm">This may take a while</p>
-					</div>
-
-					{#if importProgress && 'totalItems' in importProgress}
-						<div class="w-full">
-							<DownloadProgress
-								stage={importProgress.stage}
-								progress={importProgress.progress}
-								currentItem={importProgress.currentItem}
-								totalItems={importProgress.totalItems}
-								completedItems={importProgress.completedItems}
-							/>
-						</div>
-					{:else if importProgress && 'stage' in importProgress}
-						<div class="w-full space-y-2">
-							<div class="flex justify-between text-sm">
-								<span>{importProgress.stage}</span>
-								<span>{importProgress.progress}%</span>
-							</div>
-							<div class="bg-muted h-2 overflow-hidden rounded-full">
-								<div
-									class="bg-primary h-full transition-all duration-300"
-									style="width: {importProgress.progress}%"
-								></div>
-							</div>
-							{#if importProgress.currentItem}
-								<p class="text-muted-foreground truncate text-xs">{importProgress.currentItem}</p>
-							{/if}
-						</div>
-					{/if}
-				</div>
-
-			{:else if step === 'complete'}
-				<!-- Step 5: Complete -->
-				<div class="flex flex-col items-center gap-4 py-4">
-					<CheckCircle class="h-12 w-12 text-green-500" />
-					<div class="text-center">
-						<p class="font-medium">Import Complete!</p>
-						<p class="text-muted-foreground text-sm">
-							Instance "{result?.instance?.name}" has been created.
-						</p>
-					</div>
-				</div>
-
-				<div class="flex justify-end">
-					<Button onclick={() => handleClose(true)}>Done</Button>
-				</div>
-
 			{:else if step === 'error'}
-				<!-- Step 6: Error -->
+				<!-- Analysis Error -->
 				<div class="flex flex-col items-center gap-4 py-4">
 					<AlertTriangle class="text-destructive h-12 w-12" />
 					<div class="text-center">
-						<p class="font-medium">Import Failed</p>
-						<p class="text-muted-foreground text-sm">{result?.error}</p>
+						<p class="font-medium">Analysis Failed</p>
+						<p class="text-muted-foreground text-sm">{errorMessage}</p>
 					</div>
 				</div>
 
