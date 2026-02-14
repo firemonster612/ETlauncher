@@ -143,6 +143,8 @@ pub struct AppState {
     pub task_registry: TaskRegistry,
     /// Cancellation tokens for active launches (instance_id -> token)
     pub launch_tokens: RwLock<HashMap<String, CancellationToken>>,
+    /// Port the local Yggdrasil server is listening on (0 = not started)
+    pub yggdrasil_port: std::sync::atomic::AtomicU16,
 }
 
 /// Cached version manifest with fetch timestamp
@@ -192,6 +194,7 @@ impl AppState {
             resource_pool_index: RwLock::new(pool_index),
             task_registry: TaskRegistry::new(),
             launch_tokens: RwLock::new(HashMap::new()),
+            yggdrasil_port: std::sync::atomic::AtomicU16::new(0),
         }
     }
 

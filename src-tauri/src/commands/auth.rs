@@ -1,3 +1,4 @@
+use base64::Engine;
 use tauri::State;
 
 use crate::error::CommandError;
@@ -48,4 +49,88 @@ pub async fn refresh_account_token(
         .map_err(CommandError::from)?;
 
     account_service::get_account(&account_id).map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub fn create_offline_account(username: String) -> Result<MinecraftAccount, CommandError> {
+    account_service::create_offline_account(&username).map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub fn set_offline_skin(
+    account_id: String,
+    skin_data: Vec<u8>,
+    variant: String,
+) -> Result<String, CommandError> {
+    account_service::set_offline_skin(&account_id, &skin_data, &variant).map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub fn set_offline_cape(account_id: String, cape_data: Vec<u8>) -> Result<String, CommandError> {
+    account_service::set_offline_cape(&account_id, &cape_data).map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub fn remove_offline_skin(account_id: String) -> Result<(), CommandError> {
+    account_service::remove_offline_skin(&account_id).map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub fn remove_offline_cape(account_id: String) -> Result<(), CommandError> {
+    account_service::remove_offline_cape(&account_id).map_err(CommandError::from)
+}
+
+/// Get a bundled default skin (steve or alex) as raw PNG bytes
+#[tauri::command]
+pub fn get_default_skin(name: String) -> Result<Vec<u8>, CommandError> {
+    const STEVE_SKIN: &[u8] = include_bytes!("../../assets/steve.png");
+    const ALEX_SKIN: &[u8] = include_bytes!("../../assets/alex.png");
+
+    match name.as_str() {
+        "steve" => Ok(STEVE_SKIN.to_vec()),
+        "alex" => Ok(ALEX_SKIN.to_vec()),
+        _ => Err(CommandError::from(crate::error::AppError::InvalidInput(
+            format!("Unknown default skin: {}", name),
+        ))),
+    }
+}
+
+/// Get the offline skin texture as base64 PNG data URL
+#[tauri::command]
+pub fn get_offline_skin_data(account_id: String) -> Result<Option<String>, CommandError> {
+    let account = account_service::get_account(&account_id).map_err(CommandError::from)?;
+    if let Some(ref hash) = account.offline_skin_hash {
+        let skins_dir = crate::utils::paths::get_app_data_dir().join("skins");
+        let skin_path = skins_dir.join(format!("{}.png", hash));
+        if skin_path.exists() {
+            let data = std::fs::read(&skin_path)
+                .map_err(|e| CommandError::from(crate::error::AppError::IoError(e)))?;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
+            Ok(Some(format!("data:image/png;base64,{}", b64)))
+        } else {
+            Ok(None)
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+/// Get the offline cape texture as base64 PNG data URL
+#[tauri::command]
+pub fn get_offline_cape_data(account_id: String) -> Result<Option<String>, CommandError> {
+    let account = account_service::get_account(&account_id).map_err(CommandError::from)?;
+    if let Some(ref hash) = account.offline_cape_hash {
+        let skins_dir = crate::utils::paths::get_app_data_dir().join("skins");
+        let cape_path = skins_dir.join(format!("{}.png", hash));
+        if cape_path.exists() {
+            let data = std::fs::read(&cape_path)
+                .map_err(|e| CommandError::from(crate::error::AppError::IoError(e)))?;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
+            Ok(Some(format!("data:image/png;base64,{}", b64)))
+        } else {
+            Ok(None)
+        }
+    } else {
+        Ok(None)
+    }
 }

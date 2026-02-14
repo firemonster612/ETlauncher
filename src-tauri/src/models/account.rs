@@ -1,5 +1,17 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum AccountType {
+    #[serde(rename = "microsoft")]
+    Microsoft,
+    #[serde(rename = "offline")]
+    Offline,
+}
+
+fn default_account_type() -> AccountType {
+    AccountType::Microsoft
+}
+
 /// A Minecraft account authenticated via Microsoft
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -22,6 +34,15 @@ pub struct MinecraftAccount {
     pub last_used_at: i64,
     /// Unix timestamp when tokens expire
     pub token_expires_at: i64,
+    /// Account type (Microsoft or Offline)
+    #[serde(default = "default_account_type")]
+    pub account_type: AccountType,
+    /// Local skin file hash for offline accounts
+    pub offline_skin_hash: Option<String>,
+    /// Skin variant for offline accounts ("classic" or "slim")
+    pub offline_skin_variant: Option<String>,
+    /// Local cape file hash for offline accounts
+    pub offline_cape_hash: Option<String>,
 }
 
 /// Authentication tokens from Microsoft/Xbox/Minecraft auth chain

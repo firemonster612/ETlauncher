@@ -14,6 +14,9 @@ pub enum AppError {
     #[error("Account not found: {0}")]
     AccountNotFound(String),
 
+    #[error("Offline account error: {0}")]
+    OfflineAccountError(String),
+
     #[error("Token refresh failed: {0}")]
     TokenRefreshFailed(String),
 
@@ -132,6 +135,7 @@ impl From<AppError> for CommandError {
             AppError::AuthError(_) => "AUTH_ERROR",
             AppError::DeviceCodeExpired => "DEVICE_CODE_EXPIRED",
             AppError::AccountNotFound(_) => "ACCOUNT_NOT_FOUND",
+            AppError::OfflineAccountError(_) => "OFFLINE_ACCOUNT_ERROR",
             AppError::TokenRefreshFailed(_) => "TOKEN_REFRESH_FAILED",
             AppError::InstanceNotFound(_) => "INSTANCE_NOT_FOUND",
             AppError::InstanceAlreadyExists(_) => "INSTANCE_EXISTS",

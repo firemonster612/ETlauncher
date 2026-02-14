@@ -1,3 +1,6 @@
+/** Account type - Microsoft (online) or Offline */
+export type AccountType = 'microsoft' | 'offline';
+
 /** A Minecraft account authenticated via Microsoft */
 export interface MinecraftAccount {
 	/** Unique identifier for this account entry */
@@ -18,6 +21,14 @@ export interface MinecraftAccount {
 	lastUsedAt: number;
 	/** Unix timestamp when tokens expire */
 	tokenExpiresAt: number;
+	/** Account type (microsoft or offline) */
+	accountType: AccountType;
+	/** Local skin file hash for offline accounts */
+	offlineSkinHash?: string;
+	/** Skin variant for offline accounts */
+	offlineSkinVariant?: 'classic' | 'slim';
+	/** Local cape file hash for offline accounts */
+	offlineCapeHash?: string;
 }
 
 /** Response from Microsoft device code flow initiation */

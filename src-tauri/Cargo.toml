@@ -96,6 +96,12 @@ regex = "1"
 # Exponential backoff for retry logic
 backoff = { version = "0.4", features = ["tokio"] }
 
+# Local HTTP server for Yggdrasil
+axum = "0.8"
+
+# RSA signing for Yggdrasil texture properties
+rsa = { version = "0.9", features = ["sha1", "pkcs5"] }
+
 # Directory traversal
 walkdir = "2"
 

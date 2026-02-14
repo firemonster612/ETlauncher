@@ -1,6 +1,6 @@
-import type { MinecraftAccount, DeviceCodeResponse } from '$lib/types';
 import * as accountService from '$lib/services/account';
 import * as authService from '$lib/services/auth';
+import type { DeviceCodeResponse, MinecraftAccount } from '$lib/types';
 
 /** Extract error message from various error types */
 function getErrorMessage(e: unknown): string {
@@ -33,6 +33,20 @@ function createAccountsStore() {
 	let authError = $state<string | null>(null);
 	let pollInterval = $state<ReturnType<typeof setInterval> | null>(null);
 
+	/** Enrich offline accounts with skin data URLs from local storage */
+	async function enrichOfflineSkins(accountList: MinecraftAccount[]) {
+		for (const account of accountList) {
+			if (account.accountType === 'offline' && account.offlineSkinHash && !account.skinUrl) {
+				try {
+					const dataUrl = await authService.getOfflineSkinData(account.id);
+					if (dataUrl) account.skinUrl = dataUrl;
+				} catch {
+					// ignore - skin just won't show
+				}
+			}
+		}
+	}
+
 	return {
 		// Getters
 		get accounts() {
@@ -57,13 +71,15 @@ function createAccountsStore() {
 			return authError;
 		},
 
-		/** Load accounts from backend */
+		/** Load accounts from backend, enriching offline accounts with skin data URLs */
 		async load() {
 			isLoading = true;
 			error = null;
 
 			try {
-				accounts = await accountService.getAccounts();
+				const loaded = await accountService.getAccounts();
+				await enrichOfflineSkins(loaded);
+				accounts = loaded;
 			} catch (e) {
 				error = getErrorMessage(e);
 				console.error('Failed to load accounts:', e);
@@ -92,7 +108,9 @@ function createAccountsStore() {
 							if (status.status === 'success') {
 								// Auth succeeded
 								this.stopAuth();
-								accounts = await accountService.getAccounts();
+								const loaded = await accountService.getAccounts();
+								await enrichOfflineSkins(loaded);
+								accounts = loaded;
 							} else if (status.status === 'expired') {
 								authError = 'Authentication expired. Please try again.';
 								this.stopAuth();
@@ -127,7 +145,22 @@ function createAccountsStore() {
 		/** Set active account */
 		async setActive(accountId: string) {
 			try {
-				accounts = await accountService.setActiveAccount(accountId);
+				const updated = await accountService.setActiveAccount(accountId);
+				await enrichOfflineSkins(updated);
+				accounts = updated;
+			} catch (e) {
+				error = getErrorMessage(e);
+				throw e;
+			}
+		},
+
+		/** Create an offline account */
+		async createOfflineAccount(username: string) {
+			try {
+				await authService.createOfflineAccount(username);
+				const loaded = await accountService.getAccounts();
+				await enrichOfflineSkins(loaded);
+				accounts = loaded;
 			} catch (e) {
 				error = getErrorMessage(e);
 				throw e;
@@ -137,7 +170,9 @@ function createAccountsStore() {
 		/** Delete account (logout) */
 		async deleteAccount(accountId: string) {
 			try {
-				accounts = await accountService.deleteAccount(accountId);
+				const updated = await accountService.deleteAccount(accountId);
+				await enrichOfflineSkins(updated);
+				accounts = updated;
 			} catch (e) {
 				error = getErrorMessage(e);
 				throw e;

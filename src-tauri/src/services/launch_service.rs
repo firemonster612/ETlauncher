@@ -105,8 +105,12 @@ async fn launch_instance_inner(
     let account = account_service::get_account(account_id)?;
     check_cancelled(cancel_token)?;
 
-    // Get valid access token (will refresh if needed)
-    emit_launch_status(app_handle, &instance_id, LaunchStatus::RefreshingToken);
+    // Get valid access token (will refresh if needed, or "0" for offline)
+    let is_offline = account.account_type == crate::models::account::AccountType::Offline;
+
+    if !is_offline {
+        emit_launch_status(app_handle, &instance_id, LaunchStatus::RefreshingToken);
+    }
 
     let access_token =
         account_service::get_valid_access_token(&state.http_client, account_id).await?;
@@ -364,6 +368,40 @@ async fn launch_instance_inner(
         0..0,
         [format!("-Xms{}M", min_mem), format!("-Xmx{}M", max_mem)],
     );
+
+    // Inject authlib-injector for offline accounts (enables custom skins in-game)
+    // Must be placed before -cp so it's a proper JVM argument
+    if is_offline {
+        match crate::services::authlib_injector_service::get_authlib_injector_path(
+            &state.http_client,
+        )
+        .await
+        {
+            Ok(injector_path) => {
+                let yggdrasil_port = crate::services::yggdrasil_server::get_port();
+                if yggdrasil_port > 0 {
+                    let yggdrasil_url = format!("http://127.0.0.1:{}/yggdrasil", yggdrasil_port);
+                    jvm_args.push(format!(
+                        "-javaagent:{}={}",
+                        injector_path.display(),
+                        yggdrasil_url
+                    ));
+                    eprintln!(
+                        "[launch] Injecting authlib-injector with Yggdrasil URL: {}",
+                        yggdrasil_url
+                    );
+                } else {
+                    eprintln!("[launch] Warning: Yggdrasil server not running, skins may not work");
+                }
+            }
+            Err(e) => {
+                eprintln!(
+                    "[launch] Warning: Failed to get authlib-injector: {}, skins may not work",
+                    e
+                );
+            }
+        }
+    }
 
     // Only add classpath if version doesn't already specify it
     if !has_classpath_in_jvm_args {

@@ -1,31 +1,31 @@
 <script lang="ts">
 	import {
-		Package,
+		Calendar,
 		Download,
 		ExternalLink,
-		Loader2,
-		X,
-		Maximize2,
-		StopCircle,
-		Calendar,
-		User,
-		Tag,
 		HardDrive,
+		Loader2,
+		Maximize2,
+		Package,
+		StopCircle,
+		Tag,
+		User,
+		X,
 	} from '@lucide/svelte';
-	import { renderMarkdown } from '$lib/utils/markdown';
-	import { nestedScroll } from '$lib/utils/scroll';
 	import { openUrl } from '@tauri-apps/plugin-opener';
-	import { Button } from '$lib/ui/button';
-	import * as Select from '$lib/ui/select';
 	import DownloadProgress from '$lib/components/DownloadProgress.svelte';
-	import ModpackGalleryCarousel from './ModpackGalleryCarousel.svelte';
 	import type {
+		LoaderType,
 		Modpack,
-		ModpackVersion,
 		ModpackMod,
 		ModpackPlatform,
-		LoaderType,
+		ModpackVersion,
 	} from '$lib/types';
+	import { Button } from '$lib/ui/button';
+	import * as Select from '$lib/ui/select';
+	import { renderMarkdown } from '$lib/utils/markdown';
+	import { nestedScroll } from '$lib/utils/scroll';
+	import ModpackGalleryCarousel from './ModpackGalleryCarousel.svelte';
 
 	interface Props {
 		modpack: Modpack;
@@ -157,7 +157,7 @@
 
 <div
 	class="fixed inset-x-0 top-[var(--titlebar-height)] z-50 flex h-[calc(100vh-var(--titlebar-height))] items-center justify-center overflow-hidden bg-black/50 p-4"
-	onclick={onClose}
+	onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}
 	onkeydown={(e) => e.key === 'Escape' && onClose()}
 	role="dialog"
 	aria-modal="true"
@@ -167,9 +167,6 @@
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
 		class="bg-card border-border flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border-2 shadow-2xl"
-		onclick={(e) => e.stopPropagation()}
-		onkeydown={(e) => e.stopPropagation()}
-		role="document"
 	>
 		<!-- Header banner using modpack image with fade-out effect -->
 		{#if modpack.bannerUrl || modpack.iconUrl}

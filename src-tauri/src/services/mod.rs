@@ -1,6 +1,7 @@
 pub mod account_service;
 pub mod atlauncher_service;
 pub mod auth_service;
+pub mod authlib_injector_service;
 pub mod content_install_service;
 pub mod content_queue_service;
 pub mod content_scan_service;
@@ -26,3 +27,4 @@ pub mod skin_service;
 pub mod technic_service;
 pub mod update_execution_service;
 pub mod update_service;
+pub mod yggdrasil_server;

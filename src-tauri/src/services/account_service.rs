@@ -113,10 +113,15 @@ pub fn delete_account(account_id: &str) -> Result<Vec<MinecraftAccount>, AppErro
         .map(|a| a.is_active)
         .unwrap_or(false);
 
+    let is_offline = accounts
+        .iter()
+        .find(|a| a.id == account_id)
+        .map(|a| a.account_type == crate::models::account::AccountType::Offline)
+        .unwrap_or(false);
     accounts.retain(|a| a.id != account_id);
-
-    // Delete tokens from keyring
-    auth_service::delete_tokens(account_id)?;
+    if !is_offline {
+        auth_service::delete_tokens(account_id)?;
+    }
 
     // If we deleted the active account, make the first remaining account active
     if was_active && !accounts.is_empty() {
@@ -177,6 +182,11 @@ pub async fn get_valid_access_token(
 ) -> Result<String, AppError> {
     let account = get_account(account_id)?;
 
+    // Offline accounts don't need token refresh
+    if account.account_type == crate::models::account::AccountType::Offline {
+        return Ok("0".to_string());
+    }
+
     if needs_token_refresh(&account) {
         // Refresh the token
         let (new_token, expires_in) = auth_service::refresh_tokens(client, account_id).await?;
@@ -187,4 +197,170 @@ pub async fn get_valid_access_token(
         // Use existing token
         auth_service::get_access_token(account_id)
     }
+}
+
+/// Create a new offline account with a given username
+pub fn create_offline_account(username: &str) -> Result<MinecraftAccount, AppError> {
+    // Require at least one Microsoft account to prevent piracy
+    let accounts = load_accounts()?;
+    let has_microsoft = accounts
+        .iter()
+        .any(|a| a.account_type == crate::models::account::AccountType::Microsoft);
+    if !has_microsoft {
+        return Err(AppError::OfflineAccountError(
+            "You must have at least one Microsoft account logged in to create offline accounts"
+                .to_string(),
+        ));
+    }
+
+    // Validate username (3-16 chars, alphanumeric + underscore)
+    if username.len() < 3 || username.len() > 16 {
+        return Err(AppError::OfflineAccountError(
+            "Username must be between 3 and 16 characters".to_string(),
+        ));
+    }
+    if !username.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return Err(AppError::OfflineAccountError(
+            "Username can only contain letters, numbers, and underscores".to_string(),
+        ));
+    }
+
+    // Generate deterministic UUID using MD5("OfflinePlayer:" + username)
+    let uuid = generate_offline_uuid(username);
+    let now = chrono::Utc::now().timestamp();
+
+    let account = MinecraftAccount {
+        id: uuid::Uuid::new_v4().to_string(),
+        username: username.to_string(),
+        uuid,
+        is_active: false,
+        skin_url: None,
+        cape_url: None,
+        created_at: now,
+        last_used_at: now,
+        token_expires_at: i64::MAX,
+        account_type: crate::models::account::AccountType::Offline,
+        offline_skin_hash: None,
+        offline_skin_variant: None,
+        offline_cape_hash: None,
+    };
+
+    add_account(account.clone())?;
+
+    // Set Steve as the default skin for offline accounts
+    const STEVE_SKIN: &[u8] = include_bytes!("../../assets/steve.png");
+    let _ = set_offline_skin(&account.id, STEVE_SKIN, "classic");
+
+    // Return the account with correct is_active state
+    get_account(&account.id)
+}
+
+/// Generate a deterministic UUID for an offline player (same as Minecraft's algorithm)
+fn generate_offline_uuid(username: &str) -> String {
+    let input = format!("OfflinePlayer:{}", username);
+    let digest = md5::compute(input.as_bytes());
+    let mut bytes = digest.0;
+
+    // Set version to 3 (MD5-based UUID)
+    bytes[6] = (bytes[6] & 0x0f) | 0x30;
+    // Set variant to RFC 4122
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+    format!(
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        bytes[0], bytes[1], bytes[2], bytes[3],
+        bytes[4], bytes[5],
+        bytes[6], bytes[7],
+        bytes[8], bytes[9],
+        bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+    )
+}
+
+/// Set skin for an offline account
+/// Takes a PNG file path, copies it to the skins directory with SHA-1 hash name
+pub fn set_offline_skin(
+    account_id: &str,
+    skin_data: &[u8],
+    variant: &str,
+) -> Result<String, AppError> {
+    let account = get_account(account_id)?;
+    if account.account_type != crate::models::account::AccountType::Offline {
+        return Err(AppError::OfflineAccountError(
+            "Can only set offline skin for offline accounts".to_string(),
+        ));
+    }
+
+    // Compute SHA-1 hash of the skin data
+    use sha1::Digest;
+    let mut hasher = sha1::Sha1::new();
+    hasher.update(skin_data);
+    let hash = format!("{:x}", hasher.finalize());
+
+    // Save to skins directory
+    let skins_dir = crate::utils::paths::get_app_data_dir().join("skins");
+    std::fs::create_dir_all(&skins_dir)?;
+    let skin_path = skins_dir.join(format!("{}.png", hash));
+    std::fs::write(&skin_path, skin_data)?;
+
+    // Update account
+    let mut accounts = load_accounts()?;
+    if let Some(acc) = accounts.iter_mut().find(|a| a.id == account_id) {
+        acc.offline_skin_hash = Some(hash.clone());
+        acc.offline_skin_variant = Some(variant.to_string());
+    }
+    save_accounts(&accounts)?;
+
+    Ok(hash)
+}
+
+/// Set cape for an offline account
+pub fn set_offline_cape(account_id: &str, cape_data: &[u8]) -> Result<String, AppError> {
+    let account = get_account(account_id)?;
+    if account.account_type != crate::models::account::AccountType::Offline {
+        return Err(AppError::OfflineAccountError(
+            "Can only set offline cape for offline accounts".to_string(),
+        ));
+    }
+
+    // Compute SHA-1 hash of the cape data
+    use sha1::Digest;
+    let mut hasher = sha1::Sha1::new();
+    hasher.update(cape_data);
+    let hash = format!("{:x}", hasher.finalize());
+
+    // Save to skins directory (capes go here too)
+    let skins_dir = crate::utils::paths::get_app_data_dir().join("skins");
+    std::fs::create_dir_all(&skins_dir)?;
+    let cape_path = skins_dir.join(format!("{}.png", hash));
+    std::fs::write(&cape_path, cape_data)?;
+
+    // Update account
+    let mut accounts = load_accounts()?;
+    if let Some(acc) = accounts.iter_mut().find(|a| a.id == account_id) {
+        acc.offline_cape_hash = Some(hash.clone());
+    }
+    save_accounts(&accounts)?;
+
+    Ok(hash)
+}
+
+/// Remove skin from offline account
+pub fn remove_offline_skin(account_id: &str) -> Result<(), AppError> {
+    let mut accounts = load_accounts()?;
+    if let Some(acc) = accounts.iter_mut().find(|a| a.id == account_id) {
+        acc.offline_skin_hash = None;
+        acc.offline_skin_variant = None;
+    }
+    save_accounts(&accounts)?;
+    Ok(())
+}
+
+/// Remove cape from offline account
+pub fn remove_offline_cape(account_id: &str) -> Result<(), AppError> {
+    let mut accounts = load_accounts()?;
+    if let Some(acc) = accounts.iter_mut().find(|a| a.id == account_id) {
+        acc.offline_cape_hash = None;
+    }
+    save_accounts(&accounts)?;
+    Ok(())
 }
