@@ -313,12 +313,12 @@
 											}}
 											class="flex flex-row gap-4"
 										>
-											<label class="flex cursor-pointer items-center gap-2 text-sm">
-												<RadioGroup.Item value="keep" />
+											<label for="user-keep-{item.filename}" class="flex cursor-pointer items-center gap-2 text-sm">
+												<RadioGroup.Item value="keep" id="user-keep-{item.filename}" />
 												Keep
 											</label>
-											<label class="flex cursor-pointer items-center gap-2 text-sm">
-												<RadioGroup.Item value="remove" />
+											<label for="user-remove-{item.filename}" class="flex cursor-pointer items-center gap-2 text-sm">
+												<RadioGroup.Item value="remove" id="user-remove-{item.filename}" />
 												Remove
 											</label>
 										</RadioGroup.Root>
@@ -425,12 +425,12 @@
 											}}
 											class="flex flex-row gap-4"
 										>
-											<label class="flex cursor-pointer items-center gap-2 text-sm">
-												<RadioGroup.Item value="keep" />
+											<label for="incompat-keep-{item.filename}" class="flex cursor-pointer items-center gap-2 text-sm">
+												<RadioGroup.Item value="keep" id="incompat-keep-{item.filename}" />
 												Keep (may cause issues)
 											</label>
-											<label class="flex cursor-pointer items-center gap-2 text-sm">
-												<RadioGroup.Item value="remove" />
+											<label for="incompat-remove-{item.filename}" class="flex cursor-pointer items-center gap-2 text-sm">
+												<RadioGroup.Item value="remove" id="incompat-remove-{item.filename}" />
 												Remove
 											</label>
 										</RadioGroup.Root>

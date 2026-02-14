@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { X, Download, Calendar, Package, Search } from '@lucide/svelte';
+	import { Calendar, Download, Package, Search, X } from '@lucide/svelte';
+	import type { LoaderType, ModpackVersion } from '$lib/types';
 	import { Button } from '$lib/ui/button';
 	import { Input } from '$lib/ui/input';
 	import * as Select from '$lib/ui/select';
-	import type { ModpackVersion, LoaderType } from '$lib/types';
 
 	interface Props {
 		open: boolean;
@@ -74,7 +74,7 @@
 {#if open}
 	<div
 		class="fixed inset-x-0 top-[var(--titlebar-height)] z-[80] flex h-[calc(100vh-var(--titlebar-height))] items-center justify-center bg-black/50 p-4"
-		onclick={onClose}
+		onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}
 		onkeydown={(e) => e.key === 'Escape' && onClose()}
 		role="dialog"
 		aria-modal="true"
@@ -84,9 +84,6 @@
 		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 		<div
 			class="bg-card border-border flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border-2 shadow-2xl"
-			onclick={(e) => e.stopPropagation()}
-			onkeydown={(e) => e.stopPropagation()}
-			role="document"
 		>
 			<!-- Header -->
 			<div class="border-border flex items-center justify-between border-b p-4">

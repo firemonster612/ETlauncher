@@ -41,51 +41,51 @@
 				style:background-color="var(--app-background-color)"
 				style:filter="blur({blur}px)"
 			></div>
-	{:else if bgType === 'image' || bgType === 'gif'}
-		{#if bgUrl}
-			<!-- Hidden img to detect when image is loaded -->
-			<img
-				src={bgUrl}
-				alt=""
-				onload={handleMediaLoad}
-				class="hidden"
-			/>
-			{#if mediaLoaded}
-				<div
-					class="absolute"
-					style:inset="-{inset}px"
-					style:background-image="url({bgUrl})"
-					style:background-size="cover"
-					style:background-position="center"
-					style:filter={blur > 0 ? `blur(${blur}px)` : 'none'}
-					style:will-change={blur > 0 ? 'transform' : 'auto'}
-					style:transform={blur > 0 ? 'translateZ(0)' : 'none'}
-				></div>
+		{:else if bgType === 'image' || bgType === 'gif'}
+			{#if bgUrl}
+				<!-- Hidden img to detect when image is loaded -->
+				<img
+					src={bgUrl}
+					alt=""
+					onload={handleMediaLoad}
+					class="hidden"
+				/>
+				{#if mediaLoaded}
+					<div
+						class="absolute"
+						style:inset="-{inset}px"
+						style:background-image="url({bgUrl})"
+						style:background-size="cover"
+						style:background-position="center"
+						style:filter={blur > 0 ? `blur(${blur}px)` : 'none'}
+						style:will-change={blur > 0 ? 'transform' : 'auto'}
+						style:transform={blur > 0 ? 'translateZ(0)' : 'none'}
+					></div>
+				{/if}
+			{/if}
+		{:else if bgType === 'video'}
+			{#if bgUrl}
+				{#key bgUrl}
+					<!-- svelte-ignore a11y_media_has_caption -->
+					<video
+						src={bgUrl}
+						autoplay
+						loop
+						muted
+						playsinline
+						onloadeddata={handleMediaLoad}
+						class="absolute"
+						style:inset="-{inset}px"
+						style:width="calc(100% + {inset * 2}px)"
+						style:height="calc(100% + {inset * 2}px)"
+						style:object-fit="cover"
+						style:opacity={mediaLoaded ? 1 : 0}
+						style:filter={blur > 0 ? `blur(${blur}px)` : 'none'}
+						style:will-change={blur > 0 ? 'transform' : 'auto'}
+						style:transform={blur > 0 ? 'translateZ(0)' : 'none'}
+					></video>
+				{/key}
 			{/if}
 		{/if}
-	{:else if bgType === 'video'}
-		{#if bgUrl}
-			{#key bgUrl}
-				<!-- svelte-ignore a11y_media_has_caption -->
-				<video
-					src={bgUrl}
-					autoplay
-					loop
-					muted
-					playsinline
-					onloadeddata={handleMediaLoad}
-					class="absolute"
-					style:inset="-{inset}px"
-					style:width="calc(100% + {inset * 2}px)"
-					style:height="calc(100% + {inset * 2}px)"
-					style:object-fit="cover"
-					style:opacity={mediaLoaded ? 1 : 0}
-					style:filter={blur > 0 ? `blur(${blur}px)` : 'none'}
-					style:will-change={blur > 0 ? 'transform' : 'auto'}
-					style:transform={blur > 0 ? 'translateZ(0)' : 'none'}
-				></video>
-			{/key}
-		{/if}
-	{/if}
 	</div>
 {/if}

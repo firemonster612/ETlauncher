@@ -1,54 +1,54 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { SvelteSet } from 'svelte/reactivity';
-	import { listen } from '@tauri-apps/api/event';
-	import { openUrl } from '@tauri-apps/plugin-opener';
-	import { renderMarkdown } from '$lib/utils/markdown';
-	import { nestedScroll } from '$lib/utils/scroll';
 	import {
-		Package,
-		Search,
-		Download,
-		ExternalLink,
-		Loader2,
-		X,
-		ChevronDown,
-		ChevronLeft,
 		AlertTriangle,
 		CheckCircle,
-		Trash2,
+		ChevronDown,
+		ChevronLeft,
+		Download,
+		ExternalLink,
+		Link,
+		Loader2,
+		Maximize2,
+		Minus,
+		Package,
 		Power,
 		PowerOff,
-		SquareCheck,
+		Search,
 		Square,
-		Minus,
-		Maximize2,
-		Link,
+		SquareCheck,
+		Trash2,
+		X,
 	} from '@lucide/svelte';
+	import { listen } from '@tauri-apps/api/event';
+	import { openUrl } from '@tauri-apps/plugin-opener';
+	import { onMount } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
+	import DescriptionModal from '$lib/components/DescriptionModal.svelte';
+	import ScreenshotLightbox from '$lib/components/ScreenshotLightbox.svelte';
+	import { getCategoriesForContext } from '$lib/constants/categories';
+	import * as contentService from '$lib/services/content';
+	import { contentStore } from '$lib/stores/content.svelte';
+	import { settingsStore } from '$lib/stores/settings.svelte';
+	import type {
+		Content,
+		ContentDownloadProgressWithId,
+		ContentPlatform,
+		ContentSortBy,
+		ContentType,
+		ContentVersion,
+		DetectedMod,
+		LoaderType,
+		QueueItemStatus,
+		ScanResult,
+	} from '$lib/types';
 	import { Button } from '$lib/ui/button';
 	import { Checkbox } from '$lib/ui/checkbox';
 	import { Input } from '$lib/ui/input';
 	import * as Select from '$lib/ui/select';
 	import { Skeleton } from '$lib/ui/skeleton';
-	import { contentStore } from '$lib/stores/content.svelte';
-	import * as contentService from '$lib/services/content';
 	import { getErrorMessage } from '$lib/utils/error';
-	import { getCategoriesForContext } from '$lib/constants/categories';
-	import ScreenshotLightbox from '$lib/components/ScreenshotLightbox.svelte';
-	import DescriptionModal from '$lib/components/DescriptionModal.svelte';
-	import { settingsStore } from '$lib/stores/settings.svelte';
-	import type {
-		Content,
-		ContentDownloadProgressWithId,
-		ContentType,
-		ContentSortBy,
-		ContentPlatform,
-		LoaderType,
-		ContentVersion,
-		DetectedMod,
-		QueueItemStatus,
-		ScanResult,
-	} from '$lib/types';
+	import { renderMarkdown } from '$lib/utils/markdown';
+	import { nestedScroll } from '$lib/utils/scroll';
 
 	interface Props {
 		instanceId: string;
@@ -1801,134 +1801,122 @@
 						</div>
 					{/if}
 
-				{#each visibleInstalledItems as item (item.filename)}
-					{@const isSelected = selectedItems.has(item.filename)}
-					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-					<div
-						class="flex w-full cursor-pointer gap-3 border-2 p-3 text-left transition-colors {isSelected
-							? 'border-primary bg-primary/5'
-							: 'border-border bg-background hover:border-primary/50'} {item.isDisabled
-							? 'opacity-60'
-							: ''}"
-						onclick={() => toggleItemSelection(item.filename)}
-						onkeydown={(e) => {
-							if (e.key === 'Enter' || e.key === ' ') {
-								e.preventDefault();
-								toggleItemSelection(item.filename);
-							}
-						}}
-						role="button"
-						tabindex="0"
-					>
-							<!-- Checkbox -->
-							<div class="flex-shrink-0 pt-0.5">
-								{#if isSelected}
-									<SquareCheck class="text-primary h-5 w-5" />
-								{:else}
-									<Square class="text-muted-foreground h-5 w-5" />
-								{/if}
-							</div>
+					{#each visibleInstalledItems as item (item.filename)}
+						{@const isSelected = selectedItems.has(item.filename)}
+						<div class="relative">
+							<button
+								class="flex w-full gap-3 border-2 p-3 text-left transition-colors {isSelected
+									? 'border-primary bg-primary/5'
+									: 'border-border bg-background hover:border-primary/50'} {item.isDisabled
+									? 'opacity-60'
+									: ''}"
+								onclick={() => toggleItemSelection(item.filename)}
+							>
+								<!-- Checkbox -->
+								<div class="flex-shrink-0 pt-0.5">
+									{#if isSelected}
+										<SquareCheck class="text-primary h-5 w-5" />
+									{:else}
+										<Square class="text-muted-foreground h-5 w-5" />
+									{/if}
+								</div>
 
-							<!-- Content -->
-							<div class="min-w-0 flex-1">
-								<div class="flex items-start justify-between gap-2">
-									<div class="flex min-w-0 items-center gap-2">
-										<h3 class="truncate font-medium">{getItemDisplayName(item)}</h3>
-										{#if item.isDisabled}
-											<span
-												class="flex flex-shrink-0 items-center gap-1 rounded bg-amber-500/20 px-1.5 py-0.5 text-xs text-amber-500"
-											>
-												<PowerOff class="h-3 w-3" />
-												Disabled
-											</span>
+								<!-- Content -->
+								<div class="min-w-0 flex-1">
+									<div class="flex items-start justify-between gap-2">
+										<div class="flex min-w-0 items-center gap-2">
+											<h3 class="truncate font-medium">{getItemDisplayName(item)}</h3>
+											{#if item.isDisabled}
+												<span
+													class="flex flex-shrink-0 items-center gap-1 rounded bg-amber-500/20 px-1.5 py-0.5 text-xs text-amber-500"
+												>
+													<PowerOff class="h-3 w-3" />
+													Disabled
+												</span>
+											{/if}
+											{#if item.dependencyOf.length > 0}
+												<span
+													class="flex flex-shrink-0 items-center gap-1 rounded bg-blue-500/20 px-1.5 py-0.5 text-xs text-blue-500"
+													title="Required by: {item.dependencyOf.join(', ')}"
+												>
+													<Link class="h-3 w-3" />
+													Dependency
+												</span>
+											{/if}
+										</div>
+										<div class="flex flex-shrink-0 items-center gap-1">
+											{#if item.modrinthProject}
+												<span
+													class="rounded border border-green-500/50 bg-green-500/20 px-1.5 py-0.5 text-xs text-green-500"
+												>
+													modrinth
+												</span>
+											{:else if item.curseforgeProject}
+												<span
+													class="rounded border border-orange-500/50 bg-orange-500/20 px-1.5 py-0.5 text-xs text-orange-500"
+												>
+													curseforge
+												</span>
+											{:else}
+												<span
+													class="bg-muted text-muted-foreground border-muted rounded border px-1.5 py-0.5 text-xs"
+												>
+													unknown
+												</span>
+											{/if}
+										</div>
+									</div>
+									<p class="text-muted-foreground mt-0.5 truncate text-xs">{item.filename}</p>
+									<div class="text-muted-foreground mt-1 flex flex-wrap items-center gap-3 text-xs">
+										{#if getItemVersion(item)}
+											<span>v{getItemVersion(item)}</span>
 										{/if}
+										<span>{formatBytes(item.size)}</span>
 										{#if item.dependencyOf.length > 0}
 											<span
-												class="flex flex-shrink-0 items-center gap-1 rounded bg-blue-500/20 px-1.5 py-0.5 text-xs text-blue-500"
-												title="Required by: {item.dependencyOf.join(', ')}"
-											>
-												<Link class="h-3 w-3" />
-												Dependency
-											</span>
-										{/if}
-									</div>
-									<div class="flex flex-shrink-0 items-center gap-1">
-										{#if item.modrinthProject}
-											<span
-												class="rounded border border-green-500/50 bg-green-500/20 px-1.5 py-0.5 text-xs text-green-500"
-											>
-												modrinth
-											</span>
-										{:else if item.curseforgeProject}
-											<span
-												class="rounded border border-orange-500/50 bg-orange-500/20 px-1.5 py-0.5 text-xs text-orange-500"
-											>
-												curseforge
-											</span>
-										{:else}
-											<span
-												class="bg-muted text-muted-foreground border-muted rounded border px-1.5 py-0.5 text-xs"
-											>
-												unknown
-											</span>
-										{/if}
-									</div>
-								</div>
-								<p class="text-muted-foreground mt-0.5 truncate text-xs">{item.filename}</p>
-								<div class="text-muted-foreground mt-1 flex flex-wrap items-center gap-3 text-xs">
-									{#if getItemVersion(item)}
-										<span>v{getItemVersion(item)}</span>
-									{/if}
-									<span>{formatBytes(item.size)}</span>
-									{#if item.dependencyOf.length > 0}
-										<div class="relative">
-											<button
-												type="button"
-												class="cursor-pointer border-0 bg-transparent p-0 text-blue-500 underline decoration-blue-500/50 underline-offset-2 hover:decoration-blue-500"
+												class="cursor-pointer text-blue-500 underline decoration-blue-500/50 underline-offset-2 hover:decoration-blue-500"
+												role="button"
+												tabindex="-1"
 												onclick={(e) => {
 													e.stopPropagation();
 													showDependentsFor =
 														showDependentsFor === item.filename ? null : item.filename;
 												}}
+												onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); showDependentsFor = showDependentsFor === item.filename ? null : item.filename; } }}
 											>
 												Required by {item.dependencyOf.length} mod{item.dependencyOf.length === 1
 													? ''
 													: 's'}
-											</button>
-							{#if showDependentsFor === item.filename}
-								<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+											</span>
+										{/if}
+									</div>
+								</div>
+							</button>
+							<!-- Dependents popover rendered outside the button to avoid nested interactive elements -->
+							{#if item.dependencyOf.length > 0 && showDependentsFor === item.filename}
 								<div
-									class="border-border bg-popover absolute bottom-full left-0 z-10 mb-1 w-64 border p-3 shadow-lg"
-									onclick={(e) => e.stopPropagation()}
-									onkeydown={(e) => e.stopPropagation()}
+									class="border-border bg-popover absolute bottom-full left-12 z-10 mb-1 w-64 border p-3 shadow-lg"
 									role="tooltip"
 								>
-													<div class="mb-2 flex items-center justify-between">
-														<span class="text-sm font-medium">Required by:</span>
-														<button
-															type="button"
-															class="text-muted-foreground hover:text-foreground cursor-pointer border-0 bg-transparent p-0 text-xs"
-															onclick={(e) => {
-																e.stopPropagation();
-																showDependentsFor = null;
-															}}
-														>
-															Close
-														</button>
-													</div>
-													<ul class="space-y-1">
-														{#each item.dependencyOf as parentFilename (parentFilename)}
-															<li class="text-muted-foreground truncate text-xs">
-																{parentFilename}
-															</li>
-														{/each}
-													</ul>
-												</div>
-											{/if}
-										</div>
-									{/if}
+									<div class="mb-2 flex items-center justify-between">
+										<span class="text-sm font-medium">Required by:</span>
+										<button
+											type="button"
+											class="text-muted-foreground hover:text-foreground cursor-pointer border-0 bg-transparent p-0 text-xs"
+											onclick={() => { showDependentsFor = null; }}
+										>
+											Close
+										</button>
+									</div>
+									<ul class="space-y-1">
+										{#each item.dependencyOf as parentFilename (parentFilename)}
+											<li class="text-muted-foreground truncate text-xs">
+												{parentFilename}
+											</li>
+										{/each}
+									</ul>
 								</div>
-							</div>
+							{/if}
 						</div>
 					{/each}
 				</div>
@@ -2194,7 +2182,7 @@
 {#if selectedContentDetail}
 	<div
 		class="fixed inset-x-0 top-[var(--titlebar-height)] z-[60] flex h-[calc(100vh-var(--titlebar-height))] items-center justify-center overflow-hidden bg-black/50 p-4"
-		onclick={closeContentDetail}
+		onclick={(e) => { if (e.target === e.currentTarget) closeContentDetail(); }}
 		onkeydown={(e) => e.key === 'Escape' && closeContentDetail()}
 		role="dialog"
 		aria-modal="true"
@@ -2205,9 +2193,6 @@
 		<div
 			class="bg-card border-border flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border-2 shadow-2xl"
 			data-modal-content
-			onclick={(e) => e.stopPropagation()}
-			onkeydown={(e) => e.stopPropagation()}
-			role="document"
 		>
 			<!-- Header -->
 			<div class="border-border flex-shrink-0 border-b p-5">

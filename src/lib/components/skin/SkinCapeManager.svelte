@@ -1,19 +1,26 @@
 <script lang="ts">
+	import { Ban, Check, FolderOpen, Loader2, Upload, X } from '@lucide/svelte';
+	import { open } from '@tauri-apps/plugin-dialog';
 	import { onMount } from 'svelte';
-	import { Button } from '$lib/ui/button';
-	import { X, Loader2, Check, FolderOpen } from '@lucide/svelte';
-	import SkinViewer3D from './SkinViewer3D.svelte';
-	import SkinUploader from './SkinUploader.svelte';
-	import CapeSelector from './CapeSelector.svelte';
-	import SkinLibraryModal from './SkinLibraryModal.svelte';
 	
-	import { getMinecraftProfile, uploadSkin, setCape, hideCape } from '$lib/services/account';
-	import { getSkinLibrary, getSkinData, skinDataToUrl, applySkinFromLibrary, saveSkinToLibrary } from '$lib/services/skin';
-	import type { MinecraftAccount, MinecraftProfile, CapeInfo, SavedSkin } from '$lib/types';
+	import { getMinecraftProfile, hideCape, setCape, uploadSkin } from '$lib/services/account';
+	import { getDefaultSkin, getOfflineCapeData, getOfflineSkinData, removeOfflineCape, setOfflineCape, setOfflineSkin } from '$lib/services/auth';
+	import { applySkinFromLibrary, getSkinData, getSkinLibrary, readSkinFile, saveSkinToLibrary, skinDataToUrl } from '$lib/services/skin';
+	import type { CapeInfo, MinecraftAccount, MinecraftProfile, SavedSkin } from '$lib/types';
+	import { Button } from '$lib/ui/button';
+	import CapeSelector from './CapeSelector.svelte';
+	import CapeThumbnail from './CapeThumbnail.svelte';
+	import SkinLibraryModal from './SkinLibraryModal.svelte';
+	import SkinUploader from './SkinUploader.svelte';
+	import SkinViewer3D from './SkinViewer3D.svelte';
 
-	// Default skin URLs (official Minecraft texture URLs from Mojang)
+	// Default skin URLs (official Minecraft texture URLs from Mojang, used for online accounts)
 	const STEVE_SKIN_URL = 'https://textures.minecraft.net/texture/1a4af718455d4aab528e7a61f86fa25e6a369d1768dcb13f7df319a713eb810b';
 	const ALEX_SKIN_URL = 'https://textures.minecraft.net/texture/83cee5ca6afcdb171285aa00e8049c297b2dbeba0efb8ff970a5677a1b644032';
+
+	// Local blob URLs for bundled default skins (used for offline accounts)
+	let steveSkinUrl = $state<string>(STEVE_SKIN_URL);
+	let alexSkinUrl = $state<string>(ALEX_SKIN_URL);
 
 	type DefaultSkinType = 'steve' | 'alex';
 
@@ -21,9 +28,12 @@
 		account: MinecraftAccount;
 		onClose: () => void;
 		onProfileUpdated?: (profile: MinecraftProfile) => void;
+		onOfflineSkinUpdated?: () => void;
 	}
 
-	let { account, onClose, onProfileUpdated }: Props = $props();
+	let { account, onClose, onProfileUpdated, onOfflineSkinUpdated }: Props = $props();
+
+	const isOffline = $derived(account.accountType === 'offline');
 
 	// State
 	let isLoading = $state(true);
@@ -53,6 +63,10 @@
 	// Use empty string to explicitly mean "no cape", undefined means "not changed"
 	let previewCapeUrl = $state<string | undefined>(undefined);
 
+	// Offline cape upload state
+	let offlineCapeData = $state<Uint8Array | null>(null); // New cape data to upload
+	let offlineCapeRemoved = $state(false); // Whether the user removed the cape
+
 	// Computed preview URLs
 	const displaySkinUrl = $derived(previewSkinUrl || currentSkinUrl);
 	// Empty string means explicitly no cape, undefined means use current
@@ -68,7 +82,10 @@
 	);
 
 	// Check if there are pending changes
-	const hasChanges = $derived(selectedSkinData !== null || selectedDefaultSkin !== null || selectedCapeId !== undefined);
+	const hasChanges = $derived(
+		selectedSkinData !== null || selectedDefaultSkin !== null || selectedCapeId !== undefined ||
+		offlineCapeData !== null || offlineCapeRemoved
+	);
 
 	onMount(async () => {
 		await loadData();
@@ -79,39 +96,64 @@
 		error = null;
 
 		try {
-			// Load profile and saved skins in parallel
-			const [profileData, skinsData] = await Promise.all([
-				getMinecraftProfile(account.id),
-				getSkinLibrary(),
-			]);
+			if (isOffline) {
+				// Offline account: load skin + cape from local storage + skin library + bundled defaults
+				const [skinDataUrl, capeDataUrl, skinsData, steveData, alexData] = await Promise.all([
+					getOfflineSkinData(account.id),
+					getOfflineCapeData(account.id),
+					getSkinLibrary(),
+					getDefaultSkin('steve'),
+					getDefaultSkin('alex'),
+				]);
 
-			profile = profileData;
-			savedSkins = skinsData;
+				savedSkins = skinsData;
 
-			// Get current skin variant
-			const activeSkin = profile.skins.find((s) => s.state === 'ACTIVE');
-			if (activeSkin) {
-				currentSkinUrl = activeSkin.url;
-				currentSlim = activeSkin.variant === 'slim';
-			}
+				// Create blob URLs from the bundled default skins (works offline)
+				steveSkinUrl = skinDataToUrl(steveData);
+				alexSkinUrl = skinDataToUrl(alexData);
 
-			// Get active cape
-			const activeCape = profile.capes.find((c) => c.state === 'ACTIVE');
-			if (activeCape) {
-				currentCapeUrl = activeCape.url;
+				if (skinDataUrl) {
+					currentSkinUrl = skinDataUrl;
+				}
+				if (capeDataUrl) {
+					currentCapeUrl = capeDataUrl;
+				}
+				currentSlim = account.offlineSkinVariant === 'slim';
 			} else {
-				currentCapeUrl = undefined;
-			}
+				// Online account: load Mojang profile + skin library
+				const [profileData, skinsData] = await Promise.all([
+					getMinecraftProfile(account.id),
+					getSkinLibrary(),
+				]);
 
-			// Auto-save current skin to library if the library is empty (first-time user experience)
-			if (savedSkins.length === 0 && activeSkin?.url) {
-				try {
-					const skinData = await fetchSkinFromUrl(activeSkin.url);
-					const variant = activeSkin.variant === 'slim' ? 'slim' : 'classic';
-					const skin = await saveSkinToLibrary('Current Skin', variant, skinData);
-					savedSkins = [skin];
-				} catch (err) {
-					console.error('Failed to auto-save current skin to library:', err);
+				profile = profileData;
+				savedSkins = skinsData;
+
+				// Get current skin variant
+				const activeSkin = profile.skins.find((s) => s.state === 'ACTIVE');
+				if (activeSkin) {
+					currentSkinUrl = activeSkin.url;
+					currentSlim = activeSkin.variant === 'slim';
+				}
+
+				// Get active cape
+				const activeCape = profile.capes.find((c) => c.state === 'ACTIVE');
+				if (activeCape) {
+					currentCapeUrl = activeCape.url;
+				} else {
+					currentCapeUrl = undefined;
+				}
+
+				// Auto-save current skin to library if the library is empty (first-time user experience)
+				if (savedSkins.length === 0 && activeSkin?.url) {
+					try {
+						const skinData = await fetchSkinFromUrl(activeSkin.url);
+						const variant = activeSkin.variant === 'slim' ? 'slim' : 'classic';
+						const skin = await saveSkinToLibrary('Current Skin', variant, skinData);
+						savedSkins = [skin];
+					} catch (err) {
+						console.error('Failed to auto-save current skin to library:', err);
+					}
 				}
 			}
 		} catch (err) {
@@ -150,10 +192,10 @@
 
 		// Set preview URL and variant based on type
 		if (type === 'steve') {
-			previewSkinUrl = STEVE_SKIN_URL;
+			previewSkinUrl = steveSkinUrl;
 			selectedSkinVariant = 'classic';
 		} else if (type === 'alex') {
-			previewSkinUrl = ALEX_SKIN_URL;
+			previewSkinUrl = alexSkinUrl;
 			selectedSkinVariant = 'slim';
 		}
 	}
@@ -224,6 +266,31 @@
 		return new Uint8Array(buffer);
 	}
 
+	async function handleOfflineCapeUpload() {
+		try {
+			const selected = await open({
+				multiple: false,
+				filters: [{ name: 'PNG Images', extensions: ['png'] }],
+			});
+			if (!selected) return;
+
+			const filePath = Array.isArray(selected) ? selected[0] : selected;
+			const data = await readSkinFile(filePath);
+
+			offlineCapeData = data;
+			offlineCapeRemoved = false;
+			previewCapeUrl = skinDataToUrl(data);
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to read cape file';
+		}
+	}
+
+	function handleOfflineCapeRemove() {
+		offlineCapeData = null;
+		offlineCapeRemoved = true;
+		previewCapeUrl = ''; // Empty string = explicitly no cape
+	}
+
 	function handleSelectCape(cape: CapeInfo | null) {
 		if (cape === null) {
 			selectedCapeId = null;
@@ -241,46 +308,66 @@
 		error = null;
 
 		try {
-			let updatedProfile: MinecraftProfile | null = null;
+			if (isOffline) {
+				// Offline account: save skin locally
+				let skinData = selectedSkinData;
 
-			// Apply skin change
-			if (selectedDefaultSkin) {
-				// Fetch and upload default skin
-				let skinUrl: string;
-				let variant: 'classic' | 'slim';
-
-				if (selectedDefaultSkin === 'steve') {
-					skinUrl = STEVE_SKIN_URL;
-					variant = 'classic';
-				} else {
-					skinUrl = ALEX_SKIN_URL;
-					variant = 'slim';
+				if (selectedDefaultSkin && !skinData) {
+					// Load the bundled default skin (no network needed)
+					skinData = await getDefaultSkin(selectedDefaultSkin);
 				}
 
-				const skinData = await fetchSkinFromUrl(skinUrl);
-				updatedProfile = await uploadSkin(account.id, variant, skinData);
-			} else if (selectedSkinData) {
-				if (selectedSkinId) {
-					// Apply from library
-					updatedProfile = await applySkinFromLibrary(account.id, selectedSkinId);
-				} else {
-					// Direct upload
-					updatedProfile = await uploadSkin(account.id, selectedSkinVariant, selectedSkinData);
+				if (skinData) {
+					await setOfflineSkin(account.id, skinData, selectedSkinVariant);
 				}
-			}
 
-			// Apply cape change
-			if (selectedCapeId !== undefined) {
-				if (selectedCapeId === null) {
-					updatedProfile = await hideCape(account.id);
-				} else {
-					updatedProfile = await setCape(account.id, selectedCapeId);
+				// Apply offline cape changes
+				if (offlineCapeData) {
+					await setOfflineCape(account.id, offlineCapeData);
+				} else if (offlineCapeRemoved) {
+					await removeOfflineCape(account.id);
 				}
-			}
 
-			// Notify parent of profile update
-			if (updatedProfile) {
-				onProfileUpdated?.(updatedProfile);
+				onOfflineSkinUpdated?.();
+			} else {
+				// Online account: upload to Mojang
+				let updatedProfile: MinecraftProfile | null = null;
+
+				// Apply skin change
+				if (selectedDefaultSkin) {
+					let skinUrl: string;
+					let variant: 'classic' | 'slim';
+
+					if (selectedDefaultSkin === 'steve') {
+						skinUrl = STEVE_SKIN_URL;
+						variant = 'classic';
+					} else {
+						skinUrl = ALEX_SKIN_URL;
+						variant = 'slim';
+					}
+
+					const skinData = await fetchSkinFromUrl(skinUrl);
+					updatedProfile = await uploadSkin(account.id, variant, skinData);
+				} else if (selectedSkinData) {
+					if (selectedSkinId) {
+						updatedProfile = await applySkinFromLibrary(account.id, selectedSkinId);
+					} else {
+						updatedProfile = await uploadSkin(account.id, selectedSkinVariant, selectedSkinData);
+					}
+				}
+
+				// Apply cape change
+				if (selectedCapeId !== undefined) {
+					if (selectedCapeId === null) {
+						updatedProfile = await hideCape(account.id);
+					} else {
+						updatedProfile = await setCape(account.id, selectedCapeId);
+					}
+				}
+
+				if (updatedProfile) {
+					onProfileUpdated?.(updatedProfile);
+				}
 			}
 
 			onClose();
@@ -363,7 +450,7 @@
 								>
 									<div class="pointer-events-none">
 										<SkinViewer3D
-											skinUrl={STEVE_SKIN_URL}
+											skinUrl={steveSkinUrl}
 											slim={false}
 											width={70}
 											height={100}
@@ -389,7 +476,7 @@
 								>
 									<div class="pointer-events-none">
 										<SkinViewer3D
-											skinUrl={ALEX_SKIN_URL}
+											skinUrl={alexSkinUrl}
 											slim={true}
 											width={70}
 											height={100}
@@ -474,8 +561,78 @@
 							onPreviewSkin={handlePreviewSkin}
 						/>
 
-						<!-- Cape Selector -->
-						{#if profile}
+						<!-- Cape -->
+						{#if isOffline}
+							<!-- Offline cape upload -->
+							<div class="space-y-2">
+								<h3 class="text-sm font-medium">Cape</h3>
+								<div class="flex flex-wrap gap-2">
+									<!-- No Cape option -->
+									<button
+										type="button"
+										class="group relative flex flex-col items-center border-2 p-2 transition-colors {offlineCapeRemoved || (!currentCapeUrl && !offlineCapeData)
+											? 'border-primary bg-primary/10'
+											: 'border-border hover:border-primary/50'}"
+										onclick={handleOfflineCapeRemove}
+										title="No Cape"
+									>
+										<div class="bg-muted flex h-12 w-8 items-center justify-center">
+											<Ban class="text-muted-foreground h-4 w-4" />
+										</div>
+										<span class="mt-1 text-xs">None</span>
+										{#if offlineCapeRemoved || (!currentCapeUrl && !offlineCapeData)}
+											<div class="bg-primary absolute -top-1 -right-1 rounded-full p-0.5">
+												<Check class="text-primary-foreground h-3 w-3" />
+											</div>
+										{/if}
+									</button>
+
+									<!-- Current cape thumbnail (if exists and not removed) -->
+									{#if currentCapeUrl && !offlineCapeRemoved && !offlineCapeData}
+										<button
+											type="button"
+											class="group relative flex flex-col items-center border-2 border-primary bg-primary/10 p-2 transition-colors"
+											title="Current Cape"
+										>
+											<CapeThumbnail
+												url={currentCapeUrl}
+												alt="Current Cape"
+												class="h-12 w-8"
+											/>
+											<span class="mt-1 text-xs">Current</span>
+											<div class="bg-primary absolute -top-1 -right-1 rounded-full p-0.5">
+												<Check class="text-primary-foreground h-3 w-3" />
+											</div>
+										</button>
+									{/if}
+
+									<!-- Uploaded cape preview (pending) -->
+									{#if offlineCapeData && previewCapeUrl}
+										<button
+											type="button"
+											class="group relative flex flex-col items-center border-2 border-primary bg-primary/10 p-2 transition-colors"
+											title="New Cape"
+										>
+											<CapeThumbnail
+												url={previewCapeUrl}
+												alt="New Cape"
+												class="h-12 w-8"
+											/>
+											<span class="mt-1 text-xs">New</span>
+											<div class="bg-primary absolute -top-1 -right-1 rounded-full p-0.5">
+												<Check class="text-primary-foreground h-3 w-3" />
+											</div>
+										</button>
+									{/if}
+								</div>
+
+								<Button variant="outline" class="w-full" onclick={handleOfflineCapeUpload}>
+									<Upload class="mr-2 h-4 w-4" />
+									Upload Cape (PNG)
+								</Button>
+							</div>
+						{:else if profile}
+							<!-- Online cape selector -->
 							<CapeSelector
 								capes={profile.capes}
 								selectedCapeId={activeCapeId()}

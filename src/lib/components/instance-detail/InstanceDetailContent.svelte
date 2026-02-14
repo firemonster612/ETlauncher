@@ -1,28 +1,28 @@
 <script lang="ts">
 	import {
-		Search,
-		Plus,
-		Loader2,
-		Trash2,
-		Package,
-		Sparkles,
-		Image,
-		RefreshCw,
-		PowerOff,
-		Power,
-		Square,
-		SquareCheck,
-		Minus,
-		Link,
 		FileJson,
 		Globe,
+		Image,
+		Link,
+		Loader2,
+		Minus,
+		Package,
+		Plus,
+		Power,
+		PowerOff,
+		RefreshCw,
+		Search,
+		Sparkles,
+		Square,
+		SquareCheck,
+		Trash2,
 	} from '@lucide/svelte';
-	import { Button } from '$lib/ui/button';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { nestedScroll } from '$lib/utils/scroll';
-	import { Input } from '$lib/ui/input';
 	import * as contentService from '$lib/services/content';
-	import type { Instance, ContentType, ScanResult, DetectedMod } from '$lib/types';
+	import type { ContentType, DetectedMod, Instance, ScanResult } from '$lib/types';
+	import { Button } from '$lib/ui/button';
+	import { Input } from '$lib/ui/input';
+	import { nestedScroll } from '$lib/utils/scroll';
 
 	interface Props {
 		instance: Instance;
@@ -49,7 +49,8 @@
 	// Search
 	let search = $state('');
 
-	// Selection state
+	// Selection state — SvelteSet is inherently reactive, no $state() needed
+	// svelte-ignore non_reactive_update
 	let selectedItems = new SvelteSet<string>();
 
 	// Remove confirmation

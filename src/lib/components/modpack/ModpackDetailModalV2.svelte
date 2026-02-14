@@ -214,7 +214,7 @@
 
 <div
 	class="fixed inset-x-0 top-[var(--titlebar-height)] z-50 flex h-[calc(100vh-var(--titlebar-height))] items-center justify-center overflow-hidden bg-black/50 p-4"
-	onclick={onClose}
+	onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}
 	onkeydown={(e) => e.key === 'Escape' && onClose()}
 	role="dialog"
 	aria-modal="true"
@@ -225,9 +225,6 @@
 	<div
 		class="bg-card border-border relative flex max-h-[90vh] w-full max-w-7xl flex-col overflow-hidden border-2 shadow-2xl"
 		data-modal-content
-		onclick={(e) => e.stopPropagation()}
-		onkeydown={(e) => e.stopPropagation()}
-		role="document"
 	>
 		<!-- Close button -->
 		<button

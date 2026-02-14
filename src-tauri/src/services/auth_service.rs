@@ -163,6 +163,10 @@ async fn complete_authentication(
         created_at: now,
         last_used_at: now,
         token_expires_at: now + mc_expires_in,
+        account_type: crate::models::account::AccountType::Microsoft,
+        offline_skin_hash: None,
+        offline_skin_variant: None,
+        offline_cape_hash: None,
     })
 }
 

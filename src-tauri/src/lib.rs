@@ -57,13 +57,11 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(app_state)
         .setup(|app| {
-            // Auto-rebuild manifests for instances that have content files but no manifest.
-            // This fixes instances imported from Prism/MultiMC/vanilla before the manifest
-            // population fix was added. Runs in the background so it doesn't block startup.
             // Set the app handle on the task registry for event emission
             let state = app.state::<AppState>();
             state.task_registry.set_app_handle(app.handle().clone());
 
+            // Auto-rebuild manifests for instances that have content files but no manifest.
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let state = app_handle.state::<AppState>();
@@ -109,6 +107,14 @@ pub fn run() {
                 }
                 println!("[startup] Background manifest rebuild complete");
             });
+
+            // Start the local Yggdrasil server for offline account skins.
+            tauri::async_runtime::spawn(async {
+                match services::yggdrasil_server::start_server().await {
+                    Ok(port) => eprintln!("[app] Yggdrasil server started on port {}", port),
+                    Err(e) => eprintln!("[app] Warning: Failed to start Yggdrasil server: {}", e),
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -127,6 +133,14 @@ pub fn run() {
             commands::auth::start_device_auth,
             commands::auth::poll_device_auth,
             commands::auth::refresh_account_token,
+            commands::auth::create_offline_account,
+            commands::auth::set_offline_skin,
+            commands::auth::set_offline_cape,
+            commands::auth::remove_offline_skin,
+            commands::auth::remove_offline_cape,
+            commands::auth::get_offline_skin_data,
+            commands::auth::get_offline_cape_data,
+            commands::auth::get_default_skin,
             // Account commands
             commands::account::get_accounts,
             commands::account::get_account,

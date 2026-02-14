@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { AlertTriangle, CheckCircle, Info, XCircle } from '@lucide/svelte';
-	import { Button } from '$lib/ui/button';
 	import { alertDialogStore } from '$lib/stores/alertDialog.svelte';
+	import { Button } from '$lib/ui/button';
 
 	const iconMap = {
 		info: Info,
