@@ -9,6 +9,7 @@ pub mod error;
 pub mod models;
 pub mod services;
 pub mod state;
+pub mod task_registry;
 pub mod utils;
 
 use state::AppState;
@@ -59,6 +60,10 @@ pub fn run() {
             // Auto-rebuild manifests for instances that have content files but no manifest.
             // This fixes instances imported from Prism/MultiMC/vanilla before the manifest
             // population fix was added. Runs in the background so it doesn't block startup.
+            // Set the app handle on the task registry for event emission
+            let state = app.state::<AppState>();
+            state.task_registry.set_app_handle(app.handle().clone());
+
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let state = app_handle.state::<AppState>();
@@ -173,6 +178,7 @@ pub fn run() {
             commands::launch::is_instance_running,
             commands::launch::get_running_instances,
             commands::launch::kill_instance,
+            commands::launch::cancel_launch,
             // Loader commands
             commands::loader::get_loader_versions,
             commands::loader::install_loader,
@@ -184,8 +190,6 @@ pub fn run() {
             commands::modpack::get_modpack_mods,
             commands::modpack::install_modpack,
             commands::modpack::import_modpack_file,
-            commands::modpack::cancel_modpack_install,
-            commands::modpack::get_modpack_install_status,
             // Content commands
             commands::content::search_content,
             commands::content::get_content,
@@ -232,6 +236,10 @@ pub fn run() {
             commands::import::import_from_folder,
             commands::import::import_curseforge_zip,
             commands::import::export_curseforge_modpack,
+            // Task registry commands
+            commands::tasks::list_tasks,
+            commands::tasks::cancel_task,
+            commands::tasks::dismiss_task,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -701,9 +701,10 @@ fn is_legacy_mc_version(mc_version: &str) -> bool {
     major == 1 && minor <= 12
 }
 
-/// Check if a Minecraft version is very old (before 1.15)
+/// Check if a Minecraft version is very old (before 1.13)
 /// Very old Forge installers don't support --installClient at all
-/// This includes 1.7.x through 1.14.x
+/// This includes 1.7.x through 1.12.x
+/// 1.13+ uses modern installer format with processors that need --installClient
 fn is_very_old_mc_version(mc_version: &str) -> bool {
     let parts: Vec<&str> = mc_version.split('.').collect();
     if parts.len() < 2 {
@@ -713,8 +714,9 @@ fn is_very_old_mc_version(mc_version: &str) -> bool {
     let major: u32 = parts[0].parse().unwrap_or(1);
     let minor: u32 = parts[1].parse().unwrap_or(0);
 
-    // Before 1.15 don't support --installClient
-    major == 1 && minor < 15
+    // Before 1.13 don't support --installClient properly
+    // 1.13+ uses modern installer format with processors
+    major == 1 && minor < 13
 }
 
 /// Extract old Forge installer manually (for pre-1.15 versions)
@@ -928,12 +930,80 @@ fn extract_old_forge_installer_sync(
     Ok(())
 }
 
+/// Ensure the vanilla client JAR exists where Forge/NeoForge installers expect it.
+/// The installers look for: <game_dir>/libraries/net/minecraft/client/<version>/client-<version>-official.jar
+async fn ensure_client_jar_for_installer(
+    game_dir: &Path,
+    mc_version: &str,
+    progress: &(dyn Fn(String, u32) + Send + Sync),
+) -> Result<(), AppError> {
+    let client_jar_dir = game_dir
+        .join("libraries")
+        .join("net")
+        .join("minecraft")
+        .join("client")
+        .join(mc_version);
+    let client_jar_path = client_jar_dir.join(format!("client-{}-official.jar", mc_version));
+
+    // Skip if already exists
+    if client_jar_path.exists() {
+        return Ok(());
+    }
+
+    progress(
+        format!("Downloading Minecraft {} client JAR...", mc_version),
+        30,
+    );
+
+    // Check if we already have it in the version cache
+    let cache_path = crate::utils::paths::get_versions_cache_dir()
+        .join(mc_version)
+        .join(format!("{}.jar", mc_version));
+
+    if cache_path.exists() {
+        // Copy from cache
+        tokio::fs::create_dir_all(&client_jar_dir)
+            .await
+            .map_err(AppError::IoError)?;
+        tokio::fs::copy(&cache_path, &client_jar_path)
+            .await
+            .map_err(AppError::IoError)?;
+        return Ok(());
+    }
+
+    // Need to download it - fetch version info from Mojang
+    let client = reqwest::Client::new();
+    let version_info =
+        crate::services::download_service::get_version_info(&client, mc_version).await?;
+
+    let download_url = version_info
+        .downloads
+        .as_ref()
+        .map(|d| d.client.url.clone())
+        .ok_or_else(|| {
+            AppError::VersionNotFound(format!("No client download for {}", mc_version))
+        })?;
+
+    // Download to the installer-expected path
+    tokio::fs::create_dir_all(&client_jar_dir)
+        .await
+        .map_err(AppError::IoError)?;
+    download_file_with_progress(&download_url, &client_jar_path, |_| {}).await?;
+
+    // Also cache it for future use
+    let cache_dir = crate::utils::paths::get_versions_cache_dir().join(mc_version);
+    tokio::fs::create_dir_all(&cache_dir).await.ok();
+    tokio::fs::copy(&client_jar_path, &cache_path).await.ok();
+
+    Ok(())
+}
+
 /// Install Forge loader to a game directory
 pub async fn install_forge(
     game_dir: &Path,
     mc_version: &str,
     loader_version: &str,
-    progress: impl Fn(String, u32),
+    progress: impl Fn(String, u32) + Send + Sync,
 ) -> Result<(), AppError> {
     progress("Preparing installation...".to_string(), 0);
 
@@ -977,11 +1047,16 @@ pub async fn install_forge(
         required_java, java_path, mc_version
     );
 
+    // Ensure vanilla client JAR exists for Forge installer processors
+    if !is_very_old {
+        ensure_client_jar_for_installer(game_dir, mc_version, &progress).await?;
+    }
+
     progress("Running Forge installer...".to_string(), 40);
 
     let output = if is_very_old {
-        // Very old Forge (pre-1.15) - these installers don't support --installClient
-        // We need to extract the installer manually.
+        // Old Forge (pre-1.13) - these installers use the old format with versionInfo
+        // and don't support --installClient properly. We extract manually.
         eprintln!(
             "[forge] Using manual extraction for old Forge MC {}",
             mc_version
@@ -995,36 +1070,8 @@ pub async fn install_forge(
             stdout: b"Manually extracted".to_vec(),
             stderr: Vec::new(),
         }
-    } else if is_legacy {
-        // Legacy Forge (1.8 - 1.12.2) - run headless with --installClient
-        eprintln!("[forge] Using legacy installer mode for MC {}", mc_version);
-
-        let dot_minecraft = game_dir.join(".minecraft");
-        tokio::fs::create_dir_all(&dot_minecraft).await.ok();
-
-        // Copy launcher_profiles.json to the .minecraft subfolder if needed
-        let profiles_src = game_dir.join("launcher_profiles.json");
-        let profiles_dst = dot_minecraft.join("launcher_profiles.json");
-        if profiles_src.exists() && !profiles_dst.exists() {
-            tokio::fs::copy(&profiles_src, &profiles_dst).await.ok();
-        }
-
-        let mut cmd = Command::new(&java_path);
-        cmd.arg("-Djava.awt.headless=true")
-            .arg("-jar")
-            .arg(&installer_path)
-            .arg("--installClient")
-            .arg(&dot_minecraft)
-            .current_dir(&dot_minecraft);
-
-        #[cfg(windows)]
-        cmd.creation_flags(CREATE_NO_WINDOW);
-
-        cmd.output()
-            .await
-            .map_err(|e| AppError::ProcessError(format!("Failed to run Forge installer: {}", e)))?
     } else {
-        // Modern Forge (1.13+) - use --installClient
+        // Modern Forge (1.13+) - use --installClient with processors
         let mut cmd = Command::new(&java_path);
         cmd.arg("-Djava.awt.headless=true")
             .arg("-jar")
@@ -1161,9 +1208,9 @@ fn move_dir_contents<'a>(
 /// Install NeoForge loader to a game directory
 pub async fn install_neoforge(
     game_dir: &Path,
-    _mc_version: &str, // NeoForge versions are standalone, don't need MC version
+    mc_version: &str,
     loader_version: &str,
-    progress: impl Fn(String, u32),
+    progress: impl Fn(String, u32) + Send + Sync,
 ) -> Result<(), AppError> {
     progress("Preparing installation...".to_string(), 0);
 
@@ -1174,6 +1221,9 @@ pub async fn install_neoforge(
 
     // Create launcher_profiles.json if it doesn't exist (required by NeoForge installer)
     ensure_launcher_profiles(game_dir).await?;
+
+    // Ensure vanilla client JAR exists for NeoForge processor
+    ensure_client_jar_for_installer(game_dir, mc_version, &progress).await?;
 
     progress("Downloading NeoForge installer...".to_string(), 5);
 
@@ -1283,7 +1333,7 @@ pub async fn install_loader(
     loader_type: LoaderType,
     mc_version: &str,
     loader_version: &str,
-    progress: impl Fn(String, u32),
+    progress: impl Fn(String, u32) + Send + Sync,
 ) -> Result<(), AppError> {
     match loader_type {
         LoaderType::Fabric => install_fabric(game_dir, mc_version, loader_version, progress).await,
@@ -1309,22 +1359,40 @@ pub fn check_loader_installed(
     loader_version: &str,
 ) -> Result<bool, AppError> {
     match loader_type {
-        LoaderType::Fabric => Ok(game_dir.join(".fabric").exists()),
-        LoaderType::Quilt => Ok(game_dir.join(".quilt").exists()),
-        LoaderType::Forge => {
-            let version_dir = format!("{}-{}", mc_version, loader_version);
+        LoaderType::Fabric => {
+            // Fabric creates: versions/fabric-loader-{loader_version}-{mc_version}/
+            let version_id = format!("fabric-loader-{}-{}", loader_version, mc_version);
             let version_json = game_dir
                 .join("versions")
-                .join(&version_dir)
-                .join(format!("{}.json", mc_version));
+                .join(&version_id)
+                .join(format!("{}.json", version_id));
+            Ok(version_json.exists())
+        }
+        LoaderType::Quilt => {
+            // Quilt creates: versions/quilt-loader-{loader_version}-{mc_version}/
+            let version_id = format!("quilt-loader-{}-{}", loader_version, mc_version);
+            let version_json = game_dir
+                .join("versions")
+                .join(&version_id)
+                .join(format!("{}.json", version_id));
+            Ok(version_json.exists())
+        }
+        LoaderType::Forge => {
+            // Forge creates: versions/{mc_version}-forge-{loader_version}/
+            let version_id = format!("{}-forge-{}", mc_version, loader_version);
+            let version_json = game_dir
+                .join("versions")
+                .join(&version_id)
+                .join(format!("{}.json", version_id));
             Ok(version_json.exists())
         }
         LoaderType::NeoForge => {
-            let version_dir = format!("{}-{}", mc_version, loader_version);
+            // NeoForge creates: versions/neoforge-{loader_version}/
+            let version_id = format!("neoforge-{}", loader_version);
             let version_json = game_dir
                 .join("versions")
-                .join(&version_dir)
-                .join(format!("{}.json", mc_version));
+                .join(&version_id)
+                .join(format!("{}.json", version_id));
             Ok(version_json.exists())
         }
         LoaderType::LiteLoader => {

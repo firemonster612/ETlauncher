@@ -10,6 +10,7 @@ export * from './minecraft';
 export * from './modpack';
 export * from './settings';
 export * from './skin';
+export * from './tasks';
 export * from './update';
 
 /** Error returned from Tauri commands */

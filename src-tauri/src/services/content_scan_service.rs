@@ -664,13 +664,51 @@ pub async fn rescan_and_rebuild_manifest(
     state: &AppState,
     instance_id: &str,
 ) -> Result<RescanResult, AppError> {
+    // Register task in the task registry
+    let task_id = uuid::Uuid::new_v4().to_string();
+    state.task_registry.register(
+        task_id.clone(),
+        crate::task_registry::TaskType::ContentScan,
+        "Scanning instance content".to_string(),
+        Some(instance_id.to_string()),
+        None,
+    );
+    state.task_registry.start(&task_id);
+
+    let result = rescan_and_rebuild_manifest_inner(state, instance_id, &task_id).await;
+
+    match result {
+        Ok(res) => {
+            state.task_registry.complete(&task_id);
+            Ok(res)
+        }
+        Err(e) => {
+            state.task_registry.fail(&task_id, e.to_string());
+            Err(e)
+        }
+    }
+}
+
+/// Inner implementation for `rescan_and_rebuild_manifest` that can use `?` freely.
+async fn rescan_and_rebuild_manifest_inner(
+    state: &AppState,
+    instance_id: &str,
+    task_id: &str,
+) -> Result<RescanResult, AppError> {
     let content_types = [
-        (ContentType::Mod, "mods"),
-        (ContentType::Shader, "shaders"),
-        (ContentType::ResourcePack, "resource packs"),
+        (ContentType::Mod, "mods", "Scanning mods"),
+        (ContentType::Shader, "shaders", "Scanning shaders"),
+        (
+            ContentType::ResourcePack,
+            "resource packs",
+            "Scanning resource packs",
+        ),
     ];
 
     // Load existing manifest so we can preserve entries that are already tracked
+    state
+        .task_registry
+        .update_stage(task_id, "Loading existing manifest".to_string());
     let existing_manifest = manifest_service::load_manifest(state, instance_id)?;
     let existing_by_filename: HashMap<String, &InstalledContent> = existing_manifest
         .mods
@@ -693,7 +731,9 @@ pub async fn rescan_and_rebuild_manifest(
     let mut total = 0u32;
     let mut identified = 0u32;
 
-    for (content_type, label) in &content_types {
+    for (content_type, label, stage) in &content_types {
+        state.task_registry.update_stage(task_id, stage.to_string());
+
         let scan_result = match scan_content(state, instance_id, content_type).await {
             Ok(result) => result,
             Err(e) => {
@@ -802,6 +842,10 @@ pub async fn rescan_and_rebuild_manifest(
             }
         }
     }
+
+    state
+        .task_registry
+        .update_stage(task_id, "Building manifest".to_string());
 
     println!(
         "[rescan] Rebuilt manifest for instance {}: {} total ({} identified, {} unidentified)",

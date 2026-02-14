@@ -55,6 +55,27 @@ pub fn get_running_instances(state: State<'_, AppState>) -> Vec<String> {
     running.keys().cloned().collect()
 }
 
+/// Cancel a launch in progress (before the process is spawned)
+/// This cancels the async launch operation (downloads, Java checks, etc.)
+#[tauri::command]
+pub fn cancel_launch(instance_id: String, state: State<'_, AppState>) -> Result<(), CommandError> {
+    let tokens = state.launch_tokens.read();
+    if let Some(token) = tokens.get(&instance_id) {
+        token.cancel();
+        Ok(())
+    } else {
+        // If no token exists, maybe the process is already running - try kill instead
+        if state.is_instance_running(&instance_id) {
+            drop(tokens);
+            return kill_instance(instance_id, state);
+        }
+        Err(CommandError {
+            code: "NOT_LAUNCHING".to_string(),
+            message: "Instance is not launching".to_string(),
+        })
+    }
+}
+
 /// Kill a running Minecraft instance
 /// First tries graceful shutdown (SIGTERM), then forces kill (SIGKILL) if needed
 #[tauri::command]

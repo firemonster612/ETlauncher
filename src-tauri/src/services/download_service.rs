@@ -16,7 +16,7 @@ use sha1::{Digest, Sha1};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::Manager;
@@ -342,17 +342,46 @@ pub async fn download_game_files(
         });
 
     let version_info = get_version_info(&client, version_id).await?;
-    download_game_files_with_version(instance_id, version_id, &version_info, app_handle).await
+    download_game_files_with_version(
+        instance_id,
+        version_id,
+        &version_info,
+        app_handle,
+        None,
+        true,
+    )
+    .await
 }
 
 /// Download all game files for an instance using a pre-built VersionInfo
 /// This is used when we have a merged version (vanilla + loader)
+///
+/// `on_progress` - Optional callback invoked with each progress update (for bridging to other event systems)
+/// `register_own_task` - When true, registers/completes its own task in the task registry.
+///   Pass false when the caller manages its own task (e.g. instance setup or launch).
 pub async fn download_game_files_with_version(
     instance_id: &str,
     version_id: &str,
     version_info: &VersionInfo,
     app_handle: Option<&AppHandle>,
+    on_progress: Option<Arc<dyn Fn(&DownloadProgress) + Send + Sync>>,
+    register_own_task: bool,
 ) -> Result<(), AppError> {
+    // Register task in the task registry
+    if register_own_task {
+        if let Some(handle) = app_handle {
+            if let Some(state) = handle.try_state::<crate::state::AppState>() {
+                state.task_registry.register(
+                    instance_id.to_string(),
+                    crate::task_registry::TaskType::GameDownload,
+                    format!("Downloading Minecraft {}", version_id),
+                    Some(instance_id.to_string()),
+                    None,
+                );
+                state.task_registry.start(instance_id);
+            }
+        }
+    }
     // Get HTTP client and settings from AppState
     let (http_client, instances_base_dir, concurrent_downloads) = app_handle
         .and_then(|handle| handle.try_state::<crate::state::AppState>())
@@ -397,6 +426,7 @@ pub async fn download_game_files_with_version(
                 sha1: dl.client.sha1.clone(),
                 size: dl.client.size,
                 is_native: false,
+                fallback_urls: Vec::new(),
             });
         }
     }
@@ -428,6 +458,7 @@ pub async fn download_game_files_with_version(
                                 sha1: native_artifact.sha1.clone(),
                                 size: native_artifact.size,
                                 is_native: true,
+                                fallback_urls: Vec::new(),
                             });
                         }
                     }
@@ -456,37 +487,41 @@ pub async fn download_game_files_with_version(
                     continue;
                 }
 
-                // If artifact URL is empty, try to construct from Maven repos
-                let url = if artifact.url.is_empty() {
-                    // Try Minecraft libraries, NeoForge Maven, Forge Maven, then Maven Central
-                    maven_name_to_url(&library.name, "https://libraries.minecraft.net/")
-                        .or_else(|| {
-                            maven_name_to_url(
-                                &library.name,
-                                "https://maven.neoforged.net/releases/",
-                            )
-                        })
-                        .or_else(|| {
-                            maven_name_to_url(&library.name, "https://maven.minecraftforge.net/")
-                        })
-                        .or_else(|| {
-                            maven_name_to_url(&library.name, "https://repo1.maven.org/maven2")
-                        })
-                        .unwrap_or_default()
+                // If artifact URL is empty, determine whether this is a locally-generated
+                // processor output or a downloadable library missing its URL
+                if artifact.url.is_empty() {
+                    if let Some(ref base_url) = library.url {
+                        // Library specifies its own Maven base URL — downloadable
+                        let url = maven_name_to_url(&library.name, base_url).unwrap_or_default();
+                        if !url.is_empty() {
+                            downloads.push(DownloadTask {
+                                url,
+                                path: cache_lib_path,
+                                sha1: artifact.sha1.clone(),
+                                size: artifact.size,
+                                is_native: false,
+                                fallback_urls: Vec::new(),
+                            });
+                        }
+                    } else {
+                        // Empty URL + no base_url = locally generated artifact
+                        // (e.g. Forge installer processor output like forge-*-client.jar).
+                        // These must already exist in the game directory from the installer.
+                        // Do NOT try to download them from Maven repos.
+                        eprintln!(
+                            "WARN: Skipping library {} — empty URL, expected as local installer artifact",
+                            library.name
+                        );
+                    }
                 } else {
-                    artifact.url.clone()
-                };
-
-                if !url.is_empty() {
                     downloads.push(DownloadTask {
-                        url,
+                        url: artifact.url.clone(),
                         path: cache_lib_path,
                         sha1: artifact.sha1.clone(),
                         size: artifact.size,
                         is_native: false,
+                        fallback_urls: Vec::new(),
                     });
-                } else {
-                    eprintln!("WARN: No URL for library {}", library.name);
                 }
             }
         } else if let Some(ref base_url) = library.url {
@@ -530,6 +565,7 @@ pub async fn download_game_files_with_version(
                                 sha1: String::new(),
                                 size: 0,
                                 is_native: false,
+                                fallback_urls: Vec::new(),
                             });
                         }
                     }
@@ -540,22 +576,25 @@ pub async fn download_game_files_with_version(
             if let Some(path) = maven_name_to_path(&library.name) {
                 let lib_path = get_libraries_dir().join(&path);
                 if !lib_path.exists() {
-                    // Try Minecraft libraries first (for old MC libs), then Forge, then Maven Central
-                    let url = maven_name_to_url(&library.name, "https://libraries.minecraft.net/")
-                        .or_else(|| {
-                            maven_name_to_url(&library.name, "https://maven.minecraftforge.net/")
-                        })
-                        .or_else(|| {
-                            maven_name_to_url(&library.name, "https://repo1.maven.org/maven2")
-                        });
+                    let candidates: Vec<String> = [
+                        "https://maven.minecraftforge.net/",
+                        "https://libraries.minecraft.net/",
+                        "https://repo1.maven.org/maven2",
+                    ]
+                    .iter()
+                    .filter_map(|base| maven_name_to_url(&library.name, base))
+                    .collect();
+                    let primary = candidates.first().cloned().unwrap_or_default();
+                    let fallbacks: Vec<String> = candidates.into_iter().skip(1).collect();
 
-                    if let Some(url) = url {
+                    if !primary.is_empty() {
                         downloads.push(DownloadTask {
-                            url,
+                            url: primary,
                             path: lib_path,
                             sha1: String::new(),
                             size: 0,
                             is_native: false,
+                            fallback_urls: fallbacks,
                         });
                     }
                 }
@@ -578,6 +617,7 @@ pub async fn download_game_files_with_version(
                 sha1: asset.hash.clone(),
                 size: asset.size,
                 is_native: false,
+                fallback_urls: Vec::new(),
             });
         }
     }
@@ -598,6 +638,26 @@ pub async fn download_game_files_with_version(
     }
 
     if total_files == 0 {
+        // Nothing to download - everything is cached
+        // Notify the progress callback so callers know it completed
+        if let Some(ref cb) = on_progress {
+            cb(&DownloadProgress {
+                total_files: 0,
+                completed_files: 0,
+                current_file: String::new(),
+                total_bytes: 0,
+                downloaded_bytes: 0,
+                speed_bytes_per_sec: 0,
+            });
+        }
+        // Complete task even if nothing to download
+        if register_own_task {
+            if let Some(handle) = app_handle {
+                if let Some(state) = handle.try_state::<crate::state::AppState>() {
+                    state.task_registry.complete(instance_id);
+                }
+            }
+        }
         return Ok(());
     }
 
@@ -606,6 +666,75 @@ pub async fn download_game_files_with_version(
     let downloaded_bytes = Arc::new(AtomicU64::new(0));
     let current_file = Arc::new(Mutex::new(String::new()));
     let start_time = std::time::Instant::now();
+    let progress_done = Arc::new(AtomicBool::new(false));
+
+    let instance_id_owned = instance_id.to_string();
+
+    // Spawn a background progress reporter that emits events every 250ms
+    let reporter_handle = {
+        let progress_done_c = progress_done.clone();
+        let completed_files_c = completed_files.clone();
+        let downloaded_bytes_c = downloaded_bytes.clone();
+        let current_file_c = current_file.clone();
+        let task_id_c = instance_id_owned.clone();
+        let app_handle_c = app_handle.cloned();
+        let on_progress_c = on_progress.clone();
+        let register_task = register_own_task;
+
+        tokio::spawn(async move {
+            while !progress_done_c.load(Ordering::Relaxed) {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+
+                let bytes_so_far = downloaded_bytes_c.load(Ordering::Relaxed);
+                let elapsed_secs = start_time.elapsed().as_secs_f64();
+                let speed = if elapsed_secs > 0.1 {
+                    (bytes_so_far as f64 / elapsed_secs) as u64
+                } else {
+                    0
+                };
+
+                let cf = current_file_c.lock().await;
+                let current = cf.clone();
+                drop(cf);
+
+                let progress = DownloadProgress {
+                    total_files,
+                    completed_files: completed_files_c.load(Ordering::Relaxed) as u32,
+                    current_file: current.clone(),
+                    total_bytes,
+                    downloaded_bytes: bytes_so_far,
+                    speed_bytes_per_sec: speed,
+                };
+
+                // Emit download_progress event
+                if let Some(ref handle) = app_handle_c {
+                    let _ = handle.emit("download_progress", progress.clone());
+
+                    // Update the task registry (only if we own the task)
+                    if register_task {
+                        if let Some(state) = handle.try_state::<crate::state::AppState>() {
+                            state.task_registry.update_progress(
+                                &task_id_c,
+                                crate::task_registry::TaskProgress {
+                                    current: bytes_so_far,
+                                    total: total_bytes,
+                                    percent: None,
+                                    speed_bytes_per_sec: Some(speed),
+                                    current_item: Some(current),
+                                    stage: Some("Downloading".to_string()),
+                                },
+                            );
+                        }
+                    }
+                }
+
+                // Invoke the on_progress callback if provided
+                if let Some(ref cb) = on_progress_c {
+                    cb(&progress);
+                }
+            }
+        })
+    };
 
     let results = stream::iter(downloads)
         .map(|task| {
@@ -613,7 +742,6 @@ pub async fn download_game_files_with_version(
             let completed_files = completed_files.clone();
             let downloaded_bytes = downloaded_bytes.clone();
             let current_file = current_file.clone();
-            let app_handle_clone = app_handle.cloned();
 
             async move {
                 // Update current file
@@ -627,34 +755,21 @@ pub async fn download_game_files_with_version(
                         .to_string();
                 }
 
-                // Emit progress event with speed calculation
-                if let Some(ref handle) = app_handle_clone {
-                    let bytes_so_far = downloaded_bytes.load(Ordering::Relaxed);
-                    let elapsed_secs = start_time.elapsed().as_secs_f64();
-                    let speed = if elapsed_secs > 0.1 {
-                        (bytes_so_far as f64 / elapsed_secs) as u64
-                    } else {
-                        0
-                    };
+                // Try primary URL first
+                let mut result = download_file(&client, &task.url, &task.path, &task.sha1).await;
 
-                    let progress = DownloadProgress {
-                        total_files,
-                        completed_files: completed_files.load(Ordering::Relaxed) as u32,
-                        current_file: task
-                            .path
-                            .file_name()
-                            .unwrap_or_default()
-                            .to_string_lossy()
-                            .to_string(),
-                        total_bytes,
-                        downloaded_bytes: bytes_so_far,
-                        speed_bytes_per_sec: speed,
-                    };
-                    let _ = handle.emit("download_progress", progress);
+                // On client error (404, etc.), try fallback URLs
+                if result.is_err() && !task.fallback_urls.is_empty() {
+                    for fallback_url in &task.fallback_urls {
+                        match download_file(&client, fallback_url, &task.path, &task.sha1).await {
+                            Ok(()) => {
+                                result = Ok(());
+                                break;
+                            }
+                            Err(_) => continue,
+                        }
+                    }
                 }
-
-                // Download file
-                let result = download_file(&client, &task.url, &task.path, &task.sha1).await;
 
                 if result.is_ok() {
                     completed_files.fetch_add(1, Ordering::Relaxed);
@@ -668,9 +783,34 @@ pub async fn download_game_files_with_version(
         .collect::<Vec<_>>()
         .await;
 
+    // Stop the background progress reporter
+    progress_done.store(true, Ordering::Relaxed);
+    let _ = reporter_handle.await;
+
     // Check for errors
+    let mut download_error: Option<AppError> = None;
     for result in results {
-        result?;
+        if let Err(e) = result {
+            download_error = Some(e);
+            break;
+        }
+    }
+
+    // Update task registry with final status
+    if register_own_task {
+        if let Some(handle) = app_handle {
+            if let Some(state) = handle.try_state::<crate::state::AppState>() {
+                if let Some(ref err) = download_error {
+                    state.task_registry.fail(instance_id, err.to_string());
+                } else {
+                    state.task_registry.complete(instance_id);
+                }
+            }
+        }
+    }
+
+    if let Some(err) = download_error {
+        return Err(err);
     }
 
     Ok(())
@@ -1043,8 +1183,16 @@ pub fn get_classpath(
 
 /// Convert Maven coordinates (group:artifact:version) to file path
 /// e.g., "net.fabricmc:fabric-loader:0.15.0" -> "net/fabricmc/fabric-loader/0.15.0/fabric-loader-0.15.0.jar"
+/// Handles @ext notation: "group:artifact:version@zip" uses .zip instead of .jar
 fn maven_name_to_path(name: &str) -> Option<String> {
-    let parts: Vec<&str> = name.split(':').collect();
+    // Handle @ext notation: group:artifact:version@ext or group:artifact:version:classifier@ext
+    let (name_part, ext) = if let Some(at_idx) = name.rfind('@') {
+        (&name[..at_idx], &name[at_idx + 1..])
+    } else {
+        (name, "jar")
+    };
+
+    let parts: Vec<&str> = name_part.split(':').collect();
     if parts.len() < 3 {
         return None;
     }
@@ -1061,9 +1209,9 @@ fn maven_name_to_path(name: &str) -> Option<String> {
     };
 
     let filename = if let Some(c) = classifier {
-        format!("{}-{}-{}.jar", artifact, version, c)
+        format!("{}-{}-{}.{}", artifact, version, c, ext)
     } else {
-        format!("{}-{}.jar", artifact, version)
+        format!("{}-{}.{}", artifact, version, ext)
     };
 
     Some(format!("{}/{}/{}/{}", group, artifact, version, filename))
@@ -1204,4 +1352,5 @@ struct DownloadTask {
     sha1: String,
     size: u64,
     is_native: bool,
+    fallback_urls: Vec<String>,
 }

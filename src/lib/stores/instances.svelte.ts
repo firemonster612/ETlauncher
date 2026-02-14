@@ -1,16 +1,16 @@
-import type {
-	Instance,
-	CreateInstanceRequest,
-	UpdateInstanceRequest,
-	LoaderType,
-	InstanceSetupStatus,
-	DownloadProgress,
-} from '$lib/types';
-import type { LoaderInstallProgress } from '$lib/types/loader';
-import * as instanceService from '$lib/services/instance';
-import * as loaderService from '$lib/services/loader';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { SvelteMap } from 'svelte/reactivity';
+import * as instanceService from '$lib/services/instance';
+import * as loaderService from '$lib/services/loader';
+import type {
+	CreateInstanceRequest,
+	DownloadProgress,
+	Instance,
+	InstanceSetupStatus,
+	LoaderType,
+	UpdateInstanceRequest,
+} from '$lib/types';
+import type { LoaderInstallProgress } from '$lib/types/loader';
 
 /** Create the instances store */
 function createInstancesStore() {
@@ -87,7 +87,7 @@ function createInstancesStore() {
 			selectedInstanceId = instanceId;
 		},
 
-		/** Create a new instance */
+		/** Create a new instance (with loader install + setup - blocks until done) */
 		async create(request: CreateInstanceRequest): Promise<Instance | null> {
 			error = null;
 
@@ -111,7 +111,10 @@ function createInstancesStore() {
 				// Setup instance (download game files) - runs in background
 				// Don't await - let it run asynchronously
 				this.setupInstance(instance.id).catch((e) => {
+					const message =
+						e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
 					console.error('Instance setup failed:', e);
+					error = message;
 				});
 
 				return instance;
@@ -120,6 +123,55 @@ function createInstancesStore() {
 				console.error('Failed to create instance:', e);
 				return null;
 			}
+		},
+
+		/** Create instance record only (fast, no loader install or setup) */
+		async createOnly(request: CreateInstanceRequest): Promise<Instance | null> {
+			error = null;
+
+			try {
+				const instance = await instanceService.createInstance(request);
+				instances = [instance, ...instances];
+				return instance;
+			} catch (e: unknown) {
+				error = e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
+				console.error('Failed to create instance:', e);
+				return null;
+			}
+		},
+
+		/** Run loader install + game file setup in the background (non-blocking) */
+		setupInBackground(
+			instanceId: string,
+			options?: { loaderType?: string; loaderVersion?: string }
+		) {
+			const run = async () => {
+				// Install loader first if needed
+				if (options?.loaderType && options.loaderType !== 'vanilla' && options.loaderVersion) {
+					const success = await this.installLoader(
+						instanceId,
+						options.loaderType as LoaderType,
+						options.loaderVersion
+					);
+					if (!success) {
+						// Surface the loader error so the user knows why setup stopped
+						error =
+							loaderInstallError ??
+							`Failed to install ${options.loaderType} loader. Check logs for details.`;
+						return;
+					}
+				}
+
+				// Setup instance (download game files)
+				await this.setupInstance(instanceId);
+			};
+
+			run().catch((e) => {
+				const message =
+					e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
+				console.error('Instance setup failed:', e);
+				error = message;
+			});
 		},
 
 		/** Install a mod loader to an instance */

@@ -1,32 +1,32 @@
 <script lang="ts">
 	import {
-		Loader2,
-		Check,
 		AlertTriangle,
-		HelpCircle,
 		ArrowRight,
-		Package,
 		Calendar,
+		Check,
+		CheckCircle2,
+		HelpCircle,
+		Loader2,
+		Package,
 		RefreshCw,
 		Trash2,
 		Zap,
 	} from '@lucide/svelte';
-	import { Button } from '$lib/ui/button';
-	import { Select, SelectContent, SelectItem, SelectTrigger } from '$lib/ui/select';
-	import * as updateService from '$lib/services/update';
-	import { getLoaderVersions, installLoader } from '$lib/services/loader';
 	import { updateInstance } from '$lib/services/instance';
+	import { getLoaderVersions, installLoader } from '$lib/services/loader';
+	import * as updateService from '$lib/services/update';
 	import { versionsStore } from '$lib/stores/versions.svelte';
-	import type { LoaderVersion, LoaderInstallProgress } from '$lib/types/loader';
+	import type { Instance, LoaderType } from '$lib/types/instance';
+	import type { LoaderInstallProgress, LoaderVersion } from '$lib/types/loader';
 	import type {
-		ModpackInstanceUpdateCheck,
-		ModpackUpdatePlan,
 		InstanceUpdateCheck,
 		InstanceUpdatePlan,
-		UpdateProgress,
+		ModpackInstanceUpdateCheck,
+		ModpackUpdatePlan,
 		UserContentDecision,
 	} from '$lib/types/update';
-	import type { Instance, LoaderType } from '$lib/types/instance';
+	import { Button } from '$lib/ui/button';
+	import { Select, SelectContent, SelectItem, SelectTrigger } from '$lib/ui/select';
 
 	interface Props {
 		instance: Instance;
@@ -41,8 +41,8 @@
 	// State
 	let isChecking = $state(false);
 	let isUpdating = $state(false);
+	let updateStarted = $state(false);
 	let error = $state<string | null>(null);
-	let updateProgress = $state<UpdateProgress | null>(null);
 
 	// Modpack update state
 	let modpackCheck = $state<ModpackInstanceUpdateCheck | null>(null);
@@ -186,6 +186,7 @@
 	async function handleExecuteUpdate() {
 		isUpdating = true;
 		error = null;
+		updateStarted = false;
 
 		try {
 			if (isModpackInstance && modpackCheck && selectedVersionId) {
@@ -194,19 +195,7 @@
 					targetVersionId: selectedVersionId,
 					userContentDecisions,
 				};
-
-				const updatedInstance = await updateService.executeModpackUpdate(
-					instance.id,
-					plan,
-					(progress) => {
-						updateProgress = progress;
-					}
-				);
-
-				onUpdated(updatedInstance);
-
-				// Refresh the check after update
-				await handleCheckUpdates();
+				await updateService.executeModpackUpdate(instance.id, plan);
 			} else if (!isModpackInstance && instanceCheck && selectedMcVersion) {
 				const plan: InstanceUpdatePlan = {
 					instanceId: instance.id,
@@ -215,25 +204,13 @@
 					targetLoaderVersion: instanceCheck.targetLoaderVersion,
 					incompatibleDecisions,
 				};
-
-				const updatedInstance = await updateService.executeInstanceUpdate(
-					instance.id,
-					plan,
-					(progress) => {
-						updateProgress = progress;
-					}
-				);
-
-				onUpdated(updatedInstance);
-
-				// Refresh the check after update
-				await handleCheckUpdates();
+				await updateService.executeInstanceUpdate(instance.id, plan);
 			}
+			updateStarted = true;
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Update failed';
+			error = e instanceof Error ? e.message : 'Failed to start update';
 		} finally {
 			isUpdating = false;
-			updateProgress = null;
 		}
 	}
 
@@ -397,32 +374,7 @@
 				<p class="text-muted-foreground text-sm">Loading version information...</p>
 			</div>
 		</div>
-	{:else if isUpdating && updateProgress}
-		<!-- Progress Display -->
-		<div class="border-border bg-muted/10 rounded-lg border p-6">
-			<div class="space-y-4">
-				<div class="space-y-2 text-center">
-					<Loader2 class="text-primary mx-auto h-8 w-8 animate-spin" />
-					<p class="font-medium">{updateProgress.stage}</p>
-					{#if updateProgress.currentItem}
-						<p class="text-muted-foreground text-sm">{updateProgress.currentItem}</p>
-					{/if}
-				</div>
-				<div class="bg-muted h-2 w-full rounded-full">
-					<div
-						class="bg-primary h-2 rounded-full transition-all"
-						style="width: {updateProgress.progress}%"
-					></div>
-				</div>
-				{#if updateProgress.totalItems > 0}
-					<p class="text-muted-foreground text-center text-xs">
-						{updateProgress.completedItems} / {updateProgress.totalItems} items
-					</p>
-				{/if}
-			</div>
-		</div>
-
-		<!-- MODPACK VERSION MANAGEMENT -->
+	<!-- MODPACK VERSION MANAGEMENT -->
 	{:else if isModpackInstance && modpackCheck}
 		<!-- Current Version Card -->
 		<section class="border-border bg-muted/10 rounded-lg border p-4">
@@ -1039,8 +991,26 @@
 		</div>
 	{/if}
 
+	<!-- Update Started Banner -->
+	{#if updateStarted}
+		<div class="border-border bg-primary/5 rounded-lg border p-4">
+			<div class="flex items-center gap-3">
+				<div class="bg-primary/10 rounded-full p-2">
+					<CheckCircle2 class="text-primary h-5 w-5" />
+				</div>
+				<div>
+					<p class="font-medium">Version change started</p>
+					<p class="text-muted-foreground text-sm">
+						The update is running in the background. You can track progress in the task bar at the
+						bottom of the screen.
+					</p>
+				</div>
+			</div>
+		</div>
+	{/if}
+
 	<!-- Apply Button -->
-	{#if !isChecking && !isUpdating}
+	{#if !isChecking && !isUpdating && !updateStarted}
 		<div class="flex justify-end gap-2">
 			{#if isModpackInstance}
 				{#if canUpdateModpack}

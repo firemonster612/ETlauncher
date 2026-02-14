@@ -9,7 +9,6 @@
 	import RisingStarsSection from '$lib/components/modpack/RisingStarsSection.svelte';
 	import VirtualGrid from '$lib/components/VirtualGrid.svelte';
 	import { alertDialogStore } from '$lib/stores/alertDialog.svelte';
-	import { modpackInstallStore } from '$lib/stores/modpackInstall.svelte';
 	import { modpacksStore } from '$lib/stores/modpacks.svelte';
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { versionsStore } from '$lib/stores/versions.svelte';
@@ -186,42 +185,26 @@
 	async function handleInstall(versionId: string) {
 		if (!selectedModpackDetail) return;
 
-		const instance = await modpacksStore.installModpack(
+		const queueId = await modpacksStore.installModpack(
 			selectedModpackDetail.platform,
 			selectedModpackDetail.id,
 			versionId,
 			selectedModpackDetail.name
 		);
 
-		if (instance) {
+		if (queueId) {
 			closeModpackDetail();
 			alertDialogStore.alert({
-				title: 'Installation Complete',
-				message: `Successfully installed ${selectedModpackDetail.name}!`,
+				title: 'Installation Queued',
+				message: `${selectedModpackDetail.name} has been queued for installation. Track progress in the task bar.`,
 				type: 'success',
 			});
-		} else if (modpacksStore.installError && !modpacksStore.installError.includes('CANCELLED')) {
+		} else if (modpacksStore.installError) {
 			alertDialogStore.alert({
 				title: 'Installation Failed',
-				message: `Failed to install: ${modpacksStore.installError}`,
+				message: `Failed to queue install: ${modpacksStore.installError}`,
 				type: 'error',
 			});
-		}
-	}
-
-	async function handleCancelInstall() {
-		if (!modpackInstallStore.modpackName || modpackInstallStore.isCancelling) return;
-
-		const confirmed = await alertDialogStore.confirm({
-			title: `Cancel installation of "${modpackInstallStore.modpackName}"?`,
-			message: 'This will stop the download and remove any partially installed files.',
-			type: 'warning',
-			confirmText: 'Cancel Installation',
-			cancelText: 'Continue',
-		});
-
-		if (confirmed) {
-			modpackInstallStore.cancel();
 		}
 	}
 
@@ -519,12 +502,8 @@
 		isLoadingMods={modpacksStore.isLoadingMods}
 		detailError={modpacksStore.detailError}
 		modsError={modpacksStore.modsError}
-		installProgress={modpackInstallStore.progress}
-		isInstalling={modpackInstallStore.isInstalling}
-		isCancelling={modpackInstallStore.isCancelling}
 		onClose={closeModpackDetail}
 		onInstall={handleInstall}
-		onCancelInstall={handleCancelInstall}
 		onLoadMods={(versionId) => {
 			if (selectedModpackDetail) {
 				modpacksStore.loadMods(selectedModpackDetail.platform, selectedModpackDetail.id, versionId);

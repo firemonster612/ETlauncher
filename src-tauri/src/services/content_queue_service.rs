@@ -498,6 +498,19 @@ async fn start_queue_processing(ctx: QueueContext, app_handle: AppHandle) {
             },
         );
 
+        // Register task in the task registry
+        {
+            let state = app_handle.state::<crate::state::AppState>();
+            state.task_registry.register(
+                item.queue_id.clone(),
+                crate::task_registry::TaskType::ContentInstall,
+                format!("Installing {}", item.content_name),
+                Some(item.instance_id.clone()),
+                Some(token.clone()),
+            );
+            state.task_registry.start(&item.queue_id);
+        }
+
         // Clone context and handle for the spawned task
         let ctx_for_task = ctx.clone();
         let handle_for_task = app_handle.clone();
@@ -522,6 +535,23 @@ async fn start_queue_processing(ctx: QueueContext, app_handle: AppHandle) {
             {
                 let mut tokens = ctx_for_task.tokens.lock().await;
                 tokens.remove(&item_clone.queue_id);
+            }
+
+            // Update task registry with final status
+            {
+                let state = handle_for_task.state::<crate::state::AppState>();
+                match &result {
+                    Ok(_) => state.task_registry.complete(&item_clone.queue_id),
+                    Err(e) => {
+                        if matches!(e, crate::error::AppError::Cancelled) {
+                            state.task_registry.cancel(&item_clone.queue_id);
+                        } else {
+                            state
+                                .task_registry
+                                .fail(&item_clone.queue_id, e.to_string());
+                        }
+                    }
+                }
             }
 
             // Emit final status

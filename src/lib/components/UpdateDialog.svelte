@@ -1,28 +1,27 @@
 <script lang="ts">
 	import {
-		Loader2,
-		Check,
 		AlertTriangle,
-		HelpCircle,
 		ArrowRight,
-		Package,
 		Calendar,
+		Check,
 		ChevronDown,
+		HelpCircle,
+		Loader2,
+		Package,
 	} from '@lucide/svelte';
-	import { Button } from '$lib/ui/button';
-	import * as Sheet from '$lib/ui/sheet';
-	import { Select, SelectContent, SelectItem, SelectTrigger } from '$lib/ui/select';
-	import * as RadioGroup from '$lib/ui/radio-group';
 	import * as updateService from '$lib/services/update';
+	import type { Instance } from '$lib/types/instance';
 	import type {
-		ModpackInstanceUpdateCheck,
-		ModpackUpdatePlan,
 		InstanceUpdateCheck,
 		InstanceUpdatePlan,
-		UpdateProgress,
+		ModpackInstanceUpdateCheck,
+		ModpackUpdatePlan,
 		UserContentDecision,
 	} from '$lib/types/update';
-	import type { Instance } from '$lib/types/instance';
+	import { Button } from '$lib/ui/button';
+	import * as RadioGroup from '$lib/ui/radio-group';
+	import { Select, SelectContent, SelectItem, SelectTrigger } from '$lib/ui/select';
+	import * as Sheet from '$lib/ui/sheet';
 
 	interface Props {
 		instance: Instance;
@@ -31,6 +30,7 @@
 		onUpdated?: (instance: Instance) => void;
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for API compatibility
 	let { instance, open: isOpen, onClose, onUpdated }: Props = $props();
 
 	// Determine mode based on instance type
@@ -40,7 +40,6 @@
 	let isChecking = $state(false);
 	let isUpdating = $state(false);
 	let error = $state<string | null>(null);
-	let updateProgress = $state<UpdateProgress | null>(null);
 
 	// Modpack update state
 	let modpackCheck = $state<ModpackInstanceUpdateCheck | null>(null);
@@ -56,7 +55,6 @@
 	$effect(() => {
 		if (isOpen) {
 			error = null;
-			updateProgress = null;
 			modpackCheck = null;
 			instanceCheck = null;
 			selectedVersionId = null;
@@ -111,16 +109,7 @@
 					targetVersionId: selectedVersionId,
 					userContentDecisions,
 				};
-
-				const updatedInstance = await updateService.executeModpackUpdate(
-					instance.id,
-					plan,
-					(progress) => {
-						updateProgress = progress;
-					}
-				);
-
-				onUpdated?.(updatedInstance);
+				await updateService.executeModpackUpdate(instance.id, plan);
 				onClose();
 			} else if (!isModpackInstance && instanceCheck) {
 				const plan: InstanceUpdatePlan = {
@@ -130,23 +119,14 @@
 					targetLoaderVersion: instanceCheck.targetLoaderVersion,
 					incompatibleDecisions,
 				};
-
-				const updatedInstance = await updateService.executeInstanceUpdate(
-					instance.id,
-					plan,
-					(progress) => {
-						updateProgress = progress;
-					}
-				);
-
-				onUpdated?.(updatedInstance);
+				await updateService.executeInstanceUpdate(instance.id, plan);
 				onClose();
 			}
+			// Update is now running in background - task drawer shows progress
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Update failed';
+			error = e instanceof Error ? e.message : 'Failed to start update';
 		} finally {
 			isUpdating = false;
-			updateProgress = null;
 		}
 	}
 
@@ -209,29 +189,7 @@
 						<p class="text-muted-foreground text-sm">Checking for updates...</p>
 					</div>
 				</div>
-			{:else if isUpdating && updateProgress}
-				<div class="space-y-4">
-					<div class="space-y-2 text-center">
-						<Loader2 class="text-primary mx-auto h-8 w-8 animate-spin" />
-						<p class="font-medium">{updateProgress.stage}</p>
-						{#if updateProgress.currentItem}
-							<p class="text-muted-foreground text-sm">{updateProgress.currentItem}</p>
-						{/if}
-					</div>
-					<div class="bg-muted h-2 w-full rounded-full">
-						<div
-							class="bg-primary h-2 rounded-full transition-all"
-							style="width: {updateProgress.progress}%"
-						></div>
-					</div>
-					{#if updateProgress.totalItems > 0}
-						<p class="text-muted-foreground text-center text-xs">
-							{updateProgress.completedItems} / {updateProgress.totalItems} items
-						</p>
-					{/if}
-				</div>
-
-				<!-- MODPACK INSTANCE UPDATE UI -->
+		<!-- MODPACK INSTANCE UPDATE UI -->
 			{:else if isModpackInstance && modpackCheck}
 				{#if modpackCheck.hasUpdate && latestVersion}
 					<!-- Update Available Banner -->

@@ -1,17 +1,22 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import type { InstalledContentManifest } from '$lib/types/content';
+import type { LoaderType } from '$lib/types/instance';
 import type {
-	UpdateCheckResult,
-	ModpackUpdateInfo,
-	UpdatePlan,
-	UpdateProgress,
-	ModpackInstanceUpdateCheck,
-	ModpackUpdatePlan,
 	InstanceUpdateCheck,
 	InstanceUpdatePlan,
+	ModpackInstanceUpdateCheck,
+	ModpackUpdateInfo,
+	ModpackUpdatePlan,
+	UpdateCheckResult,
+	UpdatePlan,
+	UpdateProgress,
 } from '$lib/types/update';
-import type { Instance, LoaderType } from '$lib/types/instance';
-import type { InstalledContentManifest } from '$lib/types/content';
+
+export interface UpdateQueued {
+	taskId: string;
+	instanceId: string;
+}
 
 /**
  * Check for modpack updates for a modpack instance
@@ -86,38 +91,22 @@ export async function updateInstanceContent(
  * @param targetLoader - Target mod loader type
  * @param targetLoaderVersion - Target mod loader version
  * @param plan - The update plan
- * @param onProgress - Optional callback for progress updates
- * @returns Updated instance
+ * @returns UpdateQueued with taskId and instanceId
  */
 export async function migrateInstanceVersion(
 	instanceId: string,
 	targetMcVersion: string,
 	targetLoader: LoaderType,
 	targetLoaderVersion: string,
-	plan: UpdatePlan,
-	onProgress?: (progress: UpdateProgress) => void
-): Promise<Instance> {
-	let unlisten: UnlistenFn | undefined;
-
-	if (onProgress) {
-		unlisten = await listen<UpdateProgress>('update_progress', (event) => {
-			onProgress(event.payload);
-		});
-	}
-
-	try {
-		return await invoke('migrate_instance_version', {
-			instanceId,
-			targetMcVersion,
-			targetLoader,
-			targetLoaderVersion,
-			plan,
-		});
-	} finally {
-		if (unlisten) {
-			unlisten();
-		}
-	}
+	plan: UpdatePlan
+): Promise<UpdateQueued> {
+	return invoke('migrate_instance_version', {
+		instanceId,
+		targetMcVersion,
+		targetLoader,
+		targetLoaderVersion,
+		plan,
+	});
 }
 
 /**
@@ -185,29 +174,13 @@ export async function checkModpackInstanceUpdates(
  * Execute a modpack update
  * @param instanceId - The instance ID
  * @param plan - The modpack update plan
- * @param onProgress - Optional callback for progress updates
- * @returns Updated instance
+ * @returns UpdateQueued with taskId and instanceId
  */
 export async function executeModpackUpdate(
 	instanceId: string,
-	plan: ModpackUpdatePlan,
-	onProgress?: (progress: UpdateProgress) => void
-): Promise<Instance> {
-	let unlisten: UnlistenFn | undefined;
-
-	if (onProgress) {
-		unlisten = await listen<UpdateProgress>('update_progress', (event) => {
-			onProgress(event.payload);
-		});
-	}
-
-	try {
-		return await invoke('execute_modpack_update', { instanceId, plan });
-	} finally {
-		if (unlisten) {
-			unlisten();
-		}
-	}
+	plan: ModpackUpdatePlan
+): Promise<UpdateQueued> {
+	return invoke('execute_modpack_update', { instanceId, plan });
 }
 
 /**
@@ -224,27 +197,11 @@ export async function checkInstanceUpdates(instanceId: string): Promise<Instance
  * Execute a non-modpack instance update
  * @param instanceId - The instance ID
  * @param plan - The instance update plan
- * @param onProgress - Optional callback for progress updates
- * @returns Updated instance
+ * @returns UpdateQueued with taskId and instanceId
  */
 export async function executeInstanceUpdate(
 	instanceId: string,
-	plan: InstanceUpdatePlan,
-	onProgress?: (progress: UpdateProgress) => void
-): Promise<Instance> {
-	let unlisten: UnlistenFn | undefined;
-
-	if (onProgress) {
-		unlisten = await listen<UpdateProgress>('update_progress', (event) => {
-			onProgress(event.payload);
-		});
-	}
-
-	try {
-		return await invoke('execute_instance_update', { instanceId, plan });
-	} finally {
-		if (unlisten) {
-			unlisten();
-		}
-	}
+	plan: InstanceUpdatePlan
+): Promise<UpdateQueued> {
+	return invoke('execute_instance_update', { instanceId, plan });
 }

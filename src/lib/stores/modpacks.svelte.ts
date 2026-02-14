@@ -1,17 +1,16 @@
 import { SvelteMap } from 'svelte/reactivity';
+import * as minecraftService from '$lib/services/minecraft';
+import * as modpackService from '$lib/services/modpack';
 import type {
-	Instance,
+	LoaderType,
 	Modpack,
 	ModpackMod,
-	ModpackSearchParams,
-	ModpackVersion,
 	ModpackPlatform,
+	ModpackSearchParams,
 	ModpackSortBy,
-	LoaderType,
+	ModpackVersion,
 	SideFilter,
 } from '$lib/types';
-import * as modpackService from '$lib/services/modpack';
-import * as minecraftService from '$lib/services/minecraft';
 
 /** Cached results for explore/search */
 interface ResultsCache {
@@ -148,7 +147,6 @@ function createModpacksStore() {
 	let isLoadingVersions = $state(false);
 
 	// Installation state
-	let isInstalling = $state(false);
 	let installError = $state<string | null>(null);
 
 	// Modpack contents state (mods, shaders, resource packs)
@@ -288,9 +286,6 @@ function createModpacksStore() {
 		},
 
 		// Installation state getters
-		get isInstalling() {
-			return isInstalling;
-		},
 		get installError() {
 			return installError;
 		},
@@ -875,43 +870,37 @@ function createModpacksStore() {
 			}
 		},
 
-		/** Install a modpack and create a new instance */
+		/** Queue a modpack install (non-blocking) */
 		async installModpack(
 			modpackPlatform: ModpackPlatform,
 			modpackId: string,
 			versionId: string,
 			instanceName?: string
-		): Promise<Instance | null> {
-			isInstalling = true;
+		): Promise<string | null> {
 			installError = null;
 
 			try {
-				console.log('[modpacksStore] Installing modpack:', {
+				console.log('[modpacksStore] Queueing modpack install:', {
 					platform: modpackPlatform,
 					modpackId,
 					versionId,
 					instanceName,
 				});
 
-				const instance = await modpackService.installModpack(
+				const result = await modpackService.installModpack(
 					modpackPlatform,
 					modpackId,
 					versionId,
 					instanceName
 				);
 
-				console.log(
-					'[modpacksStore] Modpack installed successfully, created instance:',
-					instance.id
-				);
-				return instance;
+				console.log('[modpacksStore] Modpack install queued:', result.queueId);
+				return result.queueId;
 			} catch (e: unknown) {
-				console.error('[modpacksStore] Install failed:', e);
+				console.error('[modpacksStore] Install queue failed:', e);
 				installError =
 					e instanceof Error ? e.message : typeof e === 'string' ? e : JSON.stringify(e);
 				return null;
-			} finally {
-				isInstalling = false;
 			}
 		},
 	};

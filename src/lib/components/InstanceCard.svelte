@@ -1,26 +1,23 @@
 <script lang="ts">
 	import {
-		Play,
-		Square,
-		X,
-		Settings,
-		Trash2,
-		Clock,
 		Calendar,
+		ChevronRight,
+		Clock,
 		Loader2,
 		PackagePlus,
-		ChevronRight,
+		Play,
+		Settings,
+		Square,
+		Trash2,
+		X,
 	} from '@lucide/svelte';
+	import type { Instance, LoaderType } from '$lib/types';
 	import { Button } from '$lib/ui/button';
-	import DownloadProgress from '$lib/components/DownloadProgress.svelte';
-	import { parseIconPath, getIconUrl } from '$lib/utils/icons';
-	import type { Instance, LoaderType, LaunchStatus, InstanceSetupStatus } from '$lib/types';
+	import { getIconUrl, parseIconPath } from '$lib/utils/icons';
 
 	interface Props {
 		instance: Instance;
 		status: string | null;
-		launchStatus: LaunchStatus | undefined;
-		setupStatus: InstanceSetupStatus | undefined;
 		onLaunch: (instanceId: string) => void;
 		onKill: (instanceId: string) => void;
 		onOpenSettings: (instance: Instance) => void;
@@ -32,8 +29,6 @@
 	let {
 		instance,
 		status,
-		launchStatus,
-		setupStatus,
 		onLaunch,
 		onKill,
 		onOpenSettings,
@@ -41,15 +36,6 @@
 		onDelete,
 		onCardClick,
 	}: Props = $props();
-
-	// Computed: check if instance is being set up
-	const isSettingUp = $derived(
-		setupStatus &&
-			(setupStatus.status === 'pending' ||
-				setupStatus.status === 'preparing' ||
-				setupStatus.status === 'downloadingGameFiles' ||
-				setupStatus.status === 'installingLoader')
-	);
 
 	let isPlayButtonHovered = $state(false);
 
@@ -248,55 +234,4 @@
 		</div>
 	</div>
 
-	<!-- Download Progress (during launch) -->
-	{#if launchStatus?.status === 'downloading'}
-		{@const progress = launchStatus.progress}
-		<div class="border-border border-t px-4 py-3">
-			<DownloadProgress
-				stage="Downloading game files"
-				progress={progress.totalBytes > 0
-					? (progress.downloadedBytes / progress.totalBytes) * 100
-					: 0}
-				currentItem={progress.currentFile}
-				totalBytes={progress.totalBytes}
-				downloadedBytes={progress.downloadedBytes}
-				speedBytesPerSec={progress.speedBytesPerSec}
-				compact
-			/>
-		</div>
-	{/if}
-
-	<!-- Setup Progress (during instance creation) -->
-	{#if isSettingUp}
-		<div class="border-border border-t px-4 py-3">
-			{#if setupStatus?.status === 'pending' || setupStatus?.status === 'preparing'}
-				<div class="text-muted-foreground flex items-center gap-2 text-sm">
-					<Loader2 class="h-4 w-4 animate-spin" />
-					<span>
-						{setupStatus?.status === 'preparing' && 'message' in setupStatus
-							? setupStatus.message
-							: 'Setting up instance...'}
-					</span>
-				</div>
-			{:else if setupStatus?.status === 'downloadingGameFiles'}
-				{@const progress = setupStatus.progress}
-				<DownloadProgress
-					stage="Setting up game files"
-					progress={progress.totalBytes > 0
-						? (progress.downloadedBytes / progress.totalBytes) * 100
-						: 0}
-					currentItem={progress.currentFile}
-					totalBytes={progress.totalBytes}
-					downloadedBytes={progress.downloadedBytes}
-					speedBytesPerSec={progress.speedBytesPerSec}
-					compact
-				/>
-			{:else if setupStatus?.status === 'installingLoader'}
-				<div class="text-muted-foreground flex items-center gap-2 text-sm">
-					<Loader2 class="h-4 w-4 animate-spin" />
-					<span>Installing {setupStatus.stage}... ({setupStatus.progress}%)</span>
-				</div>
-			{/if}
-		</div>
-	{/if}
 </div>

@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::models::instance::LaunchStatus;
 use crate::models::java::{JavaInstallation, JavaManifest};
 use crate::utils::paths::{get_java_dir, get_java_manifest_path};
 use crate::utils::platform::{Arch, Os};
@@ -244,10 +245,13 @@ pub async fn ensure_java_installed(
     }
 
     // Need to download
-    emit_status(
+    emit_launch_status(
         app_handle,
         instance_id,
-        &format!("Downloading Java {}...", major_version),
+        LaunchStatus::DownloadingJava {
+            version: major_version,
+            progress: 0,
+        },
     );
 
     let url = get_adoptium_download_url(major_version);
@@ -296,21 +300,27 @@ pub async fn ensure_java_installed(
         // Emit progress
         if total_size > 0 {
             let percent = (downloaded as f64 / total_size as f64 * 100.0) as u32;
-            emit_status(
+            emit_launch_status(
                 app_handle,
                 instance_id,
-                &format!("Downloading Java {}... {}%", major_version, percent),
+                LaunchStatus::DownloadingJava {
+                    version: major_version,
+                    progress: percent,
+                },
             );
         }
     }
 
     drop(file);
 
-    // Extract
-    emit_status(
+    // Extract - emit as DownloadingJava with 99% to indicate extraction phase
+    emit_launch_status(
         app_handle,
         instance_id,
-        &format!("Extracting Java {}...", major_version),
+        LaunchStatus::DownloadingJava {
+            version: major_version,
+            progress: 99,
+        },
     );
 
     let install_dir = java_dir.join(format!("temurin-{}", major_version));
@@ -458,16 +468,19 @@ fn extract_zip(archive_path: &PathBuf, dest_dir: &PathBuf) -> Result<(), AppErro
     Ok(())
 }
 
-/// Emit a launch status update
-fn emit_status(app_handle: &AppHandle, instance_id: &str, message: &str) {
+/// Emit a proper launch status event for Java download progress
+fn emit_launch_status(app_handle: &AppHandle, instance_id: &str, status: LaunchStatus) {
+    #[derive(serde::Serialize, Clone)]
+    struct StatusEvent {
+        instance_id: String,
+        status: LaunchStatus,
+    }
+
     let _ = app_handle.emit(
         "launch_status",
-        serde_json::json!({
-            "instanceId": instance_id,
-            "status": {
-                "type": "preparing",
-                "message": message
-            }
-        }),
+        StatusEvent {
+            instance_id: instance_id.to_string(),
+            status,
+        },
     );
 }

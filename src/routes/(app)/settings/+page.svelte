@@ -1,46 +1,46 @@
 <script lang="ts">
+	import {
+		Ban,
+		Check,
+		Download,
+		Eye,
+		EyeOff,
+		Film,
+		HardDrive,
+		Image,
+		Loader2,
+		Monitor,
+		Moon,
+		Palette,
+		RefreshCw,
+		RotateCcw,
+		Sun,
+		Trash2,
+		Video,
+		X,
+	} from '@lucide/svelte';
+	import { getVersion } from '@tauri-apps/api/app';
+	import { open } from '@tauri-apps/plugin-dialog';
 	import { onMount } from 'svelte';
+	import ColorPicker from '$lib/components/ColorPicker.svelte';
+	import * as settingsService from '$lib/services/settings';
+	import { settingsStore } from '$lib/stores/settings.svelte';
+	import { themeStore } from '$lib/stores/theme.svelte';
+	import { updaterStore } from '$lib/stores/updater.svelte';
+	import type {
+		BackgroundConfig,
+		BackgroundType,
+		ColorPreset,
+		LinkStrategy,
+		ResourcePoolStats,
+		Theme,
+		ThemeColors,
+	} from '$lib/types';
 	import { Button } from '$lib/ui/button';
 	import { Checkbox } from '$lib/ui/checkbox';
 	import { Input } from '$lib/ui/input';
 	import * as Select from '$lib/ui/select';
-	import { Slider, RangeSlider } from '$lib/ui/slider';
-	import { settingsStore } from '$lib/stores/settings.svelte';
-	import { themeStore } from '$lib/stores/theme.svelte';
-	import {
-		RotateCcw,
-		Eye,
-		EyeOff,
-		HardDrive,
-		Trash2,
-		RefreshCw,
-		Check,
-		X,
-		Monitor,
-		Sun,
-		Moon,
-		Palette,
-		Download,
-		Loader2,
-		Image,
-		Video,
-		Film,
-		Ban,
-	} from '@lucide/svelte';
-	import { open } from '@tauri-apps/plugin-dialog';
-	import { getVersion } from '@tauri-apps/api/app';
-	import { updaterStore } from '$lib/stores/updater.svelte';
-	import * as settingsService from '$lib/services/settings';
-	import ColorPicker from '$lib/components/ColorPicker.svelte';
-	import type {
-		ResourcePoolStats,
-		LinkStrategy,
-		Theme,
-		ColorPreset,
-		ThemeColors,
-		BackgroundType,
-		BackgroundConfig,
-	} from '$lib/types';
+	import { RangeSlider, Slider } from '$lib/ui/slider';
 
 	let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
@@ -229,7 +229,7 @@
 		const k = 1024;
 		const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
 		const i = Math.floor(Math.log(bytes) / Math.log(k));
-		return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+		return parseFloat((bytes / k ** i).toFixed(2)) + ' ' + sizes[i];
 	}
 
 	async function saveSettings(updates: Record<string, unknown>) {
@@ -461,7 +461,7 @@
 	{:else}
 		<!-- Appearance Settings -->
 		<section class="border-border bg-card space-y-4 border-2 p-4">
-			<h3 class="text-muted-foreground text-sm tracking-wider uppercase">Appearance</h3>
+			<h2 class="text-muted-foreground text-sm tracking-wider uppercase">Appearance</h2>
 
 			<!-- Theme Mode -->
 			<div class="space-y-2">
@@ -878,7 +878,7 @@
 
 		<!-- General Settings -->
 		<section class="border-border bg-card space-y-4 border-2 p-4">
-			<h3 class="text-muted-foreground text-sm tracking-wider uppercase">General</h3>
+			<h2 class="text-muted-foreground text-sm tracking-wider uppercase">General</h2>
 
 			<div class="space-y-2">
 				<label for="instancesPath" class="text-sm">Instances Path</label>
@@ -919,7 +919,7 @@
 
 		<!-- Memory Settings -->
 		<section class="border-border bg-card space-y-4 border-2 p-4">
-			<h3 class="text-muted-foreground text-sm tracking-wider uppercase">Memory</h3>
+			<h2 class="text-muted-foreground text-sm tracking-wider uppercase">Memory</h2>
 
 			<div class="space-y-2">
 				<div class="flex justify-between text-sm">
@@ -951,7 +951,7 @@
 
 		<!-- Downloads Settings -->
 		<section class="border-border bg-card space-y-4 border-2 p-4">
-			<h3 class="text-muted-foreground text-sm tracking-wider uppercase">Downloads</h3>
+			<h2 class="text-muted-foreground text-sm tracking-wider uppercase">Downloads</h2>
 
 			<div class="space-y-2">
 				<div class="flex justify-between text-sm">
@@ -974,7 +974,7 @@
 
 		<!-- CurseForge API -->
 		<section class="border-border bg-card space-y-4 border-2 p-4">
-			<h3 class="text-muted-foreground text-sm tracking-wider uppercase">CurseForge</h3>
+			<h2 class="text-muted-foreground text-sm tracking-wider uppercase">CurseForge</h2>
 
 			<div class="space-y-2">
 				<label for="curseforgeApiKey" class="text-sm">API Key</label>
@@ -1020,7 +1020,7 @@
 
 		<!-- Updates Settings -->
 		<section class="border-border bg-card space-y-4 border-2 p-4">
-			<h3 class="text-muted-foreground text-sm tracking-wider uppercase">Updates</h3>
+			<h2 class="text-muted-foreground text-sm tracking-wider uppercase">Updates</h2>
 
 			<div class="flex items-center justify-between">
 				<div>
@@ -1098,7 +1098,7 @@
 
 		<!-- Resource Pool Settings -->
 		<section class="border-border bg-card space-y-4 border-2 p-4">
-			<h3 class="text-muted-foreground text-sm tracking-wider uppercase">Resource Pool</h3>
+			<h2 class="text-muted-foreground text-sm tracking-wider uppercase">Resource Pool</h2>
 
 			<div class="flex items-center justify-between">
 				<div>
@@ -1236,7 +1236,7 @@
 
 		<!-- Version Settings -->
 		<section class="border-border bg-card space-y-4 border-2 p-4">
-			<h3 class="text-muted-foreground text-sm tracking-wider uppercase">Versions</h3>
+			<h2 class="text-muted-foreground text-sm tracking-wider uppercase">Versions</h2>
 
 			<div class="flex items-center justify-between">
 				<div>

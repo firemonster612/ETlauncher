@@ -61,12 +61,46 @@ pub async fn export_to_mrpack(
     instance_id: &str,
     output_path: &Path,
 ) -> Result<PathBuf, AppError> {
+    let task_id = uuid::Uuid::new_v4().to_string();
+    state.task_registry.register(
+        task_id.clone(),
+        crate::task_registry::TaskType::InstanceExport,
+        "Exporting to .mrpack".to_string(),
+        Some(instance_id.to_string()),
+        None,
+    );
+    state.task_registry.start(&task_id);
+
+    let result = export_to_mrpack_inner(state, instance_id, output_path, &task_id).await;
+
+    match result {
+        Ok(path) => {
+            state.task_registry.complete(&task_id);
+            Ok(path)
+        }
+        Err(e) => {
+            state.task_registry.fail(&task_id, e.to_string());
+            Err(e)
+        }
+    }
+}
+
+/// Inner function for mrpack export
+async fn export_to_mrpack_inner(
+    state: &AppState,
+    instance_id: &str,
+    output_path: &Path,
+    task_id: &str,
+) -> Result<PathBuf, AppError> {
     // Get instance data
     let instance = instance_service::get_instance(state, instance_id)?;
     let instances_base = state.settings.read().instances_path.clone();
     let game_dir = get_instance_game_dir_with_base(&instances_base, instance_id);
 
     // Scan installed mods to identify them via Modrinth hash lookup
+    state
+        .task_registry
+        .update_stage(task_id, "Scanning content".to_string());
     let scan_result =
         content_scan_service::scan_content(state, instance_id, &ContentType::Mod).await?;
 
@@ -172,6 +206,9 @@ pub async fn export_to_mrpack(
     };
 
     // Create the ZIP file
+    state
+        .task_registry
+        .update_stage(task_id, "Building archive".to_string());
     let file = File::create(&output_file)?;
     let mut zip = ZipWriter::new(file);
     let options = FileOptions::<()>::default()
@@ -210,6 +247,9 @@ pub async fn export_to_mrpack(
     }
 
     // Finalize the ZIP
+    state
+        .task_registry
+        .update_stage(task_id, "Writing file".to_string());
     zip.finish()?;
 
     Ok(output_file)
@@ -319,12 +359,46 @@ pub async fn export_to_curseforge_zip(
     instance_id: &str,
     output_path: &Path,
 ) -> Result<PathBuf, AppError> {
+    let task_id = uuid::Uuid::new_v4().to_string();
+    state.task_registry.register(
+        task_id.clone(),
+        crate::task_registry::TaskType::InstanceExport,
+        "Exporting to CurseForge format".to_string(),
+        Some(instance_id.to_string()),
+        None,
+    );
+    state.task_registry.start(&task_id);
+
+    let result = export_to_curseforge_zip_inner(state, instance_id, output_path, &task_id).await;
+
+    match result {
+        Ok(path) => {
+            state.task_registry.complete(&task_id);
+            Ok(path)
+        }
+        Err(e) => {
+            state.task_registry.fail(&task_id, e.to_string());
+            Err(e)
+        }
+    }
+}
+
+/// Inner function for CurseForge zip export
+async fn export_to_curseforge_zip_inner(
+    state: &AppState,
+    instance_id: &str,
+    output_path: &Path,
+    task_id: &str,
+) -> Result<PathBuf, AppError> {
     // Get instance data
     let instance = instance_service::get_instance(state, instance_id)?;
     let instances_base = state.settings.read().instances_path.clone();
     let game_dir = get_instance_game_dir_with_base(&instances_base, instance_id);
 
     // Scan installed mods to identify them via CurseForge
+    state
+        .task_registry
+        .update_stage(task_id, "Scanning content".to_string());
     let scan_result =
         content_scan_service::scan_content(state, instance_id, &ContentType::Mod).await?;
 
@@ -422,6 +496,9 @@ pub async fn export_to_curseforge_zip(
     };
 
     // Create the ZIP file
+    state
+        .task_registry
+        .update_stage(task_id, "Building archive".to_string());
     let file = File::create(&output_file)?;
     let mut zip = ZipWriter::new(file);
     let options = FileOptions::<()>::default()
@@ -461,6 +538,9 @@ pub async fn export_to_curseforge_zip(
     }
 
     // Finalize the ZIP
+    state
+        .task_registry
+        .update_stage(task_id, "Writing file".to_string());
     zip.finish()?;
 
     Ok(output_file)

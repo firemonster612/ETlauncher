@@ -6,6 +6,7 @@ use crate::models::instance::{
 use crate::models::ContentType;
 use crate::services::{download_service, manifest_service, resource_pool_service};
 use crate::state::AppState;
+use crate::task_registry::{TaskProgress, TaskType};
 use crate::utils::paths::{
     get_instance_dir_with_base, get_instance_game_dir_with_base, get_instances_dir_with_base,
 };
@@ -14,7 +15,8 @@ use rand::Rng;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::PathBuf;
-use tauri::{AppHandle, Emitter};
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
 /// All available entity icons for random assignment
@@ -690,6 +692,30 @@ pub async fn setup_instance(
     let instance = get_instance(state, instance_id)?;
     let game_dir = get_game_directory(state, instance_id);
 
+    // Register task in the task registry
+    let setup_task_id = format!("setup-{}", instance_id);
+    if let Some(app_state) = app_handle.try_state::<crate::state::AppState>() {
+        app_state.task_registry.register(
+            setup_task_id.clone(),
+            TaskType::InstanceSetup,
+            format!("Setting up {}", instance.name),
+            Some(instance_id.to_string()),
+            None,
+        );
+        app_state.task_registry.start(&setup_task_id);
+        app_state.task_registry.update_progress(
+            &setup_task_id,
+            TaskProgress {
+                current: 0,
+                total: 100,
+                percent: Some(5.0),
+                speed_bytes_per_sec: None,
+                current_item: None,
+                stage: Some("Loading version info...".to_string()),
+            },
+        );
+    }
+
     // Emit preparing status
     emit_setup_status(
         app_handle,
@@ -707,7 +733,28 @@ pub async fn setup_instance(
         instance.loader_version.as_deref(),
         &game_dir,
     )
-    .await?;
+    .await
+    .inspect_err(|e| {
+        // Fail the task on error
+        if let Some(app_state) = app_handle.try_state::<crate::state::AppState>() {
+            app_state.task_registry.fail(&setup_task_id, e.to_string());
+        }
+    })?;
+
+    // Update task progress before download
+    if let Some(app_state) = app_handle.try_state::<crate::state::AppState>() {
+        app_state.task_registry.update_progress(
+            &setup_task_id,
+            TaskProgress {
+                current: 0,
+                total: 100,
+                percent: Some(10.0),
+                speed_bytes_per_sec: None,
+                current_item: None,
+                stage: Some("Downloading game files...".to_string()),
+            },
+        );
+    }
 
     // Emit downloading status - initial state
     emit_setup_status(
@@ -718,17 +765,67 @@ pub async fn setup_instance(
         },
     );
 
+    // Build a progress callback that updates both the setup task and setup status events
+    let setup_task_id_for_cb = setup_task_id.clone();
+    let instance_id_for_cb = instance_id.to_string();
+    let handle_for_cb = app_handle.clone();
+    let on_progress: Arc<dyn Fn(&DownloadProgress) + Send + Sync> =
+        Arc::new(move |progress: &DownloadProgress| {
+            // Update the InstanceSetup task's progress based on download progress
+            if let Some(app_state) = handle_for_cb.try_state::<crate::state::AppState>() {
+                let percent = if progress.total_bytes > 0 {
+                    10.0 + (progress.downloaded_bytes as f64 / progress.total_bytes as f64) * 85.0
+                } else if progress.total_files > 0 {
+                    10.0 + (progress.completed_files as f64 / progress.total_files as f64) * 85.0
+                } else {
+                    10.0
+                };
+                app_state.task_registry.update_progress(
+                    &setup_task_id_for_cb,
+                    TaskProgress {
+                        current: progress.downloaded_bytes,
+                        total: progress.total_bytes,
+                        percent: Some(percent),
+                        speed_bytes_per_sec: Some(progress.speed_bytes_per_sec),
+                        current_item: Some(progress.current_file.clone()),
+                        stage: Some("Downloading game files".to_string()),
+                    },
+                );
+            }
+
+            // Also emit the setup status event
+            emit_setup_status(
+                &handle_for_cb,
+                &instance_id_for_cb,
+                InstanceSetupStatus::DownloadingGameFiles {
+                    progress: progress.clone(),
+                },
+            );
+        });
+
     // Download game files using the merged version info
-    // The download_service will emit download_progress events, but we also want
-    // to emit instance_setup_status events. We'll listen for download_progress
-    // events in the frontend and update the setup status accordingly.
-    download_service::download_game_files_with_version(
+    // Pass register_own_task: false since we manage our own setup task
+    let download_result = download_service::download_game_files_with_version(
         instance_id,
         &instance.minecraft_version,
         &version_info,
         Some(app_handle),
+        Some(on_progress),
+        false,
     )
-    .await?;
+    .await;
+
+    if let Err(ref e) = download_result {
+        if let Some(app_state) = app_handle.try_state::<crate::state::AppState>() {
+            app_state.task_registry.fail(&setup_task_id, e.to_string());
+        }
+        return download_result;
+    }
+
+    // Complete the task
+    if let Some(app_state) = app_handle.try_state::<crate::state::AppState>() {
+        app_state.task_registry.complete(&setup_task_id);
+    }
 
     // Emit complete status
     emit_setup_status(app_handle, instance_id, InstanceSetupStatus::Complete);

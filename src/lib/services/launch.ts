@@ -19,3 +19,8 @@ export async function getRunningInstances(): Promise<string[]> {
 export async function killInstance(instanceId: string): Promise<void> {
 	return invoke<void>('kill_instance', { instanceId });
 }
+
+/** Cancel a launch in progress (pre-spawn stages) or kill if already running */
+export async function cancelLaunch(instanceId: string): Promise<void> {
+	return invoke<void>('cancel_launch', { instanceId });
+}

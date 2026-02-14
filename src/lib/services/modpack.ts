@@ -3,11 +3,16 @@ import type {
 	Instance,
 	Modpack,
 	ModpackMod,
+	ModpackPlatform,
 	ModpackSearchParams,
 	ModpackSearchResult,
 	ModpackVersion,
-	ModpackPlatform,
 } from '$lib/types';
+
+export interface ModpackInstallQueued {
+	queueId: string;
+	modpackName: string;
+}
 
 /** Search for modpacks across platforms */
 export async function searchModpacks(params: ModpackSearchParams): Promise<ModpackSearchResult> {
@@ -36,14 +41,14 @@ export async function getModpackMods(
 	return invoke<ModpackMod[]>('get_modpack_mods', { platform, modpackId, versionId });
 }
 
-/** Install a modpack and create a new instance */
+/** Install a modpack (queued, non-blocking) */
 export async function installModpack(
 	platform: ModpackPlatform,
 	modpackId: string,
 	versionId: string,
 	instanceName?: string
-): Promise<Instance> {
-	return invoke<Instance>('install_modpack', {
+): Promise<ModpackInstallQueued> {
+	return invoke<ModpackInstallQueued>('install_modpack', {
 		platform,
 		modpackId,
 		versionId,
@@ -60,16 +65,4 @@ export async function importModpackFile(
 		filePath,
 		instanceName,
 	});
-}
-
-/** Cancel the current modpack installation */
-export async function cancelModpackInstall(): Promise<void> {
-	return invoke('cancel_modpack_install');
-}
-
-/** Get current modpack install status */
-export async function getModpackInstallStatus(): Promise<{
-	modpackName: string;
-} | null> {
-	return invoke('get_modpack_install_status');
 }

@@ -1,9 +1,12 @@
 <script lang="ts">
-	import { Loader2, Download } from '@lucide/svelte';
-	import { launchStore } from '$lib/stores/launch.svelte';
+	import { Download, Loader2, X } from '@lucide/svelte';
+	import { alertDialogStore } from '$lib/stores/alertDialog.svelte';
 	import { instancesStore } from '$lib/stores/instances.svelte';
-	import { parseIconPath, getIconUrl } from '$lib/utils/icons';
-	import { formatBytes, formatSpeed, formatEta } from '$lib/utils/format';
+	import { launchStore } from '$lib/stores/launch.svelte';
+	import { formatBytes, formatEta, formatSpeed } from '$lib/utils/format';
+	import { getIconUrl, parseIconPath } from '$lib/utils/icons';
+
+	let dismissed = $state(false);
 
 	// Find the first instance that is currently launching (before window is ready)
 	const launchingState = $derived.by(() => {
@@ -24,13 +27,22 @@
 			) {
 				return { instanceId, status: state.status };
 			}
-			// windowReady means the window is open - don't show dialog
 		}
 		return null;
 	});
 
+	// Reset dismissed state when the launching instance changes
+	let lastLaunchingId = $state<string | null>(null);
+	$effect(() => {
+		const currentId = launchingState?.instanceId ?? null;
+		if (currentId !== lastLaunchingId) {
+			lastLaunchingId = currentId;
+			dismissed = false;
+		}
+	});
+
 	// Computed: should we show the dialog?
-	const showDialog = $derived(launchingState !== null);
+	const showDialog = $derived(launchingState !== null && !dismissed);
 
 	const instance = $derived(
 		launchingState ? instancesStore.instances.find((i) => i.id === launchingState.instanceId) : null
@@ -70,7 +82,7 @@
 			case 'launching':
 				return 'Starting Minecraft...';
 			case 'running':
-				return 'Opening Minecraft window...';
+				return 'Waiting for Minecraft window...';
 			default:
 				return 'Launching...';
 		}
@@ -147,18 +159,70 @@
 		}
 	}
 
+	/** Whether the current stage is indeterminate (no granular progress) */
+	const isIndeterminate = $derived.by(() => {
+		if (!launchingState) return false;
+		const s = launchingState.status.status;
+		return (
+			s === 'checkingAccount' ||
+			s === 'refreshingToken' ||
+			s === 'loadingVersion' ||
+			s === 'checkingJava' ||
+			s === 'buildingClasspath' ||
+			s === 'launching' ||
+			s === 'running'
+		);
+	});
+
 	const progress = $derived(launchingState ? getOverallProgress(launchingState.status) : 0);
+
+	function handleKill() {
+		if (!launchingState || !instance) return;
+		alertDialogStore.confirm({
+			title: 'Cancel launch?',
+			message: `This will terminate the launch process for "${instance.name}".`,
+			confirmText: 'Cancel Launch',
+			type: 'error',
+		}).then((confirmed) => {
+			if (confirmed) {
+				if (launchingState) {
+					launchStore.cancelLaunch(launchingState.instanceId);
+				}
+				dismissed = true;
+			}
+		});
+	}
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			handleKill();
+		}
+	}
 </script>
 
+<svelte:window onkeydown={handleKeydown} />
+
 {#if showDialog && instance}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80"
 		role="dialog"
+		tabindex="-1"
 		aria-label="Launching Minecraft"
+		onkeydown={handleKeydown}
 	>
 		<div
-			class="bg-card border-border flex w-full max-w-md flex-col items-center gap-6 rounded-xl border-2 p-8 shadow-2xl"
+			class="bg-card border-border relative flex w-full max-w-md flex-col items-center gap-6 rounded-xl border-2 p-8 shadow-2xl"
 		>
+			<!-- Kill button -->
+			<button
+				class="text-muted-foreground hover:text-destructive absolute top-3 right-3 rounded-md p-1 transition-colors"
+				onclick={handleKill}
+				title="Cancel launch"
+			>
+				<X class="h-4 w-4" />
+			</button>
+
 			<!-- Instance icon -->
 			<div class="relative">
 				<img
@@ -188,12 +252,23 @@
 			<div class="w-full space-y-3">
 				<!-- Main progress bar -->
 				<div class="space-y-2">
-					<div class="bg-muted h-2 w-full overflow-hidden rounded-full">
-						<div
-							class="bg-primary h-full transition-all duration-300 ease-out"
-							style="width: {progress}%"
-						></div>
-					</div>
+					{#if isIndeterminate}
+						<!-- Indeterminate: show the stepped progress + a pulsing animation -->
+						<div class="bg-muted h-2 w-full overflow-hidden rounded-full">
+							<div
+								class="bg-primary h-full animate-pulse transition-all duration-500 ease-out"
+								style="width: {progress}%"
+							></div>
+						</div>
+					{:else}
+						<!-- Determinate: smooth progress bar -->
+						<div class="bg-muted h-2 w-full overflow-hidden rounded-full">
+							<div
+								class="bg-primary h-full transition-all duration-300 ease-out"
+								style="width: {progress}%"
+							></div>
+						</div>
+					{/if}
 					<!-- Status message -->
 					{#if launchingState}
 						<p class="text-muted-foreground text-center text-sm">
@@ -207,23 +282,24 @@
 					{@const dlProgress = launchingState.status.progress}
 					{@const hasBytes = dlProgress.totalBytes > 0}
 					{@const speed = dlProgress.speedBytesPerSec || 0}
-					{@const eta = speed > 0 && dlProgress.totalBytes > dlProgress.downloadedBytes
-						? formatEta((dlProgress.totalBytes - dlProgress.downloadedBytes) / speed)
-						: ''}
-					<div class="bg-muted/30 rounded-lg p-3 space-y-2">
+					{@const eta =
+						speed > 0 && dlProgress.totalBytes > dlProgress.downloadedBytes
+							? formatEta((dlProgress.totalBytes - dlProgress.downloadedBytes) / speed)
+							: ''}
+					<div class="bg-muted/30 space-y-2 rounded-lg p-3">
 						<!-- Download header with speed and ETA -->
 						<div class="flex items-center justify-between text-xs">
-							<div class="flex items-center gap-1.5 text-muted-foreground">
+							<div class="text-muted-foreground flex items-center gap-1.5">
 								<Download class="h-3.5 w-3.5" />
-								<span class="truncate max-w-[180px]" title={dlProgress.currentFile}>
+								<span class="max-w-[180px] truncate" title={dlProgress.currentFile}>
 									{dlProgress.currentFile || 'Downloading...'}
 								</span>
 							</div>
 							{#if speed > 0}
-								<div class="flex items-center gap-2 font-mono text-muted-foreground">
+								<div class="text-muted-foreground flex items-center gap-2 font-mono">
 									<span>{formatSpeed(speed)}</span>
 									{#if eta}
-										<span class="text-muted-foreground/60">•</span>
+										<span class="text-muted-foreground/60">&bull;</span>
 										<span>{eta}</span>
 									{/if}
 								</div>
@@ -239,12 +315,16 @@
 									style="width: {fileProgress}%"
 								></div>
 							</div>
-							<div class="flex justify-between text-xs text-muted-foreground">
-								<span>{formatBytes(dlProgress.downloadedBytes)} / {formatBytes(dlProgress.totalBytes)}</span>
+							<div class="text-muted-foreground flex justify-between text-xs">
+								<span
+									>{formatBytes(dlProgress.downloadedBytes)} / {formatBytes(
+										dlProgress.totalBytes
+									)}</span
+								>
 								<span>{dlProgress.completedFiles} / {dlProgress.totalFiles} files</span>
 							</div>
 						{:else}
-							<div class="text-xs text-muted-foreground">
+							<div class="text-muted-foreground text-xs">
 								{dlProgress.completedFiles} / {dlProgress.totalFiles} files
 							</div>
 						{/if}

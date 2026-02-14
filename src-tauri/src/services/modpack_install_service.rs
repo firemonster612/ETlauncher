@@ -66,12 +66,68 @@ pub async fn install_modrinth_modpack(
     instance_name: Option<String>,
     app_handle: Option<&AppHandle>,
     cancel_token: Option<&CancellationToken>,
+    queue_id: Option<&str>,
 ) -> Result<Instance, AppError> {
     println!(
         "[modpack_install] install_modrinth_modpack: modpack_id={}, version_id={}",
         modpack_id, version_id
     );
 
+    // Register task in the task registry (reuses queue_id if provided)
+    let task_id = queue_id
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    state.task_registry.register(
+        task_id.clone(),
+        crate::task_registry::TaskType::ModpackInstall,
+        instance_name.as_deref().unwrap_or("Modpack").to_string(),
+        None,
+        cancel_token.cloned(),
+    );
+    state.task_registry.start(&task_id);
+
+    let result = install_modrinth_modpack_inner(
+        state,
+        modpack_id,
+        version_id,
+        instance_name,
+        app_handle,
+        cancel_token,
+        &task_id,
+    )
+    .await;
+
+    match &result {
+        Ok(instance) => {
+            // Update the task with the real instance_id now that we know it
+            state.task_registry.complete(&task_id);
+            println!(
+                "[modpack_install] Task {} completed for instance {}",
+                task_id, instance.id
+            );
+        }
+        Err(e) => {
+            if matches!(e, AppError::Cancelled) {
+                state.task_registry.cancel(&task_id);
+            } else {
+                state.task_registry.fail(&task_id, e.to_string());
+            }
+        }
+    }
+
+    result
+}
+
+/// Inner function for Modrinth modpack installation
+async fn install_modrinth_modpack_inner(
+    state: &AppState,
+    modpack_id: &str,
+    version_id: &str,
+    instance_name: Option<String>,
+    app_handle: Option<&AppHandle>,
+    cancel_token: Option<&CancellationToken>,
+    task_id: &str,
+) -> Result<Instance, AppError> {
     // Get modpack info
     println!("[modpack_install] Fetching modpack info...");
     let modpack = modrinth_service::get_modpack(&state.http_client, modpack_id).await?;
@@ -263,6 +319,19 @@ pub async fn install_modrinth_modpack(
             speed,
         );
 
+        // Update task registry progress
+        state.task_registry.update_progress(
+            task_id,
+            crate::task_registry::TaskProgress {
+                current: downloaded_bytes,
+                total: total_bytes,
+                percent: Some(25.0 + ((i as f64 * 70.0) / total_files.max(1) as f64)),
+                speed_bytes_per_sec: Some(speed),
+                current_item: Some(filename.to_string()),
+                stage: Some("Downloading mods".to_string()),
+            },
+        );
+
         // Determine file destination
         let dest_path = game_dir.join(&file_entry.path);
         if let Some(parent) = dest_path.parent() {
@@ -305,6 +374,9 @@ pub async fn install_modrinth_modpack(
                 0,
                 0,
             );
+            state
+                .task_registry
+                .update_stage(task_id, "Installing mod loader".to_string());
 
             loader_service::install_loader(
                 &game_dir,
@@ -358,12 +430,61 @@ pub async fn install_curseforge_modpack(
     instance_name: Option<String>,
     app_handle: Option<&AppHandle>,
     cancel_token: Option<&CancellationToken>,
+    queue_id: Option<&str>,
 ) -> Result<Instance, AppError> {
     println!(
         "[modpack_install] install_curseforge_modpack: modpack_id={}, version_id={}",
         modpack_id, version_id
     );
 
+    // Register task in the task registry (reuses queue_id if provided)
+    let task_id = queue_id
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    state.task_registry.register(
+        task_id.clone(),
+        crate::task_registry::TaskType::ModpackInstall,
+        instance_name.as_deref().unwrap_or("Modpack").to_string(),
+        None,
+        cancel_token.cloned(),
+    );
+    state.task_registry.start(&task_id);
+
+    let result = install_curseforge_modpack_inner(
+        state,
+        modpack_id,
+        version_id,
+        instance_name,
+        app_handle,
+        cancel_token,
+        &task_id,
+    )
+    .await;
+
+    match &result {
+        Ok(_) => state.task_registry.complete(&task_id),
+        Err(e) => {
+            if matches!(e, AppError::Cancelled) {
+                state.task_registry.cancel(&task_id);
+            } else {
+                state.task_registry.fail(&task_id, e.to_string());
+            }
+        }
+    }
+
+    result
+}
+
+/// Inner function for CurseForge modpack installation
+async fn install_curseforge_modpack_inner(
+    state: &AppState,
+    modpack_id: &str,
+    version_id: &str,
+    instance_name: Option<String>,
+    app_handle: Option<&AppHandle>,
+    cancel_token: Option<&CancellationToken>,
+    task_id: &str,
+) -> Result<Instance, AppError> {
     let api_key = state.get_settings().curseforge_api_key.ok_or_else(|| {
         println!("[modpack_install] CurseForge API key not configured");
         AppError::ApiError("CurseForge API key not configured".to_string())
@@ -545,6 +666,19 @@ pub async fn install_curseforge_modpack(
             speed,
         );
 
+        // Update task registry progress
+        state.task_registry.update_progress(
+            task_id,
+            crate::task_registry::TaskProgress {
+                current: downloaded_bytes,
+                total: total_bytes,
+                percent: Some(25.0 + ((i as f64 * 70.0) / total_files.max(1) as f64)),
+                speed_bytes_per_sec: Some(speed),
+                current_item: Some(format!("Mod {}/{}", i + 1, total_files)),
+                stage: Some("Downloading mods".to_string()),
+            },
+        );
+
         // Get file info from CurseForge API
         let file_info = curseforge_service::get_mod_file(
             &state.http_client,
@@ -577,6 +711,9 @@ pub async fn install_curseforge_modpack(
                 0,
                 0,
             );
+            state
+                .task_registry
+                .update_stage(task_id, "Installing mod loader".to_string());
 
             loader_service::install_loader(
                 &game_dir,
@@ -959,6 +1096,51 @@ pub async fn import_from_mrpack_file(
         file_path
     );
 
+    // Register task in the task registry
+    let task_id = Uuid::new_v4().to_string();
+    state.task_registry.register(
+        task_id.clone(),
+        crate::task_registry::TaskType::ModpackImport,
+        "Importing modpack from file".to_string(),
+        None,
+        None,
+    );
+    state.task_registry.start(&task_id);
+
+    let result =
+        import_from_mrpack_file_inner(state, file_path, instance_name, app_handle, &task_id).await;
+
+    match &result {
+        Ok(instance) => {
+            state.task_registry.complete(&task_id);
+            println!(
+                "[modpack_install] Task {} completed for instance {}",
+                task_id, instance.id
+            );
+        }
+        Err(e) => {
+            if matches!(e, AppError::Cancelled) {
+                state.task_registry.cancel(&task_id);
+            } else {
+                state.task_registry.fail(&task_id, e.to_string());
+            }
+        }
+    }
+
+    result
+}
+
+/// Inner function for .mrpack file import
+async fn import_from_mrpack_file_inner(
+    state: &AppState,
+    file_path: &str,
+    instance_name: Option<String>,
+    app_handle: Option<&AppHandle>,
+    task_id: &str,
+) -> Result<Instance, AppError> {
+    state
+        .task_registry
+        .update_stage(task_id, "Reading modpack file".to_string());
     emit_progress(app_handle, "Reading modpack file", 0, None, 0, 0);
 
     // Read the mrpack file from disk
@@ -1015,6 +1197,9 @@ pub async fn import_from_mrpack_file(
     );
 
     // Create instance
+    state
+        .task_registry
+        .update_stage(task_id, "Creating instance".to_string());
     let pack_name = index.name.clone();
     let instance_name = instance_name.unwrap_or(pack_name);
     let instance_id = Uuid::new_v4().to_string();
@@ -1084,6 +1269,9 @@ pub async fn import_from_mrpack_file(
     extract_overrides(&mut archive, &game_dir, "client-overrides")?;
 
     // Download mod files with progress tracking
+    state
+        .task_registry
+        .update_stage(task_id, "Downloading files".to_string());
     let total_files = index.files.len() as u32;
     let total_bytes: u64 = index.files.iter().map(|f| f.file_size).sum();
     let mut downloaded_bytes: u64 = 0;
@@ -1170,6 +1358,9 @@ pub async fn import_from_mrpack_file(
                 0,
                 0,
             );
+            state
+                .task_registry
+                .update_stage(task_id, "Installing loader".to_string());
 
             loader_service::install_loader(
                 &game_dir,
@@ -1228,6 +1419,59 @@ pub async fn import_curseforge_zip_file(
         file_path.display()
     );
 
+    // Register task in the task registry
+    let task_id = Uuid::new_v4().to_string();
+    state.task_registry.register(
+        task_id.clone(),
+        crate::task_registry::TaskType::ModpackImport,
+        "Importing CurseForge modpack from file".to_string(),
+        None,
+        cancel_token.cloned(),
+    );
+    state.task_registry.start(&task_id);
+
+    let result = import_curseforge_zip_file_inner(
+        state,
+        file_path,
+        instance_name,
+        app_handle,
+        cancel_token,
+        &task_id,
+    )
+    .await;
+
+    match &result {
+        Ok(instance) => {
+            state.task_registry.complete(&task_id);
+            println!(
+                "[modpack_install] Task {} completed for instance {}",
+                task_id, instance.id
+            );
+        }
+        Err(e) => {
+            if matches!(e, AppError::Cancelled) {
+                state.task_registry.cancel(&task_id);
+            } else {
+                state.task_registry.fail(&task_id, e.to_string());
+            }
+        }
+    }
+
+    result
+}
+
+/// Inner function for CurseForge .zip file import
+async fn import_curseforge_zip_file_inner(
+    state: &AppState,
+    file_path: &std::path::Path,
+    instance_name: Option<String>,
+    app_handle: Option<&AppHandle>,
+    cancel_token: Option<&CancellationToken>,
+    task_id: &str,
+) -> Result<Instance, AppError> {
+    state
+        .task_registry
+        .update_stage(task_id, "Reading modpack file".to_string());
     emit_progress(app_handle, "Reading modpack file", 0, None, 0, 0);
 
     // Verify file exists
@@ -1321,6 +1565,9 @@ pub async fn import_curseforge_zip_file(
     );
 
     // Create instance
+    state
+        .task_registry
+        .update_stage(task_id, "Creating instance".to_string());
     let pack_name = manifest.name.clone();
     let instance_name = instance_name.unwrap_or(pack_name);
     let instance_id = Uuid::new_v4().to_string();
@@ -1394,6 +1641,9 @@ pub async fn import_curseforge_zip_file(
     extract_overrides(&mut archive, &game_dir, overrides_folder)?;
 
     // Download mod files from CurseForge API
+    state
+        .task_registry
+        .update_stage(task_id, "Downloading files".to_string());
     let api_key = state.get_settings().curseforge_api_key;
     if api_key.is_none() && !manifest.files.is_empty() {
         // Clean up instance since we can't download mods
@@ -1484,6 +1734,9 @@ pub async fn import_curseforge_zip_file(
                 0,
                 0,
             );
+            state
+                .task_registry
+                .update_stage(task_id, "Installing loader".to_string());
 
             loader_service::install_loader(
                 &game_dir,
@@ -2094,12 +2347,61 @@ pub async fn install_ftb_modpack(
     instance_name: Option<String>,
     app_handle: Option<&AppHandle>,
     cancel_token: Option<&CancellationToken>,
+    queue_id: Option<&str>,
 ) -> Result<Instance, AppError> {
     println!(
         "[modpack_install] install_ftb_modpack: modpack_id={}, version_id={}",
         modpack_id, version_id
     );
 
+    // Register task in the task registry (reuses queue_id if provided)
+    let task_id = queue_id
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    state.task_registry.register(
+        task_id.clone(),
+        crate::task_registry::TaskType::ModpackInstall,
+        instance_name.as_deref().unwrap_or("Modpack").to_string(),
+        None,
+        cancel_token.cloned(),
+    );
+    state.task_registry.start(&task_id);
+
+    let result = install_ftb_modpack_inner(
+        state,
+        modpack_id,
+        version_id,
+        instance_name,
+        app_handle,
+        cancel_token,
+        &task_id,
+    )
+    .await;
+
+    match &result {
+        Ok(_) => state.task_registry.complete(&task_id),
+        Err(e) => {
+            if matches!(e, AppError::Cancelled) {
+                state.task_registry.cancel(&task_id);
+            } else {
+                state.task_registry.fail(&task_id, e.to_string());
+            }
+        }
+    }
+
+    result
+}
+
+/// Inner function for FTB modpack installation
+async fn install_ftb_modpack_inner(
+    state: &AppState,
+    modpack_id: &str,
+    version_id: &str,
+    instance_name: Option<String>,
+    app_handle: Option<&AppHandle>,
+    cancel_token: Option<&CancellationToken>,
+    _task_id: &str,
+) -> Result<Instance, AppError> {
     emit_progress(app_handle, "Fetching modpack info", 0, None, 0, 0);
 
     // Get modpack info
@@ -2428,12 +2730,61 @@ pub async fn install_technic_modpack(
     instance_name: Option<String>,
     app_handle: Option<&AppHandle>,
     cancel_token: Option<&CancellationToken>,
+    queue_id: Option<&str>,
 ) -> Result<Instance, AppError> {
     println!(
         "[modpack_install] install_technic_modpack: modpack_id={}, version_id={}",
         modpack_id, version_id
     );
 
+    // Register task in the task registry (reuses queue_id if provided)
+    let task_id = queue_id
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    state.task_registry.register(
+        task_id.clone(),
+        crate::task_registry::TaskType::ModpackInstall,
+        instance_name.as_deref().unwrap_or("Modpack").to_string(),
+        None,
+        cancel_token.cloned(),
+    );
+    state.task_registry.start(&task_id);
+
+    let result = install_technic_modpack_inner(
+        state,
+        modpack_id,
+        version_id,
+        instance_name,
+        app_handle,
+        cancel_token,
+        &task_id,
+    )
+    .await;
+
+    match &result {
+        Ok(_) => state.task_registry.complete(&task_id),
+        Err(e) => {
+            if matches!(e, AppError::Cancelled) {
+                state.task_registry.cancel(&task_id);
+            } else {
+                state.task_registry.fail(&task_id, e.to_string());
+            }
+        }
+    }
+
+    result
+}
+
+/// Inner function for Technic modpack installation
+async fn install_technic_modpack_inner(
+    state: &AppState,
+    modpack_id: &str,
+    version_id: &str,
+    instance_name: Option<String>,
+    app_handle: Option<&AppHandle>,
+    cancel_token: Option<&CancellationToken>,
+    _task_id: &str,
+) -> Result<Instance, AppError> {
     emit_progress(app_handle, "Fetching modpack info", 0, None, 0, 0);
 
     // Get full modpack info (includes solder URL if available)
@@ -2828,12 +3179,61 @@ pub async fn install_atlauncher_modpack(
     instance_name: Option<String>,
     app_handle: Option<&AppHandle>,
     cancel_token: Option<&CancellationToken>,
+    queue_id: Option<&str>,
 ) -> Result<Instance, AppError> {
     println!(
         "[modpack_install] install_atlauncher_modpack: modpack_id={}, version_id={}",
         modpack_id, version_id
     );
 
+    // Register task in the task registry (reuses queue_id if provided)
+    let task_id = queue_id
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    state.task_registry.register(
+        task_id.clone(),
+        crate::task_registry::TaskType::ModpackInstall,
+        instance_name.as_deref().unwrap_or("Modpack").to_string(),
+        None,
+        cancel_token.cloned(),
+    );
+    state.task_registry.start(&task_id);
+
+    let result = install_atlauncher_modpack_inner(
+        state,
+        modpack_id,
+        version_id,
+        instance_name,
+        app_handle,
+        cancel_token,
+        &task_id,
+    )
+    .await;
+
+    match &result {
+        Ok(_) => state.task_registry.complete(&task_id),
+        Err(e) => {
+            if matches!(e, AppError::Cancelled) {
+                state.task_registry.cancel(&task_id);
+            } else {
+                state.task_registry.fail(&task_id, e.to_string());
+            }
+        }
+    }
+
+    result
+}
+
+/// Inner function for ATLauncher modpack installation
+async fn install_atlauncher_modpack_inner(
+    state: &AppState,
+    modpack_id: &str,
+    version_id: &str,
+    instance_name: Option<String>,
+    app_handle: Option<&AppHandle>,
+    cancel_token: Option<&CancellationToken>,
+    _task_id: &str,
+) -> Result<Instance, AppError> {
     emit_progress(app_handle, "Fetching modpack info", 0, None, 0, 0);
 
     // Get pack safe name from CDN (needed for Configs.json URL)

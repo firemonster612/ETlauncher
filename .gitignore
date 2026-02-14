@@ -19,6 +19,7 @@ vite.config.ts.timestamp-*
 # Editor files
 *.swp
 *.swo
+*.kate-swp
 *~
 .idea/
 
