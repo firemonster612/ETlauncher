@@ -505,11 +505,72 @@ pub async fn hide_cape(client: &Client, access_token: &str) -> Result<(), AppErr
 }
 
 // Token storage operations
-// Uses file-based storage as keyring can be unreliable across Linux distros
+// Uses the OS keyring/credential store for secure token storage:
+// - macOS: Keychain
+// - Windows: Credential Manager
+// - Linux: Secret Service (GNOME Keyring / KDE Wallet)
+//
+// When the OS keyring is unavailable (e.g. no Secret Service on a minimal
+// Linux compositor like niri), tokens fall back to a plaintext JSON file.
+// This still works but is insecure — the user is warned via a banner.
 
 use crate::utils::paths::get_app_data_dir;
 use std::collections::HashMap;
-use std::fs;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+const KEYRING_SERVICE: &str = "etlauncher";
+
+/// Whether the OS keyring is available. Set once at startup by `check_keyring_available()`.
+static KEYRING_AVAILABLE: AtomicBool = AtomicBool::new(true);
+
+/// Check whether the OS keyring is functional by attempting a write/read/delete cycle.
+/// Must be called once at startup before any token operations.
+pub fn check_keyring_available() {
+    let probe_result = (|| -> Result<(), keyring::Error> {
+        let entry = keyring::Entry::new(KEYRING_SERVICE, "etlauncher:probe")?;
+        entry.set_password("probe")?;
+        let _ = entry.get_password()?;
+        entry.delete_credential()?;
+        Ok(())
+    })();
+
+    match probe_result {
+        Ok(()) => {
+            KEYRING_AVAILABLE.store(true, Ordering::Relaxed);
+            eprintln!("[keyring] OS keyring is available.");
+        }
+        Err(e) => {
+            KEYRING_AVAILABLE.store(false, Ordering::Relaxed);
+            eprintln!(
+                "[keyring] OS keyring is NOT available ({}). \
+                 Tokens will be stored in a plaintext file (insecure). \
+                 Install a Secret Service provider (e.g. gnome-keyring-daemon) for secure storage.",
+                e
+            );
+        }
+    }
+}
+
+/// Returns whether the OS keyring is available for secure persistent storage.
+pub fn is_keyring_available() -> bool {
+    KEYRING_AVAILABLE.load(Ordering::Relaxed)
+}
+
+// --- Keyring helpers ---
+
+/// Get a keyring entry for a specific account token
+fn keyring_entry(account_id: &str, token_type: &str) -> Result<keyring::Entry, AppError> {
+    let user = format!("{}:{}", account_id, token_type);
+    keyring::Entry::new(KEYRING_SERVICE, &user).map_err(|e| {
+        AppError::KeyringError(format!(
+            "Failed to create keyring entry for {}: {}",
+            token_type, e
+        ))
+    })
+}
+
+// --- Plaintext file fallback (insecure) ---
+
 use std::path::PathBuf;
 
 fn get_tokens_file_path() -> PathBuf {
@@ -517,63 +578,103 @@ fn get_tokens_file_path() -> PathBuf {
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Default)]
-struct TokenStore {
-    tokens: HashMap<String, StoredTokens>,
+struct FileTokenStore {
+    tokens: HashMap<String, FileStoredTokens>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
-struct StoredTokens {
+struct FileStoredTokens {
     refresh_token: String,
     access_token: String,
 }
 
-fn load_token_store() -> TokenStore {
+fn load_file_token_store() -> FileTokenStore {
     let path = get_tokens_file_path();
     if path.exists() {
-        if let Ok(content) = fs::read_to_string(&path) {
+        if let Ok(content) = std::fs::read_to_string(&path) {
             if let Ok(store) = serde_json::from_str(&content) {
                 return store;
             }
         }
     }
-    TokenStore::default()
+    FileTokenStore::default()
 }
 
-fn save_token_store(store: &TokenStore) -> Result<(), AppError> {
+fn save_file_token_store(store: &FileTokenStore) -> Result<(), AppError> {
     let path = get_tokens_file_path();
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+        std::fs::create_dir_all(parent)?;
     }
     let content = serde_json::to_string_pretty(store)?;
-    fs::write(&path, content)?;
+    std::fs::write(&path, content)?;
     Ok(())
 }
+
+// --- Token operations (keyring with file fallback) ---
 
 fn store_tokens(
     account_id: &str,
     refresh_token: &str,
     mc_access_token: &str,
 ) -> Result<(), AppError> {
-    eprintln!("Storing tokens for account: {}", account_id);
+    if KEYRING_AVAILABLE.load(Ordering::Relaxed) {
+        let refresh_result = keyring_entry(account_id, "refresh").and_then(|e| {
+            e.set_password(refresh_token).map_err(|e| {
+                AppError::KeyringError(format!("Failed to store refresh token: {}", e))
+            })
+        });
 
-    let mut store = load_token_store();
+        let access_result = keyring_entry(account_id, "access").and_then(|e| {
+            e.set_password(mc_access_token)
+                .map_err(|e| AppError::KeyringError(format!("Failed to store access token: {}", e)))
+        });
+
+        if refresh_result.is_ok() && access_result.is_ok() {
+            eprintln!("Tokens stored in OS keyring for account: {}", account_id);
+            return Ok(());
+        }
+
+        // Keyring failed unexpectedly — fall through to file
+        eprintln!(
+            "[keyring] Keyring write failed, falling back to plaintext file for account: {}",
+            account_id
+        );
+        KEYRING_AVAILABLE.store(false, Ordering::Relaxed);
+    }
+
+    // Plaintext file fallback
+    let mut store = load_file_token_store();
     store.tokens.insert(
         account_id.to_string(),
-        StoredTokens {
+        FileStoredTokens {
             refresh_token: refresh_token.to_string(),
             access_token: mc_access_token.to_string(),
         },
     );
-    save_token_store(&store)?;
-
-    eprintln!("Tokens stored successfully for account: {}", account_id);
+    save_file_token_store(&store)?;
+    eprintln!(
+        "Tokens stored in plaintext file (insecure) for account: {}",
+        account_id
+    );
     Ok(())
 }
 
 fn get_refresh_token(account_id: &str) -> Result<String, AppError> {
-    eprintln!("Getting refresh token for account: {}", account_id);
+    if KEYRING_AVAILABLE.load(Ordering::Relaxed) {
+        if let Ok(token) = keyring_entry(account_id, "refresh").and_then(|e| {
+            e.get_password().map_err(|e| match e {
+                keyring::Error::NoEntry => {
+                    AppError::KeyringError("No refresh token found".to_string())
+                }
+                other => AppError::KeyringError(format!("Failed to get refresh token: {}", other)),
+            })
+        }) {
+            return Ok(token);
+        }
+    }
 
-    let store = load_token_store();
+    // File fallback
+    let store = load_file_token_store();
     store
         .tokens
         .get(account_id)
@@ -582,9 +683,21 @@ fn get_refresh_token(account_id: &str) -> Result<String, AppError> {
 }
 
 pub fn get_access_token(account_id: &str) -> Result<String, AppError> {
-    eprintln!("Getting access token for account: {}", account_id);
+    if KEYRING_AVAILABLE.load(Ordering::Relaxed) {
+        if let Ok(token) = keyring_entry(account_id, "access").and_then(|e| {
+            e.get_password().map_err(|e| match e {
+                keyring::Error::NoEntry => {
+                    AppError::KeyringError("No access token found".to_string())
+                }
+                other => AppError::KeyringError(format!("Failed to get access token: {}", other)),
+            })
+        }) {
+            return Ok(token);
+        }
+    }
 
-    let store = load_token_store();
+    // File fallback
+    let store = load_file_token_store();
     store
         .tokens
         .get(account_id)
@@ -593,11 +706,102 @@ pub fn get_access_token(account_id: &str) -> Result<String, AppError> {
 }
 
 pub fn delete_tokens(account_id: &str) -> Result<(), AppError> {
-    eprintln!("Deleting tokens for account: {}", account_id);
+    // Delete from keyring if available
+    if KEYRING_AVAILABLE.load(Ordering::Relaxed) {
+        for token_type in &["refresh", "access"] {
+            if let Ok(entry) = keyring_entry(account_id, token_type) {
+                match entry.delete_credential() {
+                    Ok(()) | Err(keyring::Error::NoEntry) => {}
+                    Err(e) => {
+                        eprintln!(
+                            "[keyring] Warning: Failed to delete {} token from keyring: {}",
+                            token_type, e
+                        );
+                    }
+                }
+            }
+        }
+    }
 
-    let mut store = load_token_store();
-    store.tokens.remove(account_id);
-    save_token_store(&store)?;
+    // Always remove from file fallback too
+    let mut store = load_file_token_store();
+    if store.tokens.remove(account_id).is_some() {
+        save_file_token_store(&store)?;
+    }
 
     Ok(())
+}
+
+// --- Migration: plaintext file -> keyring ---
+
+/// Migrate tokens from the plaintext tokens.json file into the OS keyring.
+/// On startup, if the keyring is available and tokens.json exists, each token
+/// is moved into the keyring and the file is deleted.
+/// If the keyring is NOT available, tokens.json is left in place and used directly.
+pub fn migrate_tokens_to_keyring() {
+    if !is_keyring_available() {
+        // No keyring — file will be used as-is, nothing to migrate
+        return;
+    }
+
+    let tokens_path = get_tokens_file_path();
+    if !tokens_path.exists() {
+        return;
+    }
+
+    let content = match std::fs::read_to_string(&tokens_path) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+
+    let store: FileTokenStore = match serde_json::from_str(&content) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+
+    if store.tokens.is_empty() {
+        let _ = std::fs::remove_file(&tokens_path);
+        return;
+    }
+
+    eprintln!(
+        "Migrating {} account(s) from tokens.json to OS keyring...",
+        store.tokens.len()
+    );
+
+    let mut all_migrated = true;
+    for (account_id, tokens) in &store.tokens {
+        // Write directly to keyring (not through store_tokens, to avoid file fallback)
+        let refresh_ok = keyring_entry(account_id, "refresh")
+            .and_then(|e| {
+                e.set_password(&tokens.refresh_token)
+                    .map_err(|e| AppError::KeyringError(e.to_string()))
+            })
+            .is_ok();
+
+        let access_ok = keyring_entry(account_id, "access")
+            .and_then(|e| {
+                e.set_password(&tokens.access_token)
+                    .map_err(|e| AppError::KeyringError(e.to_string()))
+            })
+            .is_ok();
+
+        if !refresh_ok || !access_ok {
+            eprintln!(
+                "Warning: Failed to migrate tokens for account {}",
+                account_id
+            );
+            all_migrated = false;
+        }
+    }
+
+    if all_migrated {
+        if let Err(e) = std::fs::remove_file(&tokens_path) {
+            eprintln!("Warning: Could not remove old tokens.json: {}", e);
+        } else {
+            eprintln!("Migration complete — tokens.json removed.");
+        }
+    } else {
+        eprintln!("Warning: Some tokens could not be migrated. tokens.json kept as fallback.");
+    }
 }

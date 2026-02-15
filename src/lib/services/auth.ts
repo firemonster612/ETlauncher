@@ -62,6 +62,11 @@ export async function getOfflineCapeData(accountId: string): Promise<string | nu
 	return invoke<string | null>('get_offline_cape_data', { accountId });
 }
 
+/** Check if the OS keyring is available for secure token storage */
+export async function isKeyringAvailable(): Promise<boolean> {
+	return invoke<boolean>('is_keyring_available');
+}
+
 /** Get a bundled default skin (steve or alex) as raw PNG bytes */
 export async function getDefaultSkin(name: 'steve' | 'alex'): Promise<Uint8Array> {
 	const data = await invoke<number[]>('get_default_skin', { name });
