@@ -39,7 +39,12 @@ reqwest = { version = "0.12", features = [
 tokio = { version = "1", features = ["full"] }
 
 # Secure credential storage
-keyring = "3"
+# Platform backends: macOS Keychain, Windows Credential Manager, Linux Secret Service
+keyring = { version = "3", features = [
+  "apple-native",
+  "windows-native",
+  "sync-secret-service",
+] }
 
 # UUID generation
 uuid = { version = "1", features = ["v4", "serde"] }

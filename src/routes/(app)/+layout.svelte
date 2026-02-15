@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { listen } from '@tauri-apps/api/event';
 	import { onMount } from 'svelte';
+	import KeyringWarningBanner from '$lib/components/KeyringWarningBanner.svelte';
 	import LaunchingDialog from '$lib/components/LaunchingDialog.svelte';
 	import AppSidebar from '$lib/components/layout/AppSidebar.svelte';
 	import SidebarTasks from '$lib/components/layout/SidebarTasks.svelte';
@@ -61,6 +62,7 @@
 
 <AppSidebar />
 <SidebarInset class="overflow-hidden">
+	<KeyringWarningBanner />
 	<UpgradeSuccessBanner />
 	<main class="flex-1 overflow-x-hidden overflow-y-auto p-6">
 		{@render children()}

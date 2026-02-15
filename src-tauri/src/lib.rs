@@ -22,6 +22,12 @@ pub fn run() {
         eprintln!("Failed to create data directories: {}", e);
     }
 
+    // Check if OS keyring is available (sets global flag for fallback behavior)
+    services::auth_service::check_keyring_available();
+
+    // Migrate tokens from plaintext file to OS keyring (or memory if unavailable)
+    services::auth_service::migrate_tokens_to_keyring();
+
     // Create application state
     let app_state = AppState::new();
 
@@ -140,6 +146,7 @@ pub fn run() {
             commands::auth::remove_offline_cape,
             commands::auth::get_offline_skin_data,
             commands::auth::get_offline_cape_data,
+            commands::auth::is_keyring_available,
             commands::auth::get_default_skin,
             // Account commands
             commands::account::get_accounts,

@@ -80,6 +80,13 @@ pub fn remove_offline_cape(account_id: String) -> Result<(), CommandError> {
     account_service::remove_offline_cape(&account_id).map_err(CommandError::from)
 }
 
+/// Check if the OS keyring is available for secure token storage.
+/// Returns false if tokens are only stored in memory (won't persist across restarts).
+#[tauri::command]
+pub fn is_keyring_available() -> bool {
+    auth_service::is_keyring_available()
+}
+
 /// Get a bundled default skin (steve or alex) as raw PNG bytes
 #[tauri::command]
 pub fn get_default_skin(name: String) -> Result<Vec<u8>, CommandError> {
