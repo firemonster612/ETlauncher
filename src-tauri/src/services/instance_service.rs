@@ -12,7 +12,7 @@ use crate::utils::paths::{
     get_instance_dir_with_base, get_instance_game_dir_with_base, get_instances_dir_with_base,
 };
 use chrono::Utc;
-use rand::Rng;
+use rand::RngExt;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::PathBuf;
