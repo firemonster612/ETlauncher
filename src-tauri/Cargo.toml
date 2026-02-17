@@ -109,6 +109,7 @@ rsa = { version = "0.9", features = ["sha1", "pkcs5"] }
 
 # Directory traversal
 walkdir = "2"
+tauri-plugin-clipboard-manager = "2.3.2"
 
 # Windows-specific dependencies
 [target.'cfg(windows)'.dependencies]

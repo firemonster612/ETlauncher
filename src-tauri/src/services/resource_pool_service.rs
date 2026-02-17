@@ -3,6 +3,8 @@
 //! This service manages a central pool of mods, shaders, and resource packs,
 //! allowing multiple instances to share the same files through hard links or symlinks.
 
+use crate::app_error;
+use crate::app_info;
 use crate::error::AppError;
 use crate::models::resource_pool::{
     GarbageCollectionResult, LinkResult, LinkStrategy, PooledResource, ResourcePoolIndex,
@@ -538,14 +540,15 @@ pub fn maybe_run_gc_background(state: &AppState) {
     match garbage_collect(state) {
         Ok(result) => {
             if result.resources_removed > 0 {
-                println!(
+                app_info!(
                     "[resource_pool] Auto GC: removed {} unused resources, freed {} bytes",
-                    result.resources_removed, result.bytes_freed
+                    result.resources_removed,
+                    result.bytes_freed
                 );
             }
         }
         Err(e) => {
-            eprintln!("[resource_pool] Auto GC failed: {}", e);
+            app_error!("[resource_pool] Auto GC failed: {}", e);
         }
     }
 }

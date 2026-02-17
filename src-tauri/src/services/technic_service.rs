@@ -1,3 +1,4 @@
+use crate::app_error;
 use crate::error::AppError;
 use crate::models::instance::ModpackPlatform;
 use crate::models::{
@@ -341,15 +342,16 @@ pub async fn get_modpack_versions(
         match get_solder_versions(client, solder_url, slug).await {
             Ok(versions) if !versions.is_empty() => return Ok(versions),
             Ok(_) => {
-                eprintln!(
+                app_error!(
                     "[technic] Solder returned empty for {}, using Latest fallback",
                     slug
                 );
             }
             Err(e) => {
-                eprintln!(
+                app_error!(
                     "[technic] Solder failed for {}: {}, using Latest fallback",
-                    slug, e
+                    slug,
+                    e
                 );
             }
         }

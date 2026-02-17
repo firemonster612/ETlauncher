@@ -1,3 +1,4 @@
+use crate::app_error;
 use crate::error::AppError;
 use crate::models::instance::{DownloadProgress, LoaderType};
 use crate::models::minecraft::{
@@ -508,7 +509,7 @@ pub async fn download_game_files_with_version(
                         // (e.g. Forge installer processor output like forge-*-client.jar).
                         // These must already exist in the game directory from the installer.
                         // Do NOT try to download them from Maven repos.
-                        eprintln!(
+                        app_error!(
                             "WARN: Skipping library {} — empty URL, expected as local installer artifact",
                             library.name
                         );

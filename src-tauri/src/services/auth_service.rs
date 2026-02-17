@@ -1,3 +1,5 @@
+use crate::app_error;
+use crate::app_info;
 use crate::error::AppError;
 use crate::models::{AuthPollStatus, DeviceCodeResponse, MinecraftAccount, MinecraftProfile};
 use reqwest::Client;
@@ -537,11 +539,11 @@ pub fn check_keyring_available() {
     match probe_result {
         Ok(()) => {
             KEYRING_AVAILABLE.store(true, Ordering::Relaxed);
-            eprintln!("[keyring] OS keyring is available.");
+            app_info!("[keyring] OS keyring is available.");
         }
         Err(e) => {
             KEYRING_AVAILABLE.store(false, Ordering::Relaxed);
-            eprintln!(
+            app_error!(
                 "[keyring] OS keyring is NOT available ({}). \
                  Tokens will be stored in a plaintext file (insecure). \
                  Install a Secret Service provider (e.g. gnome-keyring-daemon) for secure storage.",
@@ -630,12 +632,12 @@ fn store_tokens(
         });
 
         if refresh_result.is_ok() && access_result.is_ok() {
-            eprintln!("Tokens stored in OS keyring for account: {}", account_id);
+            app_info!("Tokens stored in OS keyring for account: {}", account_id);
             return Ok(());
         }
 
         // Keyring failed unexpectedly — fall through to file
-        eprintln!(
+        app_error!(
             "[keyring] Keyring write failed, falling back to plaintext file for account: {}",
             account_id
         );
@@ -652,7 +654,7 @@ fn store_tokens(
         },
     );
     save_file_token_store(&store)?;
-    eprintln!(
+    app_error!(
         "Tokens stored in plaintext file (insecure) for account: {}",
         account_id
     );
@@ -713,9 +715,10 @@ pub fn delete_tokens(account_id: &str) -> Result<(), AppError> {
                 match entry.delete_credential() {
                     Ok(()) | Err(keyring::Error::NoEntry) => {}
                     Err(e) => {
-                        eprintln!(
+                        app_error!(
                             "[keyring] Warning: Failed to delete {} token from keyring: {}",
-                            token_type, e
+                            token_type,
+                            e
                         );
                     }
                 }
@@ -764,7 +767,7 @@ pub fn migrate_tokens_to_keyring() {
         return;
     }
 
-    eprintln!(
+    app_info!(
         "Migrating {} account(s) from tokens.json to OS keyring...",
         store.tokens.len()
     );
@@ -787,7 +790,7 @@ pub fn migrate_tokens_to_keyring() {
             .is_ok();
 
         if !refresh_ok || !access_ok {
-            eprintln!(
+            app_error!(
                 "Warning: Failed to migrate tokens for account {}",
                 account_id
             );
@@ -797,11 +800,11 @@ pub fn migrate_tokens_to_keyring() {
 
     if all_migrated {
         if let Err(e) = std::fs::remove_file(&tokens_path) {
-            eprintln!("Warning: Could not remove old tokens.json: {}", e);
+            app_error!("Warning: Could not remove old tokens.json: {}", e);
         } else {
-            eprintln!("Migration complete — tokens.json removed.");
+            app_info!("Migration complete — tokens.json removed.");
         }
     } else {
-        eprintln!("Warning: Some tokens could not be migrated. tokens.json kept as fallback.");
+        app_error!("Warning: Some tokens could not be migrated. tokens.json kept as fallback.");
     }
 }

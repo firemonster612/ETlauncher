@@ -1,3 +1,4 @@
+use crate::app_error;
 use crate::error::AppError;
 use crate::models::{Instance, LoaderType};
 use crate::services::{
@@ -594,7 +595,7 @@ pub async fn import_vanilla_minecraft(
             .task_registry
             .update_stage(&task_id, "Scanning content".to_string());
         if let Err(e) = scan_and_identify_imported_content(state, &instance_id, app_handle).await {
-            eprintln!(
+            app_error!(
                 "[import] Warning: Failed to identify imported content: {}",
                 e
             );
@@ -778,7 +779,7 @@ pub async fn import_multimc_prism(
             .task_registry
             .update_stage(&task_id, "Scanning content".to_string());
         if let Err(e) = scan_and_identify_imported_content(state, &instance_id, app_handle).await {
-            eprintln!(
+            app_error!(
                 "[import] Warning: Failed to identify imported content: {}",
                 e
             );

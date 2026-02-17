@@ -1,3 +1,4 @@
+use crate::app_info;
 use crate::cache::hash_params;
 use crate::error::CommandError;
 use crate::models::instance::ModpackPlatform;
@@ -36,9 +37,10 @@ pub async fn search_modpacks(
     state: State<'_, AppState>,
     params: ModpackSearchParams,
 ) -> Result<ModpackSearchResult, CommandError> {
-    println!(
+    app_info!(
         "[modpack_cmd] search_modpacks: platform={:?}, query={:?}",
-        params.platform, params.query
+        params.platform,
+        params.query
     );
 
     // Check cache first
@@ -88,7 +90,7 @@ pub async fn search_modpacks(
         search_all_platforms(&state, &params).await?
     };
 
-    println!(
+    app_info!(
         "[modpack_cmd] search_modpacks: success, count={}",
         result.modpacks.len()
     );
@@ -147,35 +149,35 @@ async fn search_all_platforms(
     let mut total_count: u64 = 0;
 
     if let Ok(result) = results.0 {
-        println!("[modpack_cmd] Modrinth: {} packs", result.modpacks.len());
+        app_info!("[modpack_cmd] Modrinth: {} packs", result.modpacks.len());
         total_count += result.total_count;
         modrinth_modpacks = result.modpacks;
     } else if let Err(e) = &results.0 {
-        println!("[modpack_cmd] Modrinth error: {:?}", e);
+        app_info!("[modpack_cmd] Modrinth error: {:?}", e);
     }
 
     if let Ok(result) = results.1 {
-        println!("[modpack_cmd] FTB: {} packs", result.modpacks.len());
+        app_info!("[modpack_cmd] FTB: {} packs", result.modpacks.len());
         total_count += result.total_count;
         ftb_modpacks = result.modpacks;
     } else if let Err(e) = &results.1 {
-        println!("[modpack_cmd] FTB error: {:?}", e);
+        app_info!("[modpack_cmd] FTB error: {:?}", e);
     }
 
     if let Ok(result) = results.2 {
-        println!("[modpack_cmd] Technic: {} packs", result.modpacks.len());
+        app_info!("[modpack_cmd] Technic: {} packs", result.modpacks.len());
         total_count += result.total_count;
         technic_modpacks = result.modpacks;
     } else if let Err(e) = &results.2 {
-        println!("[modpack_cmd] Technic error: {:?}", e);
+        app_info!("[modpack_cmd] Technic error: {:?}", e);
     }
 
     if let Ok(result) = results.3 {
-        println!("[modpack_cmd] CurseForge: {} packs", result.modpacks.len());
+        app_info!("[modpack_cmd] CurseForge: {} packs", result.modpacks.len());
         total_count += result.total_count;
         curseforge_modpacks = result.modpacks;
     } else if let Err(e) = &results.3 {
-        println!("[modpack_cmd] CurseForge error: {:?}", e);
+        app_info!("[modpack_cmd] CurseForge error: {:?}", e);
     }
 
     let sort_by = params.sort_by.unwrap_or_default();
@@ -248,7 +250,7 @@ async fn search_all_platforms(
         }
     };
 
-    println!(
+    app_info!(
         "[modpack_cmd] All platforms total: {} packs",
         all_modpacks.len()
     );
@@ -274,9 +276,10 @@ pub async fn get_modpack(
         return Ok(cached);
     }
 
-    println!(
+    app_info!(
         "[modpack_cmd] get_modpack: platform={:?}, id={}",
-        platform, id
+        platform,
+        id
     );
     let result = match platform {
         ModpackPlatform::Modrinth => modrinth_service::get_modpack(&state.http_client, &id)
@@ -305,7 +308,7 @@ pub async fn get_modpack(
             .map_err(CommandError::from),
     }?;
 
-    println!("[modpack_cmd] get_modpack: success, name={}", result.name);
+    app_info!("[modpack_cmd] get_modpack: success, name={}", result.name);
 
     // Store in cache
     state
@@ -329,9 +332,10 @@ pub async fn get_modpack_versions(
         return Ok(cached);
     }
 
-    println!(
+    app_info!(
         "[modpack_cmd] get_modpack_versions: platform={:?}, id={}",
-        platform, id
+        platform,
+        id
     );
     let result = match platform {
         ModpackPlatform::Modrinth => {
@@ -364,7 +368,7 @@ pub async fn get_modpack_versions(
         }
     }?;
 
-    println!(
+    app_info!(
         "[modpack_cmd] get_modpack_versions: success, count={}",
         result.len()
     );
@@ -386,9 +390,11 @@ pub async fn get_modpack_mods(
     modpack_id: String,
     version_id: String,
 ) -> Result<Vec<ModpackMod>, CommandError> {
-    println!(
+    app_info!(
         "[modpack_cmd] get_modpack_mods: platform={:?}, modpack_id={}, version_id={}",
-        platform, modpack_id, version_id
+        platform,
+        modpack_id,
+        version_id
     );
 
     let result = match platform {
@@ -428,11 +434,11 @@ pub async fn get_modpack_mods(
     };
 
     match &result {
-        Ok(mods) => println!(
+        Ok(mods) => app_info!(
             "[modpack_cmd] get_modpack_mods: success, count={}",
             mods.len()
         ),
-        Err(e) => println!("[modpack_cmd] get_modpack_mods: error={:?}", e),
+        Err(e) => app_info!("[modpack_cmd] get_modpack_mods: error={:?}", e),
     }
 
     result
@@ -448,7 +454,7 @@ pub async fn install_modpack(
     version_id: String,
     instance_name: Option<String>,
 ) -> Result<ModpackInstallQueued, CommandError> {
-    println!("[modpack_cmd] install_modpack: platform={:?}, modpack_id={}, version_id={}, instance_name={:?}",
+    app_info!("[modpack_cmd] install_modpack: platform={:?}, modpack_id={}, version_id={}, instance_name={:?}",
         platform, modpack_id, version_id, instance_name);
 
     let modpack_name = instance_name
@@ -609,18 +615,18 @@ async fn process_modpack_queue_impl(app_handle: AppHandle) {
             // Emit completion/error/cancel events
             match result {
                 Ok(instance) => {
-                    println!(
+                    app_info!(
                         "[modpack_cmd] install_modpack: success, instance_id={}",
                         instance.id
                     );
                     let _ = handle_clone.emit("modpack_install_complete", &instance);
                 }
                 Err(crate::error::AppError::Cancelled) => {
-                    println!("[modpack_cmd] install_modpack: cancelled");
+                    app_info!("[modpack_cmd] install_modpack: cancelled");
                     let _ = handle_clone.emit("modpack_install_cancelled", ());
                 }
                 Err(ref e) => {
-                    println!("[modpack_cmd] install_modpack: error={:?}", e);
+                    app_info!("[modpack_cmd] install_modpack: error={:?}", e);
                     let _ = handle_clone.emit("modpack_install_error", e.to_string());
                 }
             }
@@ -639,9 +645,10 @@ pub async fn import_modpack_file(
     file_path: String,
     instance_name: Option<String>,
 ) -> Result<Instance, CommandError> {
-    println!(
+    app_info!(
         "[modpack_cmd] import_modpack_file: file_path={}, instance_name={:?}",
-        file_path, instance_name
+        file_path,
+        instance_name
     );
 
     let result = modpack_install_service::import_from_mrpack_file(
@@ -654,11 +661,11 @@ pub async fn import_modpack_file(
     .map_err(CommandError::from);
 
     match &result {
-        Ok(instance) => println!(
+        Ok(instance) => app_info!(
             "[modpack_cmd] import_modpack_file: success, instance_id={}",
             instance.id
         ),
-        Err(e) => println!("[modpack_cmd] import_modpack_file: error={:?}", e),
+        Err(e) => app_info!("[modpack_cmd] import_modpack_file: error={:?}", e),
     }
     result
 }

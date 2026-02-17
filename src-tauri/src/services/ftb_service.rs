@@ -1,3 +1,4 @@
+use crate::app_error;
 use crate::error::AppError;
 use crate::models::instance::ModpackPlatform;
 use crate::models::{
@@ -229,14 +230,14 @@ pub async fn search_modpacks(
         format!("{}/modpack/popular/installs/100", FTB_API_BASE)
     };
 
-    eprintln!("[ftb] Search URL: {}", url);
+    app_error!("[ftb] Search URL: {}", url);
     let search_response: FtbPackSearchResponse =
         match tokio::time::timeout(std::time::Duration::from_secs(15), client.get(&url).send())
             .await
         {
             Ok(Ok(response)) => {
                 let resp: FtbPackSearchResponse = response.error_for_status()?.json().await?;
-                eprintln!(
+                app_error!(
                     "[ftb] Search response: {} packs, {} curseforge, total={}",
                     resp.packs.len(),
                     resp.curseforge.len(),
@@ -267,7 +268,7 @@ pub async fn search_modpacks(
         .collect();
 
     // Fetch all pack details in parallel with timeout
-    eprintln!("[ftb] Fetching {} pack details in parallel", pack_ids.len());
+    app_error!("[ftb] Fetching {} pack details in parallel", pack_ids.len());
     let futures: Vec<_> = pack_ids
         .into_iter()
         .map(|pack_id| {
@@ -281,11 +282,11 @@ pub async fn search_modpacks(
                 {
                     Ok(Ok(pack)) => Some(pack),
                     Ok(Err(e)) => {
-                        eprintln!("[ftb] Failed to fetch pack {}: {}", pack_id, e);
+                        app_error!("[ftb] Failed to fetch pack {}: {}", pack_id, e);
                         None
                     }
                     Err(_) => {
-                        eprintln!("[ftb] Timeout fetching pack {}", pack_id);
+                        app_error!("[ftb] Timeout fetching pack {}", pack_id);
                         None
                     }
                 }
@@ -295,7 +296,7 @@ pub async fn search_modpacks(
 
     let results = futures::future::join_all(futures).await;
     let modpacks: Vec<Modpack> = results.into_iter().flatten().collect();
-    eprintln!("[ftb] Got {} modpacks", modpacks.len());
+    app_error!("[ftb] Got {} modpacks", modpacks.len());
 
     Ok(ModpackSearchResult {
         modpacks,
@@ -459,17 +460,17 @@ pub async fn get_version_details(
             Ok(resp) => match resp.json().await {
                 Ok(m) => m,
                 Err(e) => {
-                    eprintln!("[ftb] Failed to parse version manifest JSON: {}", e);
+                    app_error!("[ftb] Failed to parse version manifest JSON: {}", e);
                     FtbVersionManifest::default()
                 }
             },
             Err(e) => {
-                eprintln!("[ftb] API returned error status: {}", e);
+                app_error!("[ftb] API returned error status: {}", e);
                 FtbVersionManifest::default()
             }
         },
         Err(e) => {
-            eprintln!("[ftb] Failed to fetch version manifest: {}", e);
+            app_error!("[ftb] Failed to fetch version manifest: {}", e);
             FtbVersionManifest::default()
         }
     };
@@ -481,7 +482,7 @@ pub async fn get_version_details(
                 .message
                 .clone()
                 .unwrap_or_else(|| "Unknown FTB API error".to_string());
-            eprintln!("[ftb] API error response: {}", msg);
+            app_error!("[ftb] API error response: {}", msg);
             // Don't fail - return empty manifest and let caller handle
         }
     }

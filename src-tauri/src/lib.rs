@@ -6,6 +6,7 @@
 pub mod cache;
 pub mod commands;
 pub mod error;
+pub mod log_buffer;
 pub mod models;
 pub mod services;
 pub mod state;
@@ -19,7 +20,7 @@ use tauri::Manager;
 pub fn run() {
     // Ensure data directories exist
     if let Err(e) = utils::paths::ensure_directories() {
-        eprintln!("Failed to create data directories: {}", e);
+        app_error!("[startup] Failed to create data directories: {}", e);
     }
 
     // Check if OS keyring is available (sets global flag for fallback behavior)
@@ -33,14 +34,14 @@ pub fn run() {
 
     // Load settings
     if let Err(e) = app_state.load_settings() {
-        eprintln!("Failed to load settings: {}", e);
+        app_error!("[startup] Failed to load settings: {}", e);
     }
 
     // Auto-migrate existing instances to resource pool if enabled
     // This is fast and idempotent - already-migrated content is skipped
     if app_state.get_settings().resource_pool.enabled {
         if let Err(e) = services::migration_service::migrate_all_instances(&app_state) {
-            eprintln!("Auto-migration failed: {}", e);
+            app_error!("[startup] Auto-migration failed: {}", e);
         }
 
         // Run garbage collection in background if it's been 24+ hours since last GC
@@ -60,6 +61,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_process::init())
         .manage(app_state)
         .setup(|app| {
@@ -85,7 +87,7 @@ pub fn run() {
                     return;
                 }
 
-                println!(
+                app_info!(
                     "[startup] Found {} instance(s) needing manifest rebuild, scanning in background...",
                     needs_rebuild.len()
                 );
@@ -98,27 +100,27 @@ pub fn run() {
                     .await
                     {
                         Ok(result) => {
-                            println!(
+                            app_info!(
                                 "[startup] Rebuilt manifest for {}: {} items ({} identified)",
                                 instance_id, result.total_items, result.identified_items
                             );
                         }
                         Err(e) => {
-                            eprintln!(
+                            app_error!(
                                 "[startup] Failed to rebuild manifest for {}: {}",
                                 instance_id, e
                             );
                         }
                     }
                 }
-                println!("[startup] Background manifest rebuild complete");
+                app_info!("[startup] Background manifest rebuild complete");
             });
 
             // Start the local Yggdrasil server for offline account skins.
             tauri::async_runtime::spawn(async {
                 match services::yggdrasil_server::start_server().await {
-                    Ok(port) => eprintln!("[app] Yggdrasil server started on port {}", port),
-                    Err(e) => eprintln!("[app] Warning: Failed to start Yggdrasil server: {}", e),
+                    Ok(port) => app_info!("[app] Yggdrasil server started on port {}", port),
+                    Err(e) => app_error!("[app] Failed to start Yggdrasil server: {}", e),
                 }
             });
             Ok(())
@@ -135,6 +137,7 @@ pub fn run() {
             commands::settings::delete_background_file,
             commands::settings::get_background_path,
             commands::settings::get_background_data,
+            commands::settings::get_debug_info,
             // Auth commands
             commands::auth::start_device_auth,
             commands::auth::poll_device_auth,

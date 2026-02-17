@@ -9,6 +9,7 @@ use serde::Deserialize;
 use std::path::Path;
 use tokio::process::Command;
 
+use crate::app_error;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
@@ -474,9 +475,11 @@ pub async fn install_fabric(
     })
     .await?;
 
-    eprintln!(
+    app_error!(
         "[fabric] Using Java {} at {} for MC {}",
-        required_java, java_path, mc_version
+        required_java,
+        java_path,
+        mc_version
     );
 
     progress("Running Fabric installer...".to_string(), 40);
@@ -612,9 +615,11 @@ pub async fn install_quilt(
     })
     .await?;
 
-    eprintln!(
+    app_error!(
         "[quilt] Using Java {} at {} for MC {}",
-        required_java, java_path, mc_version
+        required_java,
+        java_path,
+        mc_version
     );
 
     progress("Running Quilt installer...".to_string(), 40);
@@ -778,7 +783,7 @@ fn extract_old_forge_installer_sync(
         if name == "install_profile.json" {
             let mut content = String::new();
             file.read_to_string(&mut content)?;
-            eprintln!(
+            app_error!(
                 "[forge] Found install_profile.json, length: {}",
                 content.len()
             );
@@ -787,26 +792,26 @@ fn extract_old_forge_installer_sync(
             if let Ok(profile) = serde_json::from_str::<serde_json::Value>(&content) {
                 // Old Forge install_profile.json has a "versionInfo" field
                 if let Some(version_info) = profile.get("versionInfo") {
-                    eprintln!("[forge] Found versionInfo in install_profile.json");
+                    app_error!("[forge] Found versionInfo in install_profile.json");
                     version_json_content = Some(serde_json::to_string_pretty(version_info)?);
                 } else {
-                    eprintln!(
+                    app_error!(
                         "[forge] No versionInfo field, keys: {:?}",
                         profile.as_object().map(|o| o.keys().collect::<Vec<_>>())
                     );
                     // Try alternative: some installers have version.json separately or use different structure
                     if let Some(_install) = profile.get("install") {
-                        eprintln!("[forge] Found 'install' field - this is a newer Forge installer format");
+                        app_error!("[forge] Found 'install' field - this is a newer Forge installer format");
                     }
                 }
             } else {
-                eprintln!("[forge] Failed to parse install_profile.json as JSON");
+                app_error!("[forge] Failed to parse install_profile.json as JSON");
             }
         } else if name == "version.json" {
             // Some Forge installers have version.json directly
             let mut content = String::new();
             file.read_to_string(&mut content)?;
-            eprintln!(
+            app_error!(
                 "[forge] Found version.json directly, length: {}",
                 content.len()
             );
@@ -828,7 +833,7 @@ fn extract_old_forge_installer_sync(
 
             // Skip directories and handle conflicts
             if lib_path.is_dir() {
-                eprintln!(
+                app_error!(
                     "[forge] Skipping {:?} - already exists as directory",
                     lib_path
                 );
@@ -838,7 +843,7 @@ fn extract_old_forge_installer_sync(
             if let Some(parent) = lib_path.parent() {
                 // Check if parent path conflicts with a file
                 if parent.is_file() {
-                    eprintln!("[forge] Removing file at {:?} to create directory", parent);
+                    app_error!("[forge] Removing file at {:?} to create directory", parent);
                     std::fs::remove_file(parent)?;
                 }
                 std::fs::create_dir_all(parent)?;
@@ -866,7 +871,7 @@ fn extract_old_forge_installer_sync(
 
         let json_path = version_dir.join(format!("{}.json", version_id));
         if json_path.is_dir() {
-            eprintln!(
+            app_error!(
                 "[forge] Warning: {:?} is a directory, removing it",
                 json_path
             );
@@ -875,7 +880,7 @@ fn extract_old_forge_installer_sync(
         std::fs::write(&json_path, &updated_json).map_err(|e| {
             AppError::InstallationError(format!("Failed to write {:?}: {}", json_path, e))
         })?;
-        eprintln!("[forge] Wrote version JSON to {:?}", json_path);
+        app_error!("[forge] Wrote version JSON to {:?}", json_path);
     } else {
         return Err(AppError::InstallationError(
             "Could not find versionInfo in Forge installer".to_string(),
@@ -897,7 +902,7 @@ fn extract_old_forge_installer_sync(
             mc_version, loader_version
         ));
         if jar_path.is_dir() {
-            eprintln!(
+            app_error!(
                 "[forge] Warning: {:?} is a directory, removing it",
                 jar_path
             );
@@ -906,13 +911,13 @@ fn extract_old_forge_installer_sync(
         std::fs::write(&jar_path, &jar_data).map_err(|e| {
             AppError::InstallationError(format!("Failed to write {:?}: {}", jar_path, e))
         })?;
-        eprintln!("[forge] Wrote Forge universal jar to {:?}", jar_path);
+        app_error!("[forge] Wrote Forge universal jar to {:?}", jar_path);
 
         // Also write without suffix as fallback (some version.json variants reference it this way)
         let jar_path_alt =
             forge_lib_dir.join(format!("forge-{}-{}.jar", mc_version, loader_version));
         if jar_path_alt.is_dir() {
-            eprintln!(
+            app_error!(
                 "[forge] Warning: {:?} is a directory, removing it",
                 jar_path_alt
             );
@@ -923,9 +928,10 @@ fn extract_old_forge_installer_sync(
         })?;
     }
 
-    eprintln!(
+    app_error!(
         "[forge] Manual extraction complete for {} Forge {}",
-        mc_version, loader_version
+        mc_version,
+        loader_version
     );
     Ok(())
 }
@@ -1042,9 +1048,11 @@ pub async fn install_forge(
     })
     .await?;
 
-    eprintln!(
+    app_error!(
         "[forge] Using Java {} at {} for MC {}",
-        required_java, java_path, mc_version
+        required_java,
+        java_path,
+        mc_version
     );
 
     // Ensure vanilla client JAR exists for Forge installer processors
@@ -1057,7 +1065,7 @@ pub async fn install_forge(
     let output = if is_very_old {
         // Old Forge (pre-1.13) - these installers use the old format with versionInfo
         // and don't support --installClient properly. We extract manually.
-        eprintln!(
+        app_error!(
             "[forge] Using manual extraction for old Forge MC {}",
             mc_version
         );
@@ -1247,7 +1255,7 @@ pub async fn install_neoforge(
     })
     .await?;
 
-    eprintln!("[neoforge] Using Java 21 at {}", java_path);
+    app_error!("[neoforge] Using Java 21 at {}", java_path);
 
     progress("Running NeoForge installer...".to_string(), 40);
 

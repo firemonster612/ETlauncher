@@ -1,3 +1,5 @@
+use crate::app_error;
+use crate::app_info;
 use crate::error::AppError;
 use crate::models::content::{
     ContentPlatform, ContentSource, InstalledContentManifest, MANIFEST_VERSION,
@@ -380,7 +382,7 @@ pub async fn scan_content(
                 ));
             }
             Err(e) => {
-                eprintln!("Failed to hash file: {}", e);
+                app_error!("Failed to hash file: {}", e);
             }
         }
     }
@@ -737,9 +739,11 @@ async fn rescan_and_rebuild_manifest_inner(
         let scan_result = match scan_content(state, instance_id, content_type).await {
             Ok(result) => result,
             Err(e) => {
-                eprintln!(
+                app_error!(
                     "[rescan] Failed to scan {} for instance {}: {}",
-                    label, instance_id, e
+                    label,
+                    instance_id,
+                    e
                 );
                 continue;
             }
@@ -847,7 +851,7 @@ async fn rescan_and_rebuild_manifest_inner(
         .task_registry
         .update_stage(task_id, "Building manifest".to_string());
 
-    println!(
+    app_info!(
         "[rescan] Rebuilt manifest for instance {}: {} total ({} identified, {} unidentified)",
         instance_id,
         total,

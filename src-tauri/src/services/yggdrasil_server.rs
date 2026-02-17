@@ -1,3 +1,4 @@
+use crate::app_error;
 use crate::error::AppError;
 use crate::models::account::{AccountType, MinecraftAccount};
 use crate::services::account_service;
@@ -44,7 +45,7 @@ fn get_or_create_keypair() -> Result<RsaPrivateKey, AppError> {
         RsaPrivateKey::from_pkcs8_pem(&pem)
             .map_err(|e| AppError::Internal(format!("Failed to load RSA keypair: {}", e)))
     } else {
-        eprintln!("[yggdrasil] Generating new RSA keypair...");
+        app_error!("[yggdrasil] Generating new RSA keypair...");
         let mut rng = rsa::rand_core::OsRng;
         let private_key = RsaPrivateKey::new(&mut rng, 4096)
             .map_err(|e| AppError::Internal(format!("Failed to generate RSA key: {}", e)))?;
@@ -58,7 +59,7 @@ fn get_or_create_keypair() -> Result<RsaPrivateKey, AppError> {
             .map_err(|e| AppError::Internal(format!("Failed to encode RSA key: {}", e)))?;
         std::fs::write(&keypair_path, pem.as_bytes())?;
 
-        eprintln!("[yggdrasil] RSA keypair generated and saved");
+        app_error!("[yggdrasil] RSA keypair generated and saved");
         Ok(private_key)
     }
 }
@@ -146,12 +147,12 @@ pub async fn start_server() -> Result<u16, AppError> {
 
     YGGDRASIL_PORT.store(port, std::sync::atomic::Ordering::Relaxed);
 
-    eprintln!("[yggdrasil] Server starting on 127.0.0.1:{}", port);
+    app_error!("[yggdrasil] Server starting on 127.0.0.1:{}", port);
 
     // Spawn the server in a background task
     tokio::spawn(async move {
         if let Err(e) = axum::serve(listener, app).await {
-            eprintln!("[yggdrasil] Server error: {}", e);
+            app_error!("[yggdrasil] Server error: {}", e);
         }
     });
 
@@ -160,7 +161,7 @@ pub async fn start_server() -> Result<u16, AppError> {
 
 /// GET /yggdrasil/ - Server metadata
 async fn server_metadata(state: Arc<YggdrasilState>) -> Json<serde_json::Value> {
-    eprintln!("[yggdrasil] metadata request");
+    app_error!("[yggdrasil] metadata request");
     Json(serde_json::json!({
         "meta": {
             "serverName": "ETLauncher Yggdrasil",
@@ -191,7 +192,7 @@ struct HasJoinedQuery {
 
 /// GET /yggdrasil/sessionserver/session/minecraft/hasJoined
 async fn has_joined(Query(query): Query<HasJoinedQuery>, state: Arc<YggdrasilState>) -> Response {
-    eprintln!(
+    app_error!(
         "[yggdrasil] hasJoined request for username: {}",
         query.username
     );
@@ -216,7 +217,7 @@ async fn get_profile(
     Query(query): Query<ProfileQuery>,
     state: Arc<YggdrasilState>,
 ) -> Response {
-    eprintln!("[yggdrasil] profile request for uuid: {}", uuid);
+    app_error!("[yggdrasil] profile request for uuid: {}", uuid);
     // Normalize UUID (remove dashes)
     let uuid_normalized = uuid.replace('-', "");
 
@@ -246,7 +247,7 @@ async fn get_profile(
 
 /// GET /yggdrasil/textures/:hash - Serve skin/cape PNG
 async fn get_texture(Path(hash): Path<String>, state: Arc<YggdrasilState>) -> Response {
-    eprintln!("[yggdrasil] texture request for hash: {}", hash);
+    app_error!("[yggdrasil] texture request for hash: {}", hash);
     let texture_path = state.skins_dir.join(format!("{}.png", hash));
 
     match std::fs::read(&texture_path) {

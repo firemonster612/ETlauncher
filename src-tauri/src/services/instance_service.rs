@@ -1,3 +1,4 @@
+use crate::app_error;
 use crate::error::AppError;
 use crate::models::instance::{
     CreateInstanceRequest, DownloadProgress, Instance, InstanceSetupStatus, LoaderType,
@@ -227,7 +228,7 @@ pub fn get_all_instances(state: &AppState) -> Result<Vec<Instance>, AppError> {
             match get_instance(state, instance_id) {
                 Ok(instance) => instances.push(instance),
                 Err(e) => {
-                    eprintln!("Warning: Failed to load instance {}: {}", instance_id, e);
+                    app_error!("Warning: Failed to load instance {}: {}", instance_id, e);
                 }
             }
         }
@@ -380,9 +381,10 @@ pub fn delete_instance(
     // Remove instance from resource pool tracking before deleting files
     // This updates the "space saved" calculation by removing usage references
     if let Err(e) = resource_pool_service::remove_instance_from_pool(state, instance_id) {
-        eprintln!(
+        app_error!(
             "Warning: Failed to remove instance {} from resource pool: {}",
-            instance_id, e
+            instance_id,
+            e
         );
         // Continue with deletion even if pool update fails
     }
