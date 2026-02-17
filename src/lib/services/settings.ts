@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { AppSettings, UpdateSettingsRequest, ResourcePoolStats } from '$lib/types';
+import type { AppSettings, ResourcePoolStats, UpdateSettingsRequest } from '$lib/types';
 
 /** Get current application settings */
 export async function getSettings(): Promise<AppSettings> {
@@ -138,4 +138,13 @@ export async function getBackgroundPath(filename: string): Promise<string> {
 /** Get background file data as base64 */
 export async function getBackgroundData(filename: string): Promise<string> {
 	return invoke<string>('get_background_data', { filename });
+}
+
+// =============================================================================
+// Debug Functions
+// =============================================================================
+
+/** Collect comprehensive debug information for troubleshooting */
+export async function getDebugInfo(): Promise<string> {
+	return invoke<string>('get_debug_info');
 }

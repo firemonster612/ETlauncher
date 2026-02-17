@@ -1,3 +1,4 @@
+use crate::app_error;
 use crate::error::AppError;
 use crate::utils::paths::get_cache_dir;
 use chrono::{DateTime, Duration, Utc};
@@ -170,7 +171,7 @@ pub async fn fetch_optifine_versions(
 
     // Cache the results
     if let Err(e) = save_cache(&versions) {
-        eprintln!("Warning: Failed to cache OptiFine versions: {}", e);
+        app_error!("Warning: Failed to cache OptiFine versions: {}", e);
     }
 
     Ok(versions)

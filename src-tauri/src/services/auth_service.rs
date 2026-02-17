@@ -1,3 +1,4 @@
+use crate::app_error;
 use crate::error::AppError;
 use crate::models::{AuthPollStatus, DeviceCodeResponse, MinecraftAccount, MinecraftProfile};
 use reqwest::Client;
@@ -554,7 +555,7 @@ fn store_tokens(
     refresh_token: &str,
     mc_access_token: &str,
 ) -> Result<(), AppError> {
-    eprintln!("Storing tokens for account: {}", account_id);
+    app_error!("Storing tokens for account: {}", account_id);
 
     let mut store = load_token_store();
     store.tokens.insert(
@@ -566,12 +567,12 @@ fn store_tokens(
     );
     save_token_store(&store)?;
 
-    eprintln!("Tokens stored successfully for account: {}", account_id);
+    app_error!("Tokens stored successfully for account: {}", account_id);
     Ok(())
 }
 
 fn get_refresh_token(account_id: &str) -> Result<String, AppError> {
-    eprintln!("Getting refresh token for account: {}", account_id);
+    app_error!("Getting refresh token for account: {}", account_id);
 
     let store = load_token_store();
     store
@@ -582,7 +583,7 @@ fn get_refresh_token(account_id: &str) -> Result<String, AppError> {
 }
 
 pub fn get_access_token(account_id: &str) -> Result<String, AppError> {
-    eprintln!("Getting access token for account: {}", account_id);
+    app_error!("Getting access token for account: {}", account_id);
 
     let store = load_token_store();
     store
@@ -593,7 +594,7 @@ pub fn get_access_token(account_id: &str) -> Result<String, AppError> {
 }
 
 pub fn delete_tokens(account_id: &str) -> Result<(), AppError> {
-    eprintln!("Deleting tokens for account: {}", account_id);
+    app_error!("Deleting tokens for account: {}", account_id);
 
     let mut store = load_token_store();
     store.tokens.remove(account_id);

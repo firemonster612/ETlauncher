@@ -1,6 +1,7 @@
 <script lang="ts">
 	import {
 		Ban,
+		Bug,
 		Check,
 		Download,
 		Eye,
@@ -20,6 +21,7 @@
 		X,
 	} from '@lucide/svelte';
 	import { getVersion } from '@tauri-apps/api/app';
+	import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 	import { open } from '@tauri-apps/plugin-dialog';
 	import { onMount } from 'svelte';
 	import ColorPicker from '$lib/components/ColorPicker.svelte';
@@ -247,6 +249,30 @@
 
 	async function resetToDefaults() {
 		await settingsStore.reset();
+	}
+
+	let debugCopyStatus = $state<'idle' | 'copying' | 'copied' | 'error'>('idle');
+	let debugCopyError = $state<string | null>(null);
+
+	async function copyDebugInfo() {
+		debugCopyStatus = 'copying';
+		debugCopyError = null;
+		try {
+			const info = await settingsService.getDebugInfo();
+			await writeText(info);
+			debugCopyStatus = 'copied';
+			setTimeout(() => {
+				debugCopyStatus = 'idle';
+			}, 2000);
+		} catch (e: unknown) {
+			console.error('Failed to copy debug info:', e);
+			debugCopyError = e instanceof Error ? e.message : String(e);
+			debugCopyStatus = 'error';
+			setTimeout(() => {
+				debugCopyStatus = 'idle';
+				debugCopyError = null;
+			}, 5000);
+		}
 	}
 
 	function formatMemory(mb: number | undefined): string {
@@ -1259,6 +1285,41 @@
 					onCheckedChange={(checked) => saveSettings({ showOldVersions: !!checked })}
 				/>
 			</div>
+		</section>
+
+		<!-- Debug -->
+		<section class="border-border bg-card space-y-2 border-2 p-4">
+			<div class="flex items-center justify-between">
+				<div>
+					<span class="text-sm">Copy Debug Info</span>
+					<p class="text-muted-foreground text-xs">
+						Copy system, instance, and configuration details to clipboard for troubleshooting
+					</p>
+				</div>
+				<Button
+					variant="outline"
+					size="sm"
+					onclick={copyDebugInfo}
+					disabled={debugCopyStatus === 'copying'}
+				>
+					{#if debugCopyStatus === 'copying'}
+						<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+						Copying...
+					{:else if debugCopyStatus === 'copied'}
+						<Check class="mr-2 h-4 w-4 text-green-500" />
+						Copied!
+					{:else if debugCopyStatus === 'error'}
+						<X class="mr-2 h-4 w-4 text-red-500" />
+						Failed
+					{:else}
+						<Bug class="mr-2 h-4 w-4" />
+						Copy Debug Info
+					{/if}
+				</Button>
+			</div>
+			{#if debugCopyError}
+				<p class="text-destructive text-xs">{debugCopyError}</p>
+			{/if}
 		</section>
 
 		<!-- Reset -->

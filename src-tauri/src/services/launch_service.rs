@@ -14,6 +14,8 @@ use std::thread;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio_util::sync::CancellationToken;
 
+use crate::app_error;
+use crate::app_info;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
@@ -224,9 +226,10 @@ async fn launch_instance_inner(
 
         (min_mem, max_mem)
     };
-    eprintln!(
+    app_info!(
         "[launch] Using memory args: -Xms{}M -Xmx{}M",
-        min_mem, max_mem
+        min_mem,
+        max_mem
     );
 
     // Build replacements map
@@ -386,17 +389,17 @@ async fn launch_instance_inner(
                         injector_path.display(),
                         yggdrasil_url
                     ));
-                    eprintln!(
+                    app_info!(
                         "[launch] Injecting authlib-injector with Yggdrasil URL: {}",
                         yggdrasil_url
                     );
                 } else {
-                    eprintln!("[launch] Warning: Yggdrasil server not running, skins may not work");
+                    app_error!("[launch] Yggdrasil server not running, skins may not work");
                 }
             }
             Err(e) => {
-                eprintln!(
-                    "[launch] Warning: Failed to get authlib-injector: {}, skins may not work",
+                app_error!(
+                    "[launch] Failed to get authlib-injector: {}, skins may not work",
                     e
                 );
             }
@@ -429,15 +432,15 @@ async fn launch_instance_inner(
     all_args.extend(all_game_args);
 
     // Debug logging for launch command
-    eprintln!("[launch] ===== LAUNCH DEBUG =====");
-    eprintln!("[launch] Java path: {}", java_path);
-    eprintln!("[launch] Working dir: {}", game_dir.display());
-    eprintln!("[launch] Main class: {}", version_info.main_class);
-    eprintln!("[launch] Full command args ({}):", all_args.len());
+    app_info!("[launch] ===== LAUNCH DEBUG =====");
+    app_info!("[launch] Java path: {}", java_path);
+    app_info!("[launch] Working dir: {}", game_dir.display());
+    app_info!("[launch] Main class: {}", version_info.main_class);
+    app_info!("[launch] Full command args ({}):", all_args.len());
     for (i, arg) in all_args.iter().enumerate() {
-        eprintln!("[launch]   [{}] {}", i, arg);
+        app_info!("[launch]   [{}] {}", i, arg);
     }
-    eprintln!("[launch] =========================");
+    app_info!("[launch] =========================");
 
     // Emit launching status
     emit_launch_status(app_handle, &instance_id, LaunchStatus::Launching);

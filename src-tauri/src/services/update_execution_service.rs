@@ -3,6 +3,7 @@
 //! Handles the actual execution of updates including backup, content updates,
 //! loader installation, and rollback on failure.
 
+use crate::app_error;
 use crate::error::AppError;
 use crate::models::content::{
     ContentPlatform, ContentType, InstalledContent, InstanceUpdatePlan, ModpackUpdatePlan,
@@ -98,7 +99,7 @@ async fn execute_content_update_outer(
         Err(e) => {
             emit_progress(app_handle, "Restoring from backup", 0, None, 0, 0);
             if let Err(restore_err) = restore_backup(&backup_path, &game_dir) {
-                eprintln!("Failed to restore backup: {}", restore_err);
+                app_error!("Failed to restore backup: {}", restore_err);
             }
             let _ = cleanup_backup(&backup_path);
             Err(e)
@@ -271,7 +272,7 @@ async fn execute_version_migration_outer(
         Err(e) => {
             emit_progress(app_handle, "Restoring from backup", 0, None, 0, 0);
             if let Err(restore_err) = restore_backup(&backup_path, &game_dir) {
-                eprintln!("Failed to restore backup: {}", restore_err);
+                app_error!("Failed to restore backup: {}", restore_err);
             }
             let _ = cleanup_backup(&backup_path);
             Err(e)
@@ -681,7 +682,7 @@ async fn execute_modpack_update_outer(
         Err(e) => {
             emit_progress(app_handle, "Restoring from backup", 0, None, 0, 0);
             if let Err(restore_err) = restore_backup(&backup_path, &game_dir) {
-                eprintln!("Failed to restore backup: {}", restore_err);
+                app_error!("Failed to restore backup: {}", restore_err);
             }
             let _ = cleanup_backup(&backup_path);
             Err(e)
@@ -1017,7 +1018,7 @@ async fn execute_instance_update_outer(
         Err(e) => {
             emit_progress(app_handle, "Restoring from backup", 0, None, 0, 0);
             if let Err(restore_err) = restore_backup(&backup_path, &game_dir) {
-                eprintln!("Failed to restore backup: {}", restore_err);
+                app_error!("Failed to restore backup: {}", restore_err);
             }
             let _ = cleanup_backup(&backup_path);
             Err(e)

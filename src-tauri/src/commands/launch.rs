@@ -3,6 +3,7 @@ use crate::services::{content_install_service, instance_service, launch_service}
 use crate::state::AppState;
 use tauri::{AppHandle, State};
 
+use crate::app_error;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
@@ -28,7 +29,7 @@ pub async fn launch_instance(
     // Sync datapacks to all worlds before launch
     // This ensures datapacks are present in worlds created after the datapack was installed
     if let Err(e) = content_install_service::sync_datapacks_to_worlds(&state, &instance_id) {
-        eprintln!("[Launch] Warning: Failed to sync datapacks: {:?}", e);
+        app_error!("[Launch] Warning: Failed to sync datapacks: {:?}", e);
         // Don't fail launch if datapack sync fails
     }
 

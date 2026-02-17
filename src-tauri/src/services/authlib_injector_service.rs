@@ -1,3 +1,4 @@
+use crate::app_error;
 use crate::error::AppError;
 use crate::utils::paths::get_app_data_dir;
 use serde::Deserialize;
@@ -46,28 +47,29 @@ pub async fn get_authlib_injector_path(client: &reqwest::Client) -> Result<PathB
     if let Some(ref version) = cached_version {
         let jar_path = dir.join(format!("authlib-injector-{}.jar", version));
         if jar_path.exists() {
-            eprintln!("[authlib-injector] Using cached version {}", version);
+            app_error!("[authlib-injector] Using cached version {}", version);
             return Ok(jar_path);
         }
     }
 
     // Need to download - fetch latest version info
-    eprintln!("[authlib-injector] Checking for latest version...");
+    app_error!("[authlib-injector] Checking for latest version...");
     let latest = fetch_latest_artifact(client).await?;
     let jar_path = dir.join(format!("authlib-injector-{}.jar", latest.version));
 
     // Check if we already have this version
     if jar_path.exists() {
-        eprintln!("[authlib-injector] Already have version {}", latest.version);
+        app_error!("[authlib-injector] Already have version {}", latest.version);
         // Update version file in case it was missing
         let _ = std::fs::write(&version_file, &latest.version);
         return Ok(jar_path);
     }
 
     // Download the jar
-    eprintln!(
+    app_error!(
         "[authlib-injector] Downloading version {} from {}",
-        latest.version, latest.download_url
+        latest.version,
+        latest.download_url
     );
 
     let response = client.get(&latest.download_url).send().await?;
@@ -103,7 +105,7 @@ pub async fn get_authlib_injector_path(client: &reqwest::Client) -> Result<PathB
     // Clean up old versions
     cleanup_old_versions(&dir, &latest.version);
 
-    eprintln!(
+    app_error!(
         "[authlib-injector] Downloaded and cached version {}",
         latest.version
     );
@@ -142,7 +144,7 @@ fn cleanup_old_versions(dir: &PathBuf, current_version: &str) {
                     && name.ends_with(".jar")
                     && !name.contains(current_version)
                 {
-                    eprintln!("[authlib-injector] Removing old version: {}", name);
+                    app_error!("[authlib-injector] Removing old version: {}", name);
                     let _ = std::fs::remove_file(&path);
                 }
             }

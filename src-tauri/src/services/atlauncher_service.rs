@@ -1,3 +1,4 @@
+use crate::app_info;
 use crate::error::AppError;
 use crate::models::instance::ModpackPlatform;
 use crate::models::{
@@ -590,7 +591,7 @@ pub async fn get_version_manifest(
         ATLAUNCHER_CDN_BASE, pack_safe_name, version
     );
 
-    println!("[atlauncher] Fetching version manifest from: {}", url);
+    app_info!("[atlauncher] Fetching version manifest from: {}", url);
 
     let manifest: AtlauncherConfigsManifest = client
         .get(&url)
@@ -608,7 +609,7 @@ pub async fn get_version_manifest(
         .await
         .map_err(|e| AppError::ApiError(format!("Failed to parse Configs.json: {}", e)))?;
 
-    println!(
+    app_info!(
         "[atlauncher] Got manifest: {} mods, loader={:?} {:?}",
         manifest.mods.len(),
         manifest.loader_type,

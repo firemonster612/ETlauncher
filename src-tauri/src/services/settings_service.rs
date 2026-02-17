@@ -1,3 +1,4 @@
+use crate::app_error;
 use crate::error::AppError;
 use crate::models::{AppSettings, UpdateSettingsRequest};
 use crate::utils::paths;
@@ -35,19 +36,19 @@ pub fn load_settings() -> Result<AppSettings, AppError> {
 
         // Try to parse as old snake_case format and migrate
         if let Ok(old_settings) = serde_json::from_str::<serde_json::Value>(&content) {
-            eprintln!("Migrating old settings format to camelCase...");
+            app_error!("Migrating old settings format to camelCase...");
             let settings = migrate_old_settings(&old_settings);
 
             // Save in new format
             if let Err(e) = save_settings(&settings) {
-                eprintln!("Warning: Could not save migrated settings: {}", e);
+                app_error!("Warning: Could not save migrated settings: {}", e);
             }
 
             return Ok(settings);
         }
 
         // If all parsing fails, create defaults
-        eprintln!("Warning: Could not parse settings, creating defaults");
+        app_error!("Warning: Could not parse settings, creating defaults");
     }
 
     // Create default settings with proper paths
@@ -58,7 +59,7 @@ pub fn load_settings() -> Result<AppSettings, AppError> {
 
     // Try to save the defaults
     if let Err(e) = save_settings(&settings) {
-        eprintln!("Warning: Could not save default settings: {}", e);
+        app_error!("Warning: Could not save default settings: {}", e);
     }
 
     Ok(settings)
