@@ -1224,7 +1224,7 @@ dependencies = [
  "uuid",
  "walkdir",
  "windows-sys 0.59.0",
- "zip 8.0.0",
+ "zip 8.3.1",
 ]
 
 [[package]]
@@ -7150,9 +7150,9 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "8.0.0"
+version = "8.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79b32dd4ad3aca14ae109f8cce0495ac1c57f6f4f00ad459a40e582f89440d97"
+checksum = "5c546feb4481b0fbafb4ef0d79b6204fc41c6f9884b1b73b1d73f82442fc0845"
 dependencies = [
  "aes",
  "bzip2",
